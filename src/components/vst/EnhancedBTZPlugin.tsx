@@ -14,6 +14,8 @@ import { PRO_STYLE_PRESETS } from './proStyles';
 import { Slider } from '@/components/ui/slider';
 import { makeBTZReducer } from '@/store/btzReducer';
 import { morphParams } from '@/utils/morph';
+import { useAnalyser } from '@/hooks/useAnalyser';
+import { useAudioEngine } from '@/hooks/useAudioEngine';
 const DEFAULT_PRESET: EnhancedPreset = {
   id: 'default',
   label: 'Default',
@@ -154,6 +156,11 @@ export const EnhancedBTZPlugin: React.FC = () => {
     if (typeof window === 'undefined') return;
     localStorage.setItem('btz:view', viewMode);
   }, [viewMode]);
+
+  // Audio engine + analyser wiring
+  const { running: audioRunning, start: startAudio, stop: stopAudio, update: updateAudio, analyserOut } = require('@/hooks/useAudioEngine').useAudioEngine?.() ?? {} as any;
+  const analyserData = require('@/hooks/useAnalyser').useAnalyser?.(analyserOut, 60) ?? { spectrum: new Float32Array(64), waveform: new Float32Array(128), levelIn: 0, levelOut: 0 };
+
   const [meters, setMeters] = useState({
     inputLevel: 0,
     outputLevel: 0,
@@ -177,9 +184,23 @@ export const EnhancedBTZPlugin: React.FC = () => {
   const specMix = useMemo(() => meters.spectrumData, [meters.spectrumData]);
   const specDrive = useMemo(() => meters.spectrumData.subarray(32, 48), [meters.spectrumData]);
 
-  // Generate live audio visualization data with AI analysis
+  // Map analyser to meters if audio is running
+  useEffect(() => {
+    if (!analyserOut || !analyserData) return;
+    setMeters(prev => ({
+      ...prev,
+      spectrumData: analyserData.spectrum,
+      waveformData: analyserData.waveform,
+      inputLevel: analyserData.levelIn,
+      outputLevel: analyserData.levelOut,
+      isProcessing: (state.active ?? true) && !!audioRunning,
+    }));
+  }, [analyserOut, analyserData?.spectrum, analyserData?.waveform, analyserData?.levelIn, analyserData?.levelOut, audioRunning, state.active]);
+
+  // Generate live audio visualization when no audio engine is active (fallback sim)
   useEffect(() => {
     if (typeof window === 'undefined') return;
+    if (audioRunning) return; // real analyser drives meters
     let raf = 0;
     let last = 0;
 
@@ -195,89 +216,28 @@ export const EnhancedBTZPlugin: React.FC = () => {
         const baseLevel = 0.2 + Math.random() * 0.5;
         let processedLevel = baseLevel * (1 + state.drive * 0.8) * state.mix;
 
-        // AI Analysis simulation (DeepFilterNet + Neutone style)
-        const transientStrength = Math.min(1, baseLevel * 2 * (state.punch + 0.3));
-        const lowEndEnergy = Math.min(1, baseLevel * 1.5 * (state.boom + 0.2));
-        const richness = Math.min(1, (state.warmth + (state.texture ? 0.3 : 0)) * 1.2);
-        const loudnessScore = Math.min(1, processedLevel * 1.1);
-        const spectralCentroid = 1000 + richness * 3000; // Hz
-
-        // AI Automation - adjust parameters based on analysis
-        if (state.aiAutomation) {
-          // Auto-adjust drive based on loudness target
-          if (state.lufsTarget && state.lufsTarget < -10) {
-            const targetGain = (-10 - state.lufsTarget) / 10; // More aggressive for loud targets
-            processedLevel *= (1 + targetGain * 0.3);
-          }
-
-          // FL Studio style clipping simulation
-          if (state.clippingEnabled) {
-            const clippingAmount = (state.clippingBlend || 0.5) * 0.4;
-            const threshold = 0.8;
-
-            if (processedLevel > threshold) {
-              const excess = processedLevel - threshold;
-              let clippedExcess = Math.tanh(excess * 2) / 2;
-
-              switch (state.clippingType) {
-                case 'soft':
-                  // FL Studio style soft limiting (tanh-based)
-                  clippedExcess = Math.tanh(excess * 3) / 3;
-                  break;
-                case 'hard':
-                  clippedExcess = Math.min(excess, 0.15);
-                  break;
-                case 'tube':
-                  clippedExcess = excess * Math.pow(Math.E, -excess * 2);
-                  break;
-                case 'tape':
-                  clippedExcess = excess / (1 + excess * 1.5);
-                  break;
-                case 'digital':
-                  clippedExcess = excess * 0.7;
-                  break;
-              }
-
-              const clipped = threshold + clippedExcess;
-              processedLevel = processedLevel * (1 - clippingAmount) + clipped * clippingAmount;
-            }
-          }
-        }
-
-        // Generate realistic spectrum for each processing stage
+        // Generate spectrum
         const spectrumData = new Float32Array(64);
-        const waveformData = new Float32Array(128);
-
         for (let i = 0; i < 64; i++) {
           const freq = (i / 64) * 20000;
           let magnitude = Math.random() * 0.1;
-
-          // Shape spectrum based on controls and AI analysis
-          if (freq < 200) magnitude += state.boom * 0.6 + (lowEndEnergy * 0.2);
-          if (freq > 80 && freq < 800) magnitude += state.punch * 0.5 + (transientStrength * 0.3);
-          if (freq > 1000 && freq < 8000) magnitude += state.warmth * 0.4 + (richness * 0.2);
+          if (freq < 200) magnitude += state.boom * 0.6;
+          if (freq > 80 && freq < 800) magnitude += state.punch * 0.5;
+          if (freq > 1000 && freq < 8000) magnitude += state.warmth * 0.4;
           if (freq > 8000) magnitude += state.texture ? 0.3 : 0.1;
-          if (state.clippingEnabled) magnitude += 0.1; // Harmonic content from clipping
-
+          if (state.clippingEnabled) magnitude += 0.1;
           spectrumData[i] = Math.max(0, Math.min(1, magnitude * (1 + state.drive * 0.3)));
         }
 
-        // Generate waveform with more character
+        const waveformData = new Float32Array(128);
         for (let i = 0; i < 128; i++) {
           const tt = (i / 128) * Math.PI * 4;
           let wave = Math.sin(tt) * processedLevel * (0.8 + Math.random() * 0.4);
-
-          // Add harmonic content from processing
-          wave += Math.sin(tt * 2) * state.warmth * 0.1 * processedLevel;
-          wave += Math.sin(tt * 3) * (state.texture ? 0.05 : 0) * processedLevel;
-
-          waveformData[i] = wave;
+          waveformData[i] = wave * 0.5 + 0.5; // normalize to 0..1
         }
 
-        const shortLUFS = (state.lufsTarget || -14) + (Math.random() - 0.5) * 2;
-        const lufsIntegrated = prev.lufsIntegrated * 0.92 + shortLUFS * 0.08;
-        const tp = Math.max(-1.0, (state.lufsTarget || -14) + 12 + (Math.random() - 0.5) * 3);
-        const truePeak = prev.truePeak * 0.8 + tp * 0.2;
+        const lufsIntegrated = prev.lufsIntegrated * 0.92 + (-14 + processedLevel * 6);
+        const truePeak = prev.truePeak * 0.8 + Math.min(0, -1 + processedLevel * 2);
 
         return {
           inputLevel: baseLevel,
@@ -287,13 +247,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
           lufsIntegrated,
           truePeak,
           isProcessing: processedLevel > 0.1,
-          analysisData: {
-            transientStrength,
-            lowEndEnergy,
-            loudnessScore,
-            richness,
-            spectralCentroid
-          }
+          analysisData: prev.analysisData,
         };
       });
 
@@ -302,7 +256,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
 
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, [state]);
+  }, [state, audioRunning]);
 
   const updateParameter = useCallback((key: keyof BTZPluginState, value: any) => {
     dispatch({ type: 'set', key, value });
@@ -377,7 +331,19 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 ENGINEERING
               </button>
             </div>
-            
+            {/* Audio Engine Toggle */}
+            <button
+              onClick={() => (audioRunning ? stopAudio?.() : startAudio?.())}
+              className={cn(
+                "px-4 py-2 rounded-full text-xs font-bold border transition-all duration-300",
+                audioRunning
+                  ? "bg-audio-success text-background border-audio-success"
+                  : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/80"
+              )}
+              aria-pressed={!!audioRunning}
+            >
+              {audioRunning ? 'AUDIO ON' : 'ENABLE AUDIO'}
+            </button>
             {/* Power Button */}
             <ToggleButton 
               value={state.active} 
