@@ -24,6 +24,19 @@ export default {
 				ring: 'hsl(var(--ring))',
 				background: 'hsl(var(--background))',
 				foreground: 'hsl(var(--foreground))',
+				
+				// VST Plugin Colors
+				'plugin-surface': 'hsl(var(--plugin-surface))',
+				'plugin-panel': 'hsl(var(--plugin-panel))',
+				'plugin-raised': 'hsl(var(--plugin-raised))',
+				'knob-background': 'hsl(var(--knob-background))',
+				'knob-accent': 'hsl(var(--knob-accent))',
+				'knob-active': 'hsl(var(--knob-active))',
+				'audio-primary': 'hsl(var(--audio-primary))',
+				'audio-primary-glow': 'hsl(var(--audio-primary-glow))',
+				'audio-secondary': 'hsl(var(--audio-secondary))',
+				'audio-warning': 'hsl(var(--audio-warning))',
+				'audio-success': 'hsl(var(--audio-success))',
 				primary: {
 					DEFAULT: 'hsl(var(--primary))',
 					foreground: 'hsl(var(--primary-foreground))'
