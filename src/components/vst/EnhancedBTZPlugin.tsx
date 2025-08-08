@@ -276,7 +276,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-8">
             <div className="relative">
-              <h1 className="text-6xl font-black text-transparent bg-gradient-to-r from-audio-primary to-audio-secondary bg-clip-text tracking-wider"
+              <h1 className="text-4xl font-black text-transparent bg-gradient-to-r from-audio-primary to-audio-secondary bg-clip-text tracking-wider"
                   style={{ 
                     filter: 'drop-shadow(0 0 20px hsl(var(--audio-primary) / 0.5))',
                     fontFamily: 'var(--font-display)'
@@ -287,8 +287,8 @@ export const EnhancedBTZPlugin: React.FC = () => {
                    style={{ boxShadow: '0 0 10px hsl(var(--audio-primary))' }}></div>
             </div>
             <div>
-              <h2 className="text-2xl font-bold text-foreground tracking-wide">BOX TONE ZONE</h2>
-              <h3 className="text-sm text-foreground/70 tracking-[0.3em] uppercase">Enhanced Audio Processor</h3>
+              <h2 className="text-lg font-bold text-foreground tracking-wide">BOX TONE ZONE</h2>
+              <h3 className="text-xs text-foreground/70 tracking-[0.2em] uppercase">Enhanced Audio Processor</h3>
             </div>
           </div>
           
@@ -362,14 +362,14 @@ export const EnhancedBTZPlugin: React.FC = () => {
             </div>
 
             {/* Main Controls - 5 Knobs with live visualization */}
-            <div className="grid grid-cols-5 gap-8 justify-items-center">
+            <div className="grid grid-cols-5 gap-4 justify-items-center max-w-4xl mx-auto">
               <ModernKnobWithSpectrum 
                 value={state.punch} 
                 onChange={(v) => updateParameter('punch', v)} 
                 label="PUNCH" 
                 min={0} 
                 max={1}
-                size="md"
+                size="sm"
                 spectrumData={meters.spectrumData.slice(0, 16)}
                 color="hsl(var(--audio-primary))"
               />
@@ -379,7 +379,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 label="WARMTH" 
                 min={0} 
                 max={1}
-                size="md"
+                size="sm"
                 spectrumData={meters.spectrumData.slice(16, 32)}
                 color="hsl(var(--audio-secondary))"
               />
