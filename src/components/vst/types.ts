@@ -7,4 +7,8 @@ export interface BTZPluginState {
   drive: number;
   active: boolean;
   oversampling: boolean;
+  lufsTarget?: number;
+  aiEnhance?: boolean;
+  timbralTransfer?: boolean;
+  oversamplingRate?: number;
 }
