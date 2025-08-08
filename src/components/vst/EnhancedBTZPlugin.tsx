@@ -9,7 +9,7 @@ import { ProcessingChainVisualizer } from './ProcessingChainVisualizer';
 import { AdvancedMeterPanel } from './AdvancedMeterPanel';
 import { BTZPluginState, EnhancedPreset } from './types';
 import { cn } from '@/lib/utils';
-import { PresetsSelect, PresetOption } from './PresetsSelect';
+import { PresetsSelect } from './PresetsSelect';
 import { PRO_STYLE_PRESETS } from './proStyles';
 import { Slider } from '@/components/ui/slider';
 import { makeBTZReducer } from '@/store/btzReducer';
@@ -143,7 +143,7 @@ function clampState(s: Partial<BTZPluginState>): Partial<BTZPluginState> {
 }
 
 export const EnhancedBTZPlugin: React.FC = () => {
-  const [state, dispatch] = React.useReducer(makeBTZReducer(DEFAULT_PRESET.state), DEFAULT_PRESET.state);
+  const [state, dispatch] = useReducer(makeBTZReducer(DEFAULT_PRESET.state), DEFAULT_PRESET.state);
   const [viewMode, setViewMode] = useState<'primary' | 'advanced' | 'engineering'>('primary');
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -230,7 +230,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
         let processedLevel = baseLevel * (1 + state.drive * 0.8) * state.mix;
 
         // Generate spectrum
-        const spectrumData = new Float32Array(64);
+        const spectrumData = prev.spectrumData; // reuse buffer
         for (let i = 0; i < 64; i++) {
           const freq = (i / 64) * 20000;
           let magnitude = Math.random() * 0.1;
@@ -242,7 +242,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
           spectrumData[i] = Math.max(0, Math.min(1, magnitude * (1 + state.drive * 0.3)));
         }
 
-        const waveformData = new Float32Array(128);
+        const waveformData = prev.waveformData; // reuse buffer
         for (let i = 0; i < 128; i++) {
           const tt = (i / 128) * Math.PI * 4;
           let wave = Math.sin(tt) * processedLevel * (0.8 + Math.random() * 0.4);
