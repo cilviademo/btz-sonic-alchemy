@@ -92,7 +92,7 @@ export const ModernKnobWithSpectrum: React.FC<ModernKnobWithSpectrumProps> = ({
   return (
     <div className="flex flex-col items-center gap-2 sm:gap-3 group">
       {/* Knob with Spectrum */}
-      <div className="relative">
+      <div className="relative pb-7 sm:pb-9">
         {/* Spectrum Ring Visualization */}
         <div className="absolute inset-0 rounded-full" style={{ transform: 'scale(1.2)' }}>
           <svg className="w-full h-full" viewBox="0 0 120 120">

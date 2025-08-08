@@ -11,6 +11,7 @@ import { BTZPluginState, EnhancedPreset } from './types';
 import { cn } from '@/lib/utils';
 import { PresetsSelect, PresetOption } from './PresetsSelect';
 import { PRO_STYLE_PRESETS } from './proStyles';
+import { Slider } from '@/components/ui/slider';
 
 const DEFAULT_PRESET: EnhancedPreset = {
   id: 'default',
@@ -418,7 +419,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
             </div>
 
             {/* Texture & Clipping Controls */}
-            <div className="flex justify-center items-center gap-8">
+            <div className="flex flex-wrap justify-center items-center gap-6 sm:gap-8">
               <ToggleButton 
                 value={state.texture} 
                 onChange={(v) => updateParameter('texture', v)} 
@@ -442,6 +443,23 @@ export const EnhancedBTZPlugin: React.FC = () => {
                     : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/70"
                 )}
               />
+            </div>
+
+            {/* Compact Blend control for primary view */}
+            <div className="w-full flex justify-center">
+              <div className="flex items-center gap-3 bg-plugin-surface/60 border border-foreground/10 rounded-xl px-4 py-3 mt-2">
+                <span className="text-[10px] sm:text-xs font-semibold tracking-wide text-foreground/80">CLIP BLEND</span>
+                <div className="w-40 sm:w-56">
+                  <Slider
+                    value={[Math.round(((state.clippingBlend ?? 0.5) * 100))]}
+                    onValueChange={(val) => updateParameter('clippingBlend', ((val?.[0] ?? 50) / 100))}
+                    max={100}
+                    step={1}
+                    disabled={!state.clippingEnabled}
+                  />
+                </div>
+                <span className="text-[10px] sm:text-xs font-mono w-10 text-right">{Math.round((state.clippingBlend ?? 0.5) * 100)}%</span>
+              </div>
             </div>
 
             {/* Presets */}
