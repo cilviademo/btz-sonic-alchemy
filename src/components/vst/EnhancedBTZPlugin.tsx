@@ -292,35 +292,63 @@ export const EnhancedBTZPlugin: React.FC = () => {
               />
             </div>
 
-            {/* Output Metering */}
-            <div className="bg-plugin-panel rounded-2xl p-6 border border-audio-primary/10">
+            {/* Output Metering - Hardware style display */}
+            <div className="bg-plugin-surface rounded-2xl p-6 border border-foreground/10"
+                 style={{
+                   background: `linear-gradient(145deg, hsl(220, 15%, 8%), hsl(220, 12%, 12%))`,
+                   boxShadow: `
+                     inset 0 2px 8px rgba(0,0,0,0.8),
+                     inset 0 -2px 4px rgba(255,255,255,0.05),
+                     0 8px 32px rgba(0,0,0,0.6)
+                   `
+                 }}>
               <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-foreground tracking-wide">OUTPUT ANALYSIS</h3>
+                <h3 className="text-lg font-bold text-foreground tracking-wide">OUTPUT</h3>
                 <div className="flex gap-6 text-sm font-mono">
                   <span>LUFS: <span className="text-audio-primary font-bold">{meters.lufsIntegrated.toFixed(1)}</span></span>
                   <span>Peak: <span className="text-audio-secondary font-bold">{meters.truePeak > 0 ? '+' : ''}{meters.truePeak.toFixed(1)}dB</span></span>
                 </div>
               </div>
               
-              {/* Waveform Display */}
-              <div className="h-20 bg-plugin-surface rounded-lg overflow-hidden relative">
+              {/* Waveform Display - Output style with dark background and colorful wave */}
+              <div className="h-24 rounded-lg overflow-hidden relative border border-foreground/20"
+                   style={{
+                     background: `linear-gradient(145deg, hsl(220, 20%, 4%), hsl(220, 15%, 8%))`,
+                     boxShadow: `inset 0 4px 12px rgba(0,0,0,0.9)`
+                   }}>
                 <svg className="w-full h-full">
                   <defs>
-                    <linearGradient id="waveformGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="hsl(var(--audio-primary))" stopOpacity="0.8"/>
-                      <stop offset="50%" stopColor="hsl(var(--audio-secondary))" stopOpacity="0.9"/>
-                      <stop offset="100%" stopColor="hsl(var(--audio-tertiary))" stopOpacity="0.8"/>
+                    <linearGradient id="outputWaveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                      <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.9"/>
+                      <stop offset="25%" stopColor="#8a2be2" stopOpacity="1"/>
+                      <stop offset="50%" stopColor="#ff1493" stopOpacity="1"/>
+                      <stop offset="75%" stopColor="#ff8c00" stopOpacity="1"/>
+                      <stop offset="100%" stopColor="#ffff00" stopOpacity="0.9"/>
                     </linearGradient>
                   </defs>
                   <polyline
-                    points={meters.waveformData.map((value, i) => 
-                      `${(i / meters.waveformData.length) * 100},${50 + value * 30}`
+                    points={Array.from(meters.waveformData).map((value, i) => 
+                      `${(i / meters.waveformData.length) * 100},${50 + value * 35}`
                     ).join(' ')}
                     fill="none"
-                    stroke="url(#waveformGrad)"
-                    strokeWidth="2"
-                    style={{ filter: 'drop-shadow(0 0 4px hsl(var(--audio-primary) / 0.5))' }}
+                    stroke="url(#outputWaveGrad)"
+                    strokeWidth="3"
+                    style={{ 
+                      filter: 'drop-shadow(0 0 8px #ff1493) drop-shadow(0 0 16px #8a2be2)',
+                      strokeLinecap: 'round',
+                      strokeLinejoin: 'round'
+                    }}
                   />
+                  
+                  {/* Grid lines for professional look */}
+                  <g stroke="rgba(255,255,255,0.05)" strokeWidth="1">
+                    <line x1="0" y1="25" x2="100" y2="25" />
+                    <line x1="0" y1="50" x2="100" y2="50" />
+                    <line x1="0" y1="75" x2="100" y2="75" />
+                    <line x1="25" y1="0" x2="25" y2="100" />
+                    <line x1="50" y1="0" x2="50" y2="100" />
+                    <line x1="75" y1="0" x2="75" y2="100" />
+                  </g>
                 </svg>
               </div>
             </div>

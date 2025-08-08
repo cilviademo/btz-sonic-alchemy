@@ -28,11 +28,11 @@ export const CentralVisualizer: React.FC<CentralVisualizerProps> = ({
     const centerY = height / 2;
     const baseRadius = Math.min(width, height) * 0.25;
 
-    // Clear canvas with gradient background
+    // Clear canvas with deep dark gradient background like Output interfaces
     const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, baseRadius * 2);
-    gradient.addColorStop(0, 'hsl(218 25% 12%)');
-    gradient.addColorStop(0.7, 'hsl(218 20% 8%)');
-    gradient.addColorStop(1, 'hsl(218 15% 6%)');
+    gradient.addColorStop(0, 'hsl(220, 25%, 8%)');
+    gradient.addColorStop(0.5, 'hsl(220, 20%, 5%)');
+    gradient.addColorStop(1, 'hsl(220, 15%, 2%)');
     
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, width, height);
@@ -77,18 +77,26 @@ export const CentralVisualizer: React.FC<CentralVisualizerProps> = ({
       }
     }
 
-    // Draw central waveform
+    // Draw central waveform with Output-style gradient colors
     if (waveformData.length > 0) {
-      ctx.strokeStyle = 'hsl(15, 85%, 55%)';
-      ctx.lineWidth = 2;
-      ctx.shadowColor = 'hsl(15, 85%, 55%)';
-      ctx.shadowBlur = 8;
+      // Create colorful gradient like in the reference images
+      const waveGradient = ctx.createLinearGradient(centerX - baseRadius, centerY, centerX + baseRadius, centerY);
+      waveGradient.addColorStop(0, '#00d4ff'); // Cyan
+      waveGradient.addColorStop(0.25, '#8a2be2'); // Purple
+      waveGradient.addColorStop(0.5, '#ff1493'); // Pink
+      waveGradient.addColorStop(0.75, '#ff8c00'); // Orange
+      waveGradient.addColorStop(1, '#ffff00'); // Yellow
+      
+      ctx.strokeStyle = waveGradient;
+      ctx.lineWidth = 4;
+      ctx.shadowColor = '#ff1493';
+      ctx.shadowBlur = 12;
       
       ctx.beginPath();
       
       for (let i = 0; i < waveformData.length; i++) {
         const angle = (i / waveformData.length) * Math.PI * 2;
-        const radius = baseRadius * 0.6 + waveformData[i] * 20;
+        const radius = baseRadius * 0.6 + waveformData[i] * 25;
         const x = centerX + Math.cos(angle) * radius;
         const y = centerY + Math.sin(angle) * radius;
         
@@ -138,12 +146,19 @@ export const CentralVisualizer: React.FC<CentralVisualizerProps> = ({
     <div className="relative">
       <canvas 
         ref={canvasRef}
-        width={320}
-        height={320}
-        className="rounded-full border-2 border-audio-primary/20"
+        width={380}
+        height={380}
+        className="rounded-full border-4 border-foreground/10"
         style={{
-          background: 'radial-gradient(circle, hsl(218 25% 12%), hsl(218 15% 6%))',
-          boxShadow: '0 0 40px hsl(var(--audio-primary) / 0.2), inset 0 0 40px hsl(218 15% 6%)'
+          background: `conic-gradient(from 0deg, 
+            hsl(220, 15%, 8%), hsl(220, 12%, 12%), hsl(220, 15%, 8%), 
+            hsl(220, 18%, 6%), hsl(220, 15%, 8%)
+          )`,
+          boxShadow: `
+            0 0 60px hsl(var(--audio-primary) / 0.3), 
+            inset 0 8px 32px rgba(0,0,0,0.8),
+            inset 0 -8px 16px rgba(255,255,255,0.05)
+          `
         }}
       />
       

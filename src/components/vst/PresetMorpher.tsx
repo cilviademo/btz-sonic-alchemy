@@ -24,7 +24,7 @@ export const PresetMorpher: React.FC<PresetMorpherProps> = ({
   const handleMorph = () => {
     if (!presetA || !presetB) return;
 
-    const morphedState: Partial<BTZPluginState> = {};
+    const morphedState: Record<string, any> = {};
     
     Object.keys(presetA.state).forEach(key => {
       const paramKey = key as keyof BTZPluginState;
@@ -36,11 +36,11 @@ export const PresetMorpher: React.FC<PresetMorpherProps> = ({
       const valueB = presetB.state[paramKey];
       
       if (typeof valueA === 'number' && typeof valueB === 'number') {
-        morphedState[paramKey] = valueA + (valueB - valueA) * morphAmount as any;
+        morphedState[paramKey] = valueA + (valueB - valueA) * morphAmount;
       } else if (typeof valueA === 'boolean' && typeof valueB === 'boolean') {
-        morphedState[paramKey] = morphAmount > 0.5 ? valueB : valueA as any;
+        morphedState[paramKey] = morphAmount > 0.5 ? valueB : valueA;
       } else {
-        morphedState[paramKey] = morphAmount > 0.5 ? valueB : valueA as any;
+        morphedState[paramKey] = morphAmount > 0.5 ? valueB : valueA;
       }
     });
 

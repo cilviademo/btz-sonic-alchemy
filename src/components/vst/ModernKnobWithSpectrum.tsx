@@ -130,22 +130,25 @@ export const ModernKnobWithSpectrum: React.FC<ModernKnobWithSpectrumProps> = ({
           </svg>
         </div>
 
-        {/* Main Knob */}
+        {/* Main Knob - Hardware-style metal finish */}
         <div
           ref={knobRef}
           onMouseDown={handleMouseDown}
           className={cn(
             'relative rounded-full cursor-pointer select-none transition-all duration-300',
-            'border-2 border-audio-primary/20',
+            'border border-foreground/20',
             sizeClasses[size],
             disabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95',
             isDragging && 'scale-105'
           )}
           style={{
-            background: `radial-gradient(circle at 30% 30%, ${color}40, ${color}20, hsl(var(--plugin-surface)))`,
+            background: `conic-gradient(from 0deg, 
+              hsl(220, 15%, 25%), hsl(220, 10%, 35%), hsl(220, 15%, 45%), 
+              hsl(220, 20%, 35%), hsl(220, 15%, 25%)
+            )`,
             boxShadow: isDragging 
-              ? `0 0 30px ${color}60, inset 0 4px 12px hsl(var(--plugin-surface))`
-              : `0 8px 25px ${color}30, inset 0 2px 8px hsl(var(--plugin-surface))`
+              ? `0 0 30px ${color}60, inset 0 4px 12px rgba(0,0,0,0.8), inset 0 -2px 6px rgba(255,255,255,0.1)`
+              : `0 8px 25px ${color}30, inset 0 4px 12px rgba(0,0,0,0.6), inset 0 -2px 6px rgba(255,255,255,0.15)`
           }}
         >
           {/* Center Dot */}
@@ -188,14 +191,15 @@ export const ModernKnobWithSpectrum: React.FC<ModernKnobWithSpectrumProps> = ({
             </svg>
           </div>
 
-          {/* Pointer Line */}
+          {/* Hardware-style Pointer */}
           <div
-            className="absolute top-3 left-1/2 w-1 origin-bottom transition-all duration-300 rounded-full"
+            className="absolute top-2 left-1/2 w-1 origin-bottom transition-all duration-300"
             style={{ 
               transform: `translateX(-50%) rotate(${angle}deg)`,
-              height: size === 'xl' ? '32px' : size === 'lg' ? '24px' : '20px',
-              background: `linear-gradient(to bottom, ${color}, ${color}80)`,
-              boxShadow: `0 0 6px ${color}`
+              height: size === 'xl' ? '28px' : size === 'lg' ? '20px' : '16px',
+              background: `linear-gradient(to bottom, rgba(255,255,255,0.9), rgba(255,255,255,0.7))`,
+              borderRadius: '2px',
+              boxShadow: `0 0 4px rgba(0,0,0,0.8), 0 0 8px ${color}80`
             }}
           />
         </div>
