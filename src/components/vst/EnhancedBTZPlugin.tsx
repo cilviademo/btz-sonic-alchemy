@@ -158,8 +158,10 @@ export const EnhancedBTZPlugin: React.FC = () => {
   }, [viewMode]);
 
   // Audio engine + analyser wiring
-  const { running: audioRunning, start: startAudio, stop: stopAudio, update: updateAudio, analyserOut } = require('@/hooks/useAudioEngine').useAudioEngine?.() ?? {} as any;
-  const analyserData = require('@/hooks/useAnalyser').useAnalyser?.(analyserOut, 60) ?? { spectrum: new Float32Array(64), waveform: new Float32Array(128), levelIn: 0, levelOut: 0 };
+  const audio = useAudioEngine();
+  const { running: audioRunning, start: startAudio, stop: stopAudio, update: updateAudio, analyserOut } = audio;
+  const analyserData = useAnalyser(analyserOut, 60);
+
 
   const [meters, setMeters] = useState({
     inputLevel: 0,
@@ -196,6 +198,17 @@ export const EnhancedBTZPlugin: React.FC = () => {
       isProcessing: (state.active ?? true) && !!audioRunning,
     }));
   }, [analyserOut, analyserData?.spectrum, analyserData?.waveform, analyserData?.levelIn, analyserData?.levelOut, audioRunning, state.active]);
+
+  // Push UI param changes into audio engine
+  useEffect(() => {
+    updateAudio?.({
+      mix: state.mix,
+      drive: state.drive,
+      active: state.active,
+      clippingType: state.clippingType,
+      clippingBlend: state.clippingBlend,
+    });
+  }, [state.mix, state.drive, state.active, state.clippingType, state.clippingBlend, updateAudio]);
 
   // Generate live audio visualization when no audio engine is active (fallback sim)
   useEffect(() => {
