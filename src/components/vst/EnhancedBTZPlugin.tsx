@@ -364,7 +364,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
             </div>
 
             {/* Main Controls - 5 Knobs with live visualization */}
-            <div className="grid grid-cols-5 gap-4 justify-items-center max-w-4xl mx-auto">
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 sm:gap-4 md:gap-6 gap-y-6 justify-items-center max-w-md sm:max-w-4xl mx-auto">
               <ModernKnobWithSpectrum 
                 value={state.punch} 
                 onChange={(v) => updateParameter('punch', v)} 
@@ -391,7 +391,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 label="BOOM" 
                 min={0} 
                 max={1}
-                size="md"
+                size="sm"
                 spectrumData={meters.spectrumData.slice(0, 8)}
                 color="hsl(var(--audio-tertiary))"
               />
@@ -401,7 +401,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 label="MIX" 
                 min={0} 
                 max={1}
-                size="md"
+                size="sm"
                 spectrumData={meters.spectrumData}
                 color="hsl(var(--audio-success))"
               />
@@ -411,7 +411,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 label="DRIVE" 
                 min={0} 
                 max={1}
-                size="md"
+                size="sm"
                 spectrumData={meters.spectrumData.slice(32, 48)}
                 color="hsl(var(--audio-warning))"
               />

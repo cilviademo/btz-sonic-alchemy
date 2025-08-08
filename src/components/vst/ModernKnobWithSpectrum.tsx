@@ -90,7 +90,7 @@ export const ModernKnobWithSpectrum: React.FC<ModernKnobWithSpectrumProps> = ({
   const { rings, radius } = sizeSpectrum[size];
   
   return (
-    <div className="flex flex-col items-center gap-3 group">
+    <div className="flex flex-col items-center gap-2 sm:gap-3 group">
       {/* Knob with Spectrum */}
       <div className="relative">
         {/* Spectrum Ring Visualization */}
@@ -205,14 +205,14 @@ export const ModernKnobWithSpectrum: React.FC<ModernKnobWithSpectrumProps> = ({
         </div>
 
         {/* Value Display */}
-        <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 text-xs font-mono font-bold"
+        <div className="absolute -bottom-6 sm:-bottom-8 left-1/2 transform -translate-x-1/2 text-xs font-mono font-bold"
              style={{ color: color }}>
           {formatValue(value)}{unit}
         </div>
       </div>
 
       {/* Label */}
-      <label className="text-sm font-bold text-foreground tracking-widest uppercase">
+      <label className="text-[10px] sm:text-xs font-bold text-foreground tracking-wide sm:tracking-widest uppercase">
         {label}
       </label>
     </div>
