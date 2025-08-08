@@ -146,18 +146,18 @@ export const CentralVisualizer: React.FC<CentralVisualizerProps> = ({
     <div className="relative">
       <canvas 
         ref={canvasRef}
-        width={380}
-        height={380}
-        className="rounded-full border-4 border-foreground/10"
+        width={280}
+        height={280}
+        className="rounded-full border-3 border-foreground/10"
         style={{
           background: `conic-gradient(from 0deg, 
             hsl(220, 15%, 8%), hsl(220, 12%, 12%), hsl(220, 15%, 8%), 
             hsl(220, 18%, 6%), hsl(220, 15%, 8%)
           )`,
           boxShadow: `
-            0 0 60px hsl(var(--audio-primary) / 0.3), 
-            inset 0 8px 32px rgba(0,0,0,0.8),
-            inset 0 -8px 16px rgba(255,255,255,0.05)
+            0 0 40px hsl(var(--audio-primary) / 0.3), 
+            inset 0 6px 24px rgba(0,0,0,0.8),
+            inset 0 -6px 12px rgba(255,255,255,0.05)
           `
         }}
       />

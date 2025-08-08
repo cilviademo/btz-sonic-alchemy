@@ -198,8 +198,8 @@ export const EnhancedBTZPlugin: React.FC = () => {
         {viewMode === 'primary' ? (
           // PRIMARY VIEW - Performance Mode
           <div className="space-y-12">
-            {/* Central Visualizer */}
-            <div className="flex justify-center">
+            {/* Central Visualizer - Smaller size to fit better */}
+            <div className="flex justify-center mb-6">
               <CentralVisualizer 
                 spectrumData={meters.spectrumData}
                 waveformData={meters.waveformData}
@@ -209,14 +209,14 @@ export const EnhancedBTZPlugin: React.FC = () => {
             </div>
 
             {/* Main Controls - 5 Knobs with live visualization */}
-            <div className="grid grid-cols-5 gap-12 justify-items-center">
+            <div className="grid grid-cols-5 gap-8 justify-items-center">
               <ModernKnobWithSpectrum 
                 value={state.punch} 
                 onChange={(v) => updateParameter('punch', v)} 
                 label="PUNCH" 
                 min={0} 
                 max={1}
-                size="xl"
+                size="md"
                 spectrumData={meters.spectrumData.slice(0, 16)}
                 color="hsl(var(--audio-primary))"
               />
@@ -226,7 +226,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 label="WARMTH" 
                 min={0} 
                 max={1}
-                size="xl"
+                size="md"
                 spectrumData={meters.spectrumData.slice(16, 32)}
                 color="hsl(var(--audio-secondary))"
               />
@@ -236,7 +236,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 label="BOOM" 
                 min={0} 
                 max={1}
-                size="xl"
+                size="md"
                 spectrumData={meters.spectrumData.slice(0, 8)}
                 color="hsl(var(--audio-tertiary))"
               />
@@ -246,32 +246,32 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 label="MIX" 
                 min={0} 
                 max={1}
-                size="xl"
+                size="md"
                 spectrumData={meters.spectrumData}
                 color="hsl(var(--audio-success))"
               />
               <ModernKnobWithSpectrum 
-              value={state.drive} 
-              onChange={(v) => updateParameter('drive', v)} 
-              label="DRIVE" 
-              min={0} 
-              max={1}
-              size="xl"
-              spectrumData={meters.spectrumData.slice(32, 48)}
-              color="hsl(var(--audio-warning))"
+                value={state.drive} 
+                onChange={(v) => updateParameter('drive', v)} 
+                label="DRIVE" 
+                min={0} 
+                max={1}
+                size="md"
+                spectrumData={meters.spectrumData.slice(32, 48)}
+                color="hsl(var(--audio-warning))"
               />
             </div>
 
             {/* Texture & Clipping Controls */}
-            <div className="flex justify-center items-center gap-12">
+            <div className="flex justify-center items-center gap-8">
               <ToggleButton 
                 value={state.texture} 
                 onChange={(v) => updateParameter('texture', v)} 
                 label="TEXTURE"
                 className={cn(
-                  "px-12 py-4 rounded-2xl border-2 font-bold text-lg transition-all duration-300",
+                  "px-8 py-3 rounded-xl border-2 font-bold text-sm transition-all duration-300",
                   state.texture 
-                    ? "bg-audio-tertiary border-audio-tertiary text-background shadow-[0_0_30px_hsl(var(--audio-tertiary))]" 
+                    ? "bg-audio-tertiary border-audio-tertiary text-background shadow-[0_0_20px_hsl(var(--audio-tertiary))]" 
                     : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/70"
                 )}
               />
