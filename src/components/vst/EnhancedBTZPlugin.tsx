@@ -9,6 +9,8 @@ import { ProcessingChainVisualizer } from './ProcessingChainVisualizer';
 import { AdvancedMeterPanel } from './AdvancedMeterPanel';
 import { BTZPluginState, EnhancedPreset } from './types';
 import { cn } from '@/lib/utils';
+import { PresetsSelect, PresetOption } from './PresetsSelect';
+import { PRO_STYLE_PRESETS } from './proStyles';
 
 const DEFAULT_PRESET: EnhancedPreset = {
   id: 'default',
@@ -443,11 +445,21 @@ export const EnhancedBTZPlugin: React.FC = () => {
             </div>
 
             {/* Presets */}
-            <div className="flex justify-center">
+            <div className="flex flex-col items-center gap-4">
               <PresetBrowser 
                 presets={PERFORMANCE_PRESETS}
                 onApplyPreset={applyPreset}
               />
+
+              {/* Pro Styles - Top 25 Influences */}
+              <div className="w-full max-w-xs">
+                <PresetsSelect 
+                  presets={PRO_STYLE_PRESETS as unknown as { id: string; label: string; state: Partial<BTZPluginState>; }[]}
+                  onApply={(preset) => {
+                    setState(prev => ({ ...prev, ...preset.state }));
+                  }}
+                />
+              </div>
             </div>
 
             {/* Output Metering - Hardware style display */}
