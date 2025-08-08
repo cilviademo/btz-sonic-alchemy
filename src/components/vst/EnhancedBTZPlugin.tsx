@@ -2,9 +2,9 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { ModernKnobWithSpectrum } from './ModernKnobWithSpectrum';
 import { ToggleButton } from './ToggleButton';
 import { CentralVisualizer } from './CentralVisualizer';
-import { ClippingControls } from './ClippingControls';
 import { PresetBrowser } from './PresetBrowser';
-import { AdvancedView } from './AdvancedView';
+import { AIAutomationPanel } from './AIAutomationPanel';
+import { EnhancedClippingControls } from './EnhancedClippingControls';
 import { BTZPluginState, EnhancedPreset } from './types';
 import { cn } from '@/lib/utils';
 
@@ -22,9 +22,16 @@ const DEFAULT_PRESET: EnhancedPreset = {
     oversampling: false,
     clippingType: 'soft',
     clippingBlend: 0.5,
+    clippingEnabled: false,
     lufsTarget: -14,
     aiEnhance: false,
     timbralTransfer: false,
+    aiAutomation: true,
+    gateThreshold: -40,
+    transientAmount: 0,
+    saturationAmount: 0,
+    subHarmonics: false,
+    consoleGlue: true,
     oversamplingRate: 4
   }
 };
@@ -34,22 +41,52 @@ const PERFORMANCE_PRESETS: EnhancedPreset[] = [
   {
     id: 'punchy-kick',
     label: 'Punchy Kick',
-    state: { punch: 0.8, warmth: 0.35, boom: 0.6, mix: 0.9, drive: 0.4, texture: false, active: true, oversampling: false, clippingType: 'hard', clippingBlend: 0.3 },
+    state: { 
+      punch: 0.8, warmth: 0.35, boom: 0.6, mix: 0.9, drive: 0.4, texture: false, 
+      active: true, oversampling: false, clippingType: 'hard', clippingBlend: 0.3, 
+      clippingEnabled: true, aiAutomation: true, gateThreshold: -35, transientAmount: 0.7,
+      saturationAmount: 0.2, subHarmonics: true, consoleGlue: true
+    },
   },
   {
     id: 'warm-vocal', 
     label: 'Warm Vocal',
-    state: { punch: 0.4, warmth: 0.8, boom: 0.2, mix: 0.95, drive: 0.3, texture: true, active: true, oversampling: false, clippingType: 'tube', clippingBlend: 0.6 },
+    state: { 
+      punch: 0.4, warmth: 0.8, boom: 0.2, mix: 0.95, drive: 0.3, texture: true, 
+      active: true, oversampling: false, clippingType: 'tube', clippingBlend: 0.6,
+      clippingEnabled: false, aiAutomation: true, gateThreshold: -45, transientAmount: 0.3,
+      saturationAmount: 0.6, subHarmonics: false, consoleGlue: true
+    },
   },
   {
     id: 'modern-master',
     label: 'Modern Master', 
-    state: { punch: 0.7, warmth: 0.5, boom: 0.4, mix: 0.9, drive: 0.6, texture: true, active: true, oversampling: false, clippingType: 'digital', clippingBlend: 0.4 },
+    state: { 
+      punch: 0.7, warmth: 0.5, boom: 0.4, mix: 0.9, drive: 0.6, texture: true, 
+      active: true, oversampling: false, clippingType: 'digital', clippingBlend: 0.4,
+      clippingEnabled: true, aiAutomation: true, gateThreshold: -30, transientAmount: 0.6,
+      saturationAmount: 0.4, subHarmonics: true, consoleGlue: true
+    },
   },
   {
     id: 'vintage-glue',
     label: 'Vintage Glue',
-    state: { punch: 0.5, warmth: 0.9, boom: 0.7, mix: 0.85, drive: 0.8, texture: true, active: true, oversampling: false, clippingType: 'tape', clippingBlend: 0.8 },
+    state: { 
+      punch: 0.5, warmth: 0.9, boom: 0.7, mix: 0.85, drive: 0.8, texture: true, 
+      active: true, oversampling: false, clippingType: 'tape', clippingBlend: 0.8,
+      clippingEnabled: true, aiAutomation: true, gateThreshold: -25, transientAmount: 0.4,
+      saturationAmount: 0.8, subHarmonics: true, consoleGlue: true
+    },
+  },
+  {
+    id: 'billboard-loud',
+    label: 'Billboard Loud',
+    state: { 
+      punch: 0.9, warmth: 0.6, boom: 0.5, mix: 1.0, drive: 0.9, texture: false, 
+      active: true, oversampling: true, clippingType: 'soft', clippingBlend: 0.7,
+      clippingEnabled: true, aiAutomation: true, gateThreshold: -20, transientAmount: 0.8,
+      saturationAmount: 0.3, subHarmonics: true, consoleGlue: true, lufsTarget: -6
+    },
   }
 ];
 
@@ -63,10 +100,17 @@ export const EnhancedBTZPlugin: React.FC = () => {
     waveformData: new Float32Array(128),
     lufsIntegrated: -14.2,
     truePeak: -2.1,
-    isProcessing: false
+    isProcessing: false,
+    analysisData: {
+      transientStrength: 0,
+      lowEndEnergy: 0,
+      loudnessScore: 0,
+      richness: 0,
+      spectralCentroid: 1000
+    }
   });
 
-  // Generate live audio visualization data
+  // Generate live audio visualization data with AI analysis
   useEffect(() => {
     const interval = setInterval(() => {
       if (!state.active) {
@@ -75,7 +119,58 @@ export const EnhancedBTZPlugin: React.FC = () => {
       }
 
       const baseLevel = 0.2 + Math.random() * 0.5;
-      const processedLevel = baseLevel * (1 + state.drive * 0.8) * state.mix;
+      let processedLevel = baseLevel * (1 + state.drive * 0.8) * state.mix;
+      
+      // AI Analysis simulation (DeepFilterNet + Neutone style)
+      const transientStrength = Math.min(1, baseLevel * 2 * (state.punch + 0.3));
+      const lowEndEnergy = Math.min(1, baseLevel * 1.5 * (state.boom + 0.2));  
+      const richness = Math.min(1, (state.warmth + (state.texture ? 0.3 : 0)) * 1.2);
+      const loudnessScore = Math.min(1, processedLevel * 1.1);
+      const spectralCentroid = 1000 + richness * 3000; // Hz
+      
+      // AI Automation - adjust parameters based on analysis
+      if (state.aiAutomation) {
+        // Auto-adjust drive based on loudness target
+        if (state.lufsTarget && state.lufsTarget < -10) {
+          const targetGain = (-10 - state.lufsTarget) / 10; // More aggressive for loud targets
+          processedLevel *= (1 + targetGain * 0.3);
+        }
+        
+        // FL Studio style clipping simulation
+        if (state.clippingEnabled) {
+          const clippingAmount = (state.clippingBlend || 0.5) * 0.4;
+          const threshold = 0.8;
+          
+          if (processedLevel > threshold) {
+            const excess = processedLevel - threshold;
+            let clippedExcess;
+            
+            switch (state.clippingType) {
+              case 'soft':
+                // FL Studio style soft limiting (tanh-based)
+                clippedExcess = Math.tanh(excess * 3) / 3;
+                break;
+              case 'hard':
+                clippedExcess = Math.min(excess, 0.15);
+                break;
+              case 'tube':
+                clippedExcess = excess * Math.pow(Math.E, -excess * 2);
+                break;
+              case 'tape':
+                clippedExcess = excess / (1 + excess * 1.5);
+                break;
+              case 'digital':
+                clippedExcess = excess * 0.7;
+                break;
+              default:
+                clippedExcess = Math.tanh(excess * 2) / 2;
+            }
+            
+            const clipped = threshold + clippedExcess;
+            processedLevel = processedLevel * (1 - clippingAmount) + clipped * clippingAmount;
+          }
+        }
+      }
       
       // Generate realistic spectrum for each processing stage
       const spectrumData = new Float32Array(64);
@@ -85,19 +180,26 @@ export const EnhancedBTZPlugin: React.FC = () => {
         const freq = (i / 64) * 20000;
         let magnitude = Math.random() * 0.1;
         
-        // Shape spectrum based on controls
-        if (freq < 200) magnitude += state.boom * 0.6;
-        if (freq > 80 && freq < 800) magnitude += state.punch * 0.5;
-        if (freq > 1000 && freq < 8000) magnitude += state.warmth * 0.4;
+        // Shape spectrum based on controls and AI analysis
+        if (freq < 200) magnitude += state.boom * 0.6 + (lowEndEnergy * 0.2);
+        if (freq > 80 && freq < 800) magnitude += state.punch * 0.5 + (transientStrength * 0.3);
+        if (freq > 1000 && freq < 8000) magnitude += state.warmth * 0.4 + (richness * 0.2);
         if (freq > 8000) magnitude += state.texture ? 0.3 : 0.1;
+        if (state.clippingEnabled) magnitude += 0.1; // Harmonic content from clipping
         
         spectrumData[i] = Math.max(0, Math.min(1, magnitude * (1 + state.drive * 0.3)));
       }
       
-      // Generate waveform
+      // Generate waveform with more character
       for (let i = 0; i < 128; i++) {
         const t = (i / 128) * Math.PI * 4;
-        waveformData[i] = Math.sin(t) * processedLevel * (0.8 + Math.random() * 0.4);
+        let wave = Math.sin(t) * processedLevel * (0.8 + Math.random() * 0.4);
+        
+        // Add harmonic content from processing
+        wave += Math.sin(t * 2) * state.warmth * 0.1 * processedLevel;
+        wave += Math.sin(t * 3) * (state.texture ? 0.05 : 0) * processedLevel;
+        
+        waveformData[i] = wave;
       }
 
       setMeters({
@@ -105,9 +207,16 @@ export const EnhancedBTZPlugin: React.FC = () => {
         outputLevel: processedLevel,
         spectrumData,
         waveformData,
-        lufsIntegrated: state.lufsTarget + (Math.random() - 0.5) * 1.5,
-        truePeak: Math.max(-1.0, state.lufsTarget + 10 + (Math.random() - 0.5) * 2),
-        isProcessing: processedLevel > 0.1
+        lufsIntegrated: (state.lufsTarget || -14) + (Math.random() - 0.5) * 2,
+        truePeak: Math.max(-1.0, (state.lufsTarget || -14) + 12 + (Math.random() - 0.5) * 3),
+        isProcessing: processedLevel > 0.1,
+        analysisData: {
+          transientStrength,
+          lowEndEnergy,
+          loudnessScore,
+          richness,
+          spectralCentroid
+        }
       });
     }, 60);
 
@@ -276,11 +385,16 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 )}
               />
               
-              <ClippingControls 
-                type={state.clippingType || 'soft'}
-                blend={state.clippingBlend || 0.5}
-                onTypeChange={(type) => updateParameter('clippingType', type)}
-                onBlendChange={(blend) => updateParameter('clippingBlend', blend)}
+              <ToggleButton 
+                value={!!state.clippingEnabled} 
+                onChange={(v) => updateParameter('clippingEnabled', v)} 
+                label="FL CLIPPER"
+                className={cn(
+                  "px-8 py-3 rounded-xl border-2 font-bold text-sm transition-all duration-300",
+                  state.clippingEnabled 
+                    ? "bg-audio-warning border-audio-warning text-background shadow-[0_0_20px_hsl(var(--audio-warning))]" 
+                    : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/70"
+                )}
               />
             </div>
 
@@ -355,13 +469,20 @@ export const EnhancedBTZPlugin: React.FC = () => {
           </div>
         ) : (
           // ADVANCED VIEW - Sound Design Mode
-          <AdvancedView 
-            state={state}
-            updateParameter={updateParameter}
-            meters={meters}
-            onApplyPreset={applyPreset}
-            presets={PERFORMANCE_PRESETS}
-          />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            {/* AI Automation Panel */}
+            <AIAutomationPanel 
+              state={state}
+              updateParameter={updateParameter}
+              analysisData={meters.analysisData}
+            />
+            
+            {/* Enhanced Clipping Controls */}
+            <EnhancedClippingControls 
+              state={state}
+              updateParameter={updateParameter}
+            />
+          </div>
         )}
       </div>
     </div>

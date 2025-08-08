@@ -13,6 +13,13 @@ export interface BTZPluginState {
   oversamplingRate?: number;
   clippingType?: 'soft' | 'hard' | 'tube' | 'tape' | 'digital';
   clippingBlend?: number;
+  clippingEnabled?: boolean;
+  aiAutomation?: boolean;
+  gateThreshold?: number;
+  transientAmount?: number;
+  saturationAmount?: number;
+  subHarmonics?: boolean;
+  consoleGlue?: boolean;
 }
 
 export interface EnhancedPreset {
