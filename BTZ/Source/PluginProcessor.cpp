@@ -1,6 +1,30 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+BTZAudioProcessor::BTZAudioProcessor() 
+    : AudioProcessor(BusesProperties()
+                     .withInput("Input", juce::AudioChannelSet::stereo(), true)
+                     .withOutput("Output", juce::AudioChannelSet::stereo(), true))
+{
+    // Initialize parameters
+    addParameter(punchParam = new juce::AudioParameterFloat("punch", "Punch", 0.0f, 1.0f, 0.5f));
+    addParameter(warmthParam = new juce::AudioParameterFloat("warmth", "Warmth", 0.0f, 1.0f, 0.4f));
+    addParameter(boomParam = new juce::AudioParameterFloat("boom", "Boom", 0.0f, 1.0f, 0.3f));
+    addParameter(mixParam = new juce::AudioParameterFloat("mix", "Mix", 0.0f, 1.0f, 0.8f));
+    addParameter(driveParam = new juce::AudioParameterFloat("drive", "Drive", 0.0f, 12.0f, 0.5f));
+    addParameter(textureParam = new juce::AudioParameterFloat("texture", "Texture", 0.0f, 1.0f, 0.0f));
+    addParameter(oversamplingParam = new juce::AudioParameterFloat("oversampling", "Oversampling", 0.0f, 1.0f, 1.0f));
+    addParameter(lufsTargetParam = new juce::AudioParameterFloat("lufs_target", "LUFS Target", -30.0f, 0.0f, -8.0f));
+    
+    #ifdef BTZ_WITH_ML
+    addParameter(aiEnhanceParam = new juce::AudioParameterFloat("ai_enhance", "AI Enhance", 0.0f, 1.0f, 0.0f));
+    addParameter(timbralTransferParam = new juce::AudioParameterFloat("timbral_transfer", "Timbral Transfer", 0.0f, 1.0f, 0.0f));
+    #endif
+}
+
+BTZAudioProcessor::~BTZAudioProcessor() = default;
+#include "PluginEditor.h"
+
 BTZAudioProcessor::BTZAudioProcessor() {
     // Soft clipper function
     softClipper.functionToUse = [](float x) { return std::tanh(x * 0.8f) / 0.8f; };

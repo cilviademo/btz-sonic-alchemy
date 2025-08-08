@@ -38,14 +38,15 @@ const PRESETS: PresetOption[] = [
 
 interface PresetsSelectProps {
   onApply: (preset: PresetOption) => void;
+  presets?: PresetOption[];
 }
 
-export const PresetsSelect: React.FC<PresetsSelectProps> = ({ onApply }) => {
+export const PresetsSelect: React.FC<PresetsSelectProps> = ({ onApply, presets = PRESETS }) => {
   return (
     <div className="min-w-[180px]">
       <Select
         onValueChange={(val) => {
-          const p = PRESETS.find((x) => x.id === val);
+          const p = presets.find((x) => x.id === val);
           if (p) onApply(p);
         }}
       >
@@ -53,7 +54,7 @@ export const PresetsSelect: React.FC<PresetsSelectProps> = ({ onApply }) => {
           <SelectValue placeholder="Presets" />
         </SelectTrigger>
         <SelectContent>
-          {PRESETS.map((p) => (
+          {presets.map((p) => (
             <SelectItem key={p.id} value={p.id}>
               {p.label}
             </SelectItem>
