@@ -11,4 +11,12 @@ export interface BTZPluginState {
   aiEnhance?: boolean;
   timbralTransfer?: boolean;
   oversamplingRate?: number;
+  clippingType?: 'soft' | 'hard' | 'tube' | 'tape' | 'digital';
+  clippingBlend?: number;
+}
+
+export interface EnhancedPreset {
+  id: string;
+  label: string;
+  state: BTZPluginState;
 }
