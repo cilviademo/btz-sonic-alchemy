@@ -9,7 +9,7 @@ interface ModernKnobProps {
   step?: number;
   label: string;
   unit?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
   disabled?: boolean;
   spectrum?: number[]; // For spectrum visualization around knob
 }
@@ -37,7 +37,8 @@ export const ModernKnob: React.FC<ModernKnobProps> = ({
   const sizeClasses = {
     sm: 'w-12 h-12',
     md: 'w-16 h-16', 
-    lg: 'w-20 h-20'
+    lg: 'w-20 h-20',
+    xl: 'w-28 h-28'
   };
 
   const handleMouseDown = (e: React.MouseEvent) => {
@@ -110,67 +111,42 @@ export const ModernKnob: React.FC<ModernKnobProps> = ({
           ref={knobRef}
           onMouseDown={handleMouseDown}
           className={cn(
-            'relative rounded-full cursor-pointer select-none transition-all duration-200',
-            'bg-gradient-to-br from-plugin-raised to-plugin-highlight',
-            'shadow-[var(--shadow-depth)] hover:shadow-[var(--glow-active)]',
-            'border-2 border-plugin-highlight/20',
+            'relative rounded-full cursor-pointer select-none transition-all duration-300',
+            'shadow-[var(--shadow-knob)] hover:shadow-[var(--glow-accent)]',
+            'border border-knob-shadow',
             sizeClasses[size],
             disabled ? 'opacity-50 cursor-not-allowed' : 'hover:scale-105 active:scale-95',
-            isDragging && 'scale-105 shadow-[var(--glow-active)]'
+            isDragging && 'scale-105 shadow-[var(--shadow-knob-pressed)]'
           )}
           style={{
-            background: normalizedValue > 0.7 ? 'var(--gradient-active)' : 'var(--gradient-knob)'
+            background: 'var(--gradient-knob)',
+            boxShadow: isDragging ? 'var(--shadow-knob-pressed)' : 'var(--shadow-knob)'
           }}
         >
           {/* Center Dot */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <div className="w-2 h-2 rounded-full bg-foreground/80 shadow-sm" />
+            <div className="w-1 h-1 rounded-full bg-background/90" />
           </div>
-
-          {/* Value Arc */}
-          <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
-            <circle
-              cx="50"
-              cy="50"
-              r="35"
-              fill="none"
-              stroke="hsl(var(--plugin-surface))"
-              strokeWidth="4"
-              strokeDasharray={`${270 * 2.199} ${1000}`}
-              strokeDashoffset="0"
-              opacity="0.3"
-            />
-            <circle
-              cx="50"
-              cy="50"
-              r="35"
-              fill="none"
-              stroke={`hsl(var(--audio-primary))`}
-              strokeWidth="4"
-              strokeDasharray={`${normalizedValue * 270 * 2.199} ${1000}`}
-              strokeDashoffset="0"
-              className="transition-all duration-200"
-              style={{
-                filter: normalizedValue > 0.1 ? 'drop-shadow(0 0 4px hsl(var(--audio-primary) / 0.6))' : 'none'
-              }}
-            />
-          </svg>
 
           {/* Pointer Line */}
           <div
-            className="absolute top-2 left-1/2 w-0.5 h-4 bg-foreground/90 origin-bottom transition-all duration-200"
-            style={{ transform: `translateX(-50%) rotate(${angle}deg)` }}
+            className="absolute top-3 left-1/2 w-0.5 origin-bottom transition-all duration-300 rounded-full"
+            style={{ 
+              transform: `translateX(-50%) rotate(${angle}deg)`,
+              height: size === 'xl' ? '24px' : size === 'lg' ? '16px' : '12px',
+              background: 'linear-gradient(to bottom, hsl(var(--background)), hsl(var(--background)/0.8))'
+            }}
           />
         </div>
 
         {/* Value Display */}
-        <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 text-xs font-mono text-audio-primary font-medium">
+        <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 text-xs font-mono text-foreground/90 font-medium">
           {formatValue(value)}{unit}
         </div>
       </div>
 
       {/* Label */}
-      <label className="text-xs font-medium text-foreground/70 uppercase tracking-wider">
+      <label className="text-xs font-bold text-foreground tracking-widest uppercase mt-2">
         {label}
       </label>
     </div>

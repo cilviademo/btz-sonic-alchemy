@@ -2,49 +2,58 @@
 @tailwind components;
 @tailwind utilities;
 
-/* BTZ VST Plugin Design System - Professional Audio Interface */
+/* BTZ VST Plugin Design System - Output-Style Modern Interface */
 
 @layer base {
   :root {
-    /* Dark plugin background */
-    --background: 215 25% 8%;
-    --foreground: 210 20% 95%;
+    /* Modern dark background with warmth */
+    --background: 220 30% 6%;
+    --foreground: 35 20% 95%;
 
-    /* Plugin surface colors */
-    --plugin-surface: 215 25% 12%;
-    --plugin-panel: 215 25% 16%;
-    --plugin-raised: 215 25% 20%;
+    /* Plugin surface colors with modern gradients */
+    --plugin-surface: 220 25% 10%;
+    --plugin-panel: 220 20% 12%;
+    --plugin-raised: 220 15% 18%;
     
-    /* Control colors */
-    --knob-background: 215 25% 14%;
-    --knob-accent: 195 85% 55%;
-    --knob-active: 195 85% 65%;
+    /* Modern knob colors - cream/beige with gradients */
+    --knob-background: 35 35% 75%;
+    --knob-face: 35 25% 82%;
+    --knob-shadow: 35 45% 65%;
+    --knob-accent: 180 100% 50%;
+    --knob-active: 45 100% 60%;
     
-    /* Professional audio colors */
-    --audio-primary: 195 85% 55%; /* Bright cyan */
-    --audio-primary-glow: 195 85% 65%;
-    --audio-secondary: 280 85% 65%; /* Purple accent */
-    --audio-warning: 25 95% 60%; /* Orange/red for clipping */
-    --audio-success: 130 85% 55%; /* Green for good levels */
+    /* Output-style vibrant colors */
+    --audio-primary: 180 100% 50%; /* Electric cyan */
+    --audio-primary-glow: 180 100% 60%;
+    --audio-secondary: 300 85% 65%; /* Vibrant magenta */
+    --audio-tertiary: 45 100% 60%; /* Electric yellow */
+    --audio-warning: 15 100% 55%; /* Neon orange */
+    --audio-success: 120 100% 45%; /* Electric green */
     
-    /* Gradients for depth */
-    --gradient-knob: linear-gradient(135deg, hsl(215 25% 18%), hsl(215 25% 10%));
-    --gradient-panel: linear-gradient(180deg, hsl(215 25% 16%), hsl(215 25% 12%));
-    --gradient-button: linear-gradient(135deg, hsl(195 85% 55%), hsl(195 85% 45%));
+    /* Modern gradients with neon touches */
+    --gradient-main: linear-gradient(135deg, hsl(220 30% 6%), hsl(220 25% 10%));
+    --gradient-panel: linear-gradient(145deg, hsl(220 20% 12%), hsl(220 25% 8%));
+    --gradient-knob: linear-gradient(135deg, hsl(35 25% 82%), hsl(35 35% 75%));
+    --gradient-knob-shadow: linear-gradient(315deg, hsl(35 45% 65%), hsl(35 35% 70%));
+    --gradient-button: linear-gradient(135deg, hsl(180 100% 50%), hsl(180 100% 40%));
+    --gradient-accent: linear-gradient(90deg, hsl(180 100% 50%), hsl(300 85% 65%), hsl(45 100% 60%));
     
-    /* Shadows and glows */
-    --shadow-panel: 0 8px 32px hsl(215 25% 4% / 0.6);
-    --shadow-knob: inset 0 2px 4px hsl(215 25% 8% / 0.8), 0 2px 8px hsl(215 25% 4% / 0.4);
-    --glow-active: 0 0 20px hsl(195 85% 55% / 0.4);
-    --glow-accent: 0 0 12px hsl(195 85% 55% / 0.6);
+    /* Modern shadows and glows */
+    --shadow-panel: 0 12px 40px hsl(220 30% 2% / 0.8), 0 4px 16px hsl(220 25% 4% / 0.6);
+    --shadow-knob: 0 6px 20px hsl(35 45% 50% / 0.3), inset 0 1px 3px hsl(35 25% 95% / 0.8);
+    --shadow-knob-pressed: inset 0 3px 8px hsl(35 45% 50% / 0.4), 0 2px 8px hsl(35 45% 50% / 0.2);
+    --glow-primary: 0 0 25px hsl(180 100% 50% / 0.4), 0 0 50px hsl(180 100% 50% / 0.2);
+    --glow-accent: 0 0 20px hsl(180 100% 50% / 0.6);
+    --glow-neon: 0 0 10px currentColor, 0 0 20px currentColor, 0 0 30px currentColor;
     
     /* Typography */
     --font-display: 'Inter', system-ui, sans-serif;
     --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
     
-    /* Animations */
-    --transition-smooth: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    --transition-bounce: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    /* Smooth animations */
+    --transition-smooth: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+    --transition-bounce: all 0.4s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    --transition-glow: all 0.3s ease-out;
 
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;

@@ -6,6 +6,7 @@ interface ToggleButtonProps {
   onChange: (value: boolean) => void;
   label: string;
   disabled?: boolean;
+  className?: string;
 }
 
 export const ToggleButton: React.FC<ToggleButtonProps> = ({
@@ -13,6 +14,7 @@ export const ToggleButton: React.FC<ToggleButtonProps> = ({
   onChange,
   label,
   disabled = false,
+  className,
 }) => {
   return (
     <button
@@ -25,7 +27,8 @@ export const ToggleButton: React.FC<ToggleButtonProps> = ({
           ? 'bg-gradient-to-br from-audio-primary to-audio-primary-glow border-audio-primary text-background shadow-[var(--glow-active)]'
           : 'bg-plugin-panel border-plugin-raised text-foreground hover:border-audio-primary/50',
         disabled && 'opacity-50 cursor-not-allowed',
-        !disabled && 'cursor-pointer hover:scale-105 active:scale-95'
+        !disabled && 'cursor-pointer hover:scale-105 active:scale-95',
+        className
       )}
     >
       <div className="flex items-center gap-2">

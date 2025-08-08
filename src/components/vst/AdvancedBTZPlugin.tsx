@@ -123,221 +123,249 @@ export const AdvancedBTZPlugin: React.FC = () => {
     setState(prev => ({ ...prev, ...preset.state }));
   }, []);
 
+  const [showPresets, setShowPresets] = useState(false);
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-plugin-surface via-plugin-panel to-plugin-surface">
-      {/* Modern Header */}
-      <header className="bg-gradient-to-r from-plugin-panel to-plugin-raised border-b border-plugin-highlight p-4 shadow-[var(--shadow-depth)]">
-        <div className="flex items-center justify-between flex-wrap gap-4">
+    <div className="w-full max-w-5xl mx-auto rounded-3xl border border-plugin-raised/50 overflow-hidden backdrop-blur-sm"
+         style={{ 
+           background: 'var(--gradient-main)',
+           boxShadow: 'var(--shadow-panel)'
+         }}>
+      
+      {/* Header */}
+      <div className="relative border-b border-plugin-raised/30 p-6">
+        <div className="flex items-center justify-between">
           <div className="flex items-center gap-6">
-            <div className="flex flex-col">
-              <h1 className="text-2xl font-bold bg-gradient-to-r from-audio-primary to-audio-primary-glow bg-clip-text text-transparent font-display">
-                BTZ — Box Tone Zone Enhancer
-              </h1>
-              <p className="text-sm text-foreground/60">
-                Neural-Enhanced Drum Tone Sculptor • v2.0 Pro
-              </p>
-            </div>
-            
-            {/* AI Status */}
-            <div className="flex items-center gap-3 bg-plugin-surface/50 rounded-lg px-3 py-2 border border-plugin-raised">
-              <div className={cn(
-                'w-2 h-2 rounded-full transition-all duration-200',
-                meters.isProcessing 
-                  ? 'bg-audio-success shadow-[var(--glow-accent)]' 
-                  : 'bg-foreground/30'
-              )} />
-              <div className="text-xs">
-                <div className="text-foreground/70">AI Engine</div>
-                <div className="text-audio-success font-medium">
-                  {state.aiEnhance ? 'Neural' : 'Classic'} • {state.oversamplingRate}x OS
-                </div>
-              </div>
+            <h1 className="text-5xl font-bold text-foreground tracking-wider" 
+                style={{ textShadow: '0 0 20px hsl(var(--audio-primary) / 0.3)' }}>
+              BTZ
+            </h1>
+            <div className="text-right">
+              <h2 className="text-xl font-medium text-foreground/90 tracking-wide">BOX TONE ZONE</h2>
+              <h3 className="text-sm text-foreground/70 tracking-widest">ENHANCER</h3>
             </div>
           </div>
-
-          <div className="flex items-center gap-4">
+          
+          {/* Status Controls */}
+          <div className="flex items-center gap-3">
             <ToggleButton 
               value={state.active} 
               onChange={(v) => updateParameter('active', v)} 
-              label={state.active ? 'ACTIVE' : 'BYPASS'} 
+              label="POWER"
+              className={cn(
+                "text-xs px-6 py-3 rounded-lg border transition-all duration-300",
+                state.active 
+                  ? "bg-audio-primary border-audio-primary text-background font-bold" 
+                  : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/70"
+              )}
             />
-            <ToggleButton 
-              value={state.oversampling} 
-              onChange={(v) => updateParameter('oversampling', v)} 
-              label={state.oversampling ? `HQ ${state.oversamplingRate}x` : 'HQ OFF'} 
-            />
-            <PresetsSelect onApply={applyPreset} presets={STREAMING_PRESETS} />
           </div>
         </div>
-      </header>
+        
+        {/* Gradient separator */}
+        <div className="absolute bottom-0 left-6 right-6 h-px bg-gradient-to-r from-transparent via-audio-primary/30 to-transparent"></div>
+      </div>
 
       {/* Main Content */}
-      <div className="p-6 space-y-6">
-        {/* Top Row - Meters & Spectrum */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Input/Output Meters */}
-          <div className="bg-gradient-to-br from-plugin-panel to-plugin-raised rounded-xl p-4 border border-plugin-highlight shadow-[var(--shadow-depth)]">
-            <h3 className="text-sm font-semibold text-foreground/80 mb-4 text-center">I/O LEVELS</h3>
-            <div className="flex justify-center gap-8">
-              <ModernVUMeter 
-                level={meters.inputLevel} 
-                peak={meters.inputPeak}
-                label="INPUT" 
-                size="md"
-                showPeakHold
-              />
-              <ModernVUMeter 
-                level={meters.outputLevel} 
-                peak={meters.outputPeak}
-                label="OUTPUT" 
-                size="md"
-                showPeakHold
-              />
-            </div>
-          </div>
-
-          {/* Spectrum Analyzer */}
-          <div className="lg:col-span-2">
-            <div className="bg-gradient-to-br from-plugin-panel to-plugin-raised rounded-xl p-4 border border-plugin-highlight shadow-[var(--shadow-depth)]">
-              <div className="flex justify-between items-center mb-4">
-                <h3 className="text-sm font-semibold text-foreground/80">REAL-TIME SPECTRUM</h3>
-                <div className="flex gap-2">
-                  <button className="px-2 py-1 text-xs bg-plugin-surface/80 text-foreground/70 rounded border border-plugin-raised hover:bg-plugin-raised transition-colors">
-                    PRE
-                  </button>
-                  <button className="px-2 py-1 text-xs bg-audio-primary/20 text-audio-primary rounded border border-audio-primary/30">
-                    POST
-                  </button>
-                </div>
-              </div>
-              <SpectrumAnalyzer 
-                fftData={meters.spectrumData}
-                width={500}
-                height={150}
-                colorMode="rainbow"
-                showFreqLabels
-                showGrid
-              />
-            </div>
-          </div>
-        </div>
-
-        {/* Main Controls */}
-        <div className="bg-gradient-to-br from-plugin-panel to-plugin-raised rounded-xl p-6 border border-plugin-highlight shadow-[var(--shadow-depth)]">
-          <h2 className="text-lg font-semibold text-foreground/80 mb-6 text-center">TONE SCULPTING CONTROLS</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-8">
+      <div className="p-8 space-y-12">
+        
+        {/* Main Controls - Clean 5-knob layout matching reference */}
+        <section className="space-y-12">
+          {/* Top Row - 5 Main Knobs */}
+          <div className="grid grid-cols-5 gap-8 justify-items-center">
             <ModernKnob 
               value={state.punch} 
               onChange={(v) => updateParameter('punch', v)} 
-              min={0} max={1} 
               label="PUNCH" 
-              size="lg"
-              spectrum={meters.spectrumData ? Array.from(meters.spectrumData.slice(0, 32)) : []}
+              min={0} 
+              max={1} 
+              size="xl" 
             />
             <ModernKnob 
               value={state.warmth} 
               onChange={(v) => updateParameter('warmth', v)} 
-              min={0} max={1} 
               label="WARMTH" 
-              size="lg"
+              min={0} 
+              max={1} 
+              size="xl" 
             />
             <ModernKnob 
               value={state.boom} 
               onChange={(v) => updateParameter('boom', v)} 
-              min={0} max={1} 
               label="BOOM" 
-              size="lg"
+              min={0} 
+              max={1} 
+              size="xl" 
             />
             <ModernKnob 
               value={state.mix} 
               onChange={(v) => updateParameter('mix', v)} 
-              min={0} max={1} 
               label="MIX" 
-              size="lg"
+              min={0} 
+              max={1} 
+              size="xl" 
             />
             <ModernKnob 
               value={state.drive} 
               onChange={(v) => updateParameter('drive', v)} 
-              min={0} max={12} 
               label="DRIVE" 
-              unit="dB"
-              size="lg"
+              min={0} 
+              max={12} 
+              unit="dB" 
+              size="xl" 
             />
-            <div className="flex flex-col items-center justify-center gap-4">
+          </div>
+          
+          {/* Second Row - Drive & Texture (matching reference layout) */}
+          <div className="grid grid-cols-5 gap-8 justify-items-center items-center">
+            <div className="col-start-3 flex flex-col items-center">
+              <ModernKnob 
+                value={state.drive * 0.8} 
+                onChange={(v) => updateParameter('drive', v / 0.8)} 
+                label="DRIVE" 
+                min={0} 
+                max={15} 
+                unit="dB" 
+                size="lg" 
+              />
+            </div>
+            <div className="col-start-5 flex flex-col items-center">
               <ToggleButton 
                 value={state.texture} 
                 onChange={(v) => updateParameter('texture', v)} 
-                label="TEXTURE" 
+                label="TEXTURE"
+                className={cn(
+                  "text-sm px-10 py-4 rounded-lg border-2 transition-all duration-300 font-bold tracking-wide",
+                  state.texture 
+                    ? "bg-audio-tertiary border-audio-tertiary text-background" 
+                    : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/70"
+                )}
               />
-              <p className="text-xs text-foreground/50 text-center">Air + Micro Room</p>
             </div>
           </div>
+        </section>
+
+        {/* Separator Line with gradient glow */}
+        <div className="h-px bg-gradient-to-r from-transparent via-audio-primary/50 to-transparent"
+             style={{ boxShadow: '0 0 10px hsl(var(--audio-primary) / 0.3)' }}>
         </div>
 
-        {/* Bottom Row - Advanced Controls & Metering */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* AI Controls */}
-          <div className="bg-gradient-to-br from-plugin-panel to-plugin-raised rounded-xl p-4 border border-plugin-highlight shadow-[var(--shadow-depth)]">
-            <h3 className="text-sm font-semibold text-foreground/80 mb-4 text-center">AI ENHANCEMENT</h3>
-            <div className="space-y-3">
-              <ToggleButton 
-                value={state.aiEnhance || false} 
-                onChange={(v) => updateParameter('aiEnhance', v)} 
-                label={state.aiEnhance ? 'NEURAL ON' : 'NEURAL OFF'} 
-              />
-              <ToggleButton 
-                value={state.timbralTransfer || false} 
-                onChange={(v) => updateParameter('timbralTransfer', v)} 
-                label={state.timbralTransfer ? 'TIMBRAL ON' : 'TIMBRAL OFF'} 
-              />
+        {/* Output Meter Section - Clean horizontal layout */}
+        <section className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="text-lg font-bold text-foreground/90 tracking-wide">OUTPUT</h3>
+            <div className="text-sm text-foreground/60 font-mono">
+              LUFS: <span className="text-audio-primary">{meters.lufsIntegrated.toFixed(1)}</span> | 
+              Peak: <span className="text-audio-secondary">{meters.truePeak > 0 ? '+' : ''}{meters.truePeak.toFixed(1)}dB</span>
             </div>
           </div>
+          
+          {/* Clean Horizontal VU Meter */}
+          <div className="rounded-xl p-6 border border-plugin-raised/30"
+               style={{ 
+                 background: 'var(--gradient-panel)',
+                 boxShadow: 'inset 0 2px 8px hsl(var(--plugin-surface))'
+               }}>
+            <div className="h-4 bg-plugin-surface rounded-full overflow-hidden relative">
+              {/* VU Meter bars simulation */}
+              {Array.from({ length: 32 }).map((_, i) => (
+                <div
+                  key={i}
+                  className="absolute top-0 h-full transition-all duration-100"
+                  style={{
+                    left: `${(i / 32) * 100}%`,
+                    width: '2.5%',
+                    background: meters.outputLevel * 32 > i 
+                      ? `hsl(${120 - (i / 32) * 120}, 80%, 50%)` 
+                      : 'hsl(var(--plugin-surface))',
+                    marginRight: '0.5%',
+                    borderRadius: '2px',
+                    boxShadow: meters.outputLevel * 32 > i 
+                      ? `0 0 4px hsl(${120 - (i / 32) * 120}, 80%, 50%)` 
+                      : 'none'
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+        </section>
 
-          {/* Gain Reduction */}
-          <div className="bg-gradient-to-br from-plugin-panel to-plugin-raised rounded-xl p-4 border border-plugin-highlight shadow-[var(--shadow-depth)]">
-            <h3 className="text-sm font-semibold text-foreground/80 mb-4 text-center">GAIN REDUCTION</h3>
-            <div className="flex justify-center">
-              <ModernVUMeter 
-                level={meters.gainReduction / 20} 
-                label="GR" 
-                orientation="horizontal"
-                size="md"
-                showNumeric={false}
-              />
-            </div>
-            <div className="text-center mt-2 text-sm font-mono text-audio-warning">
-              -{meters.gainReduction.toFixed(1)} dB
-            </div>
-          </div>
-
-          {/* LUFS & True Peak */}
-          <div className="bg-gradient-to-br from-plugin-panel to-plugin-raised rounded-xl p-4 border border-plugin-highlight shadow-[var(--shadow-depth)]">
-            <h3 className="text-sm font-semibold text-foreground/80 mb-4 text-center">LOUDNESS COMPLIANCE</h3>
-            <div className="space-y-3">
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-foreground/70">LUFS Integrated:</span>
-                <span className={cn(
-                  'text-sm font-mono font-medium',
-                  meters.lufsIntegrated > -8 ? 'text-audio-warning' : 'text-audio-success'
-                )}>
-                  {meters.lufsIntegrated.toFixed(1)}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-sm text-foreground/70">True Peak:</span>
-                <span className={cn(
-                  'text-sm font-mono font-medium',
-                  meters.truePeak > -1.0 ? 'text-audio-danger' : 'text-audio-success'
-                )}>
-                  {meters.truePeak.toFixed(1)} dBTP
-                </span>
-              </div>
-              <div className="text-xs text-foreground/50 text-center mt-2">
-                Target: {state.lufsTarget} LUFS • Max: -1.0 dBTP
-              </div>
-            </div>
-          </div>
+        {/* Advanced Toggle */}
+        <div className="flex justify-center">
+          <button
+            onClick={() => setShowPresets(!showPresets)}
+            className="text-xs text-foreground/50 hover:text-audio-primary transition-colors tracking-widest uppercase font-medium"
+          >
+            {showPresets ? 'HIDE ADVANCED' : 'SHOW ADVANCED'}
+          </button>
         </div>
+
+        {/* Advanced Controls - Collapsible */}
+        {showPresets && (
+          <section className="rounded-xl p-6 border border-plugin-raised/30 backdrop-blur-sm animate-fade-in"
+                   style={{ 
+                     background: 'var(--gradient-panel)',
+                     boxShadow: 'var(--shadow-panel)'
+                   }}>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              {/* AI Controls */}
+              <div className="space-y-6">
+                <h3 className="text-lg font-bold text-center text-foreground/90 tracking-wide">AI ENGINE</h3>
+                <div className="space-y-4">
+                  <ToggleButton 
+                    value={!!state.aiEnhance} 
+                    onChange={(v) => updateParameter('aiEnhance', v)} 
+                    label="Neural Enhancement"
+                    className={cn(
+                      "w-full text-sm py-3 rounded-lg border transition-all duration-300",
+                      state.aiEnhance 
+                        ? "bg-audio-secondary border-audio-secondary text-background font-bold" 
+                        : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/70"
+                    )}
+                  />
+                  <ToggleButton 
+                    value={!!state.timbralTransfer} 
+                    onChange={(v) => updateParameter('timbralTransfer', v)} 
+                    label="Timbral Transfer"
+                    className={cn(
+                      "w-full text-sm py-3 rounded-lg border transition-all duration-300",
+                      state.timbralTransfer 
+                        ? "bg-audio-tertiary border-audio-tertiary text-background font-bold" 
+                        : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/70"
+                    )}
+                  />
+                  <ToggleButton 
+                    value={state.oversampling} 
+                    onChange={(v) => updateParameter('oversampling', v)} 
+                    label={`Oversampling ${state.oversampling ? '8x' : 'OFF'}`}
+                    className={cn(
+                      "w-full text-sm py-3 rounded-lg border transition-all duration-300",
+                      state.oversampling 
+                        ? "bg-audio-success border-audio-success text-background font-bold" 
+                        : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/70"
+                    )}
+                  />
+                </div>
+              </div>
+              
+              {/* Spectrum Analyzer */}
+              <div className="space-y-4">
+                <h3 className="text-lg font-bold text-center text-foreground/90 tracking-wide">SPECTRUM</h3>
+                <div className="h-32 rounded-lg overflow-hidden"
+                     style={{ 
+                       background: 'var(--gradient-panel)',
+                       border: '1px solid hsl(var(--plugin-raised))'
+                     }}>
+                  <SpectrumAnalyzer 
+                    fftData={meters.spectrumData}
+                    height={120}
+                    showGrid={false}
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
       </div>
     </div>
   );
