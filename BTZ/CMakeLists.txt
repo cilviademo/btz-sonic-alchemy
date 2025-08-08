@@ -5,8 +5,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(JUCE CONFIG REQUIRED)
-# Optional: Torch for AI models
-# find_package(Torch REQUIRED)
+
+# Options
+option(WITH_ML "Enable ML integrations (Torch, model loaders)" OFF)
+
+if (WITH_ML)
+  find_package(Torch REQUIRED)
+endif()
 
 add_library(BTZ SHARED
     Source/PluginProcessor.cpp
@@ -30,7 +35,10 @@ target_include_directories(BTZ PRIVATE
     ${CMAKE_SOURCE_DIR}/Source
 )
 
-# target_link_libraries(BTZ PRIVATE ${TORCH_LIBRARIES})
+if (WITH_ML)
+  target_compile_definitions(BTZ PRIVATE BTZ_WITH_ML=1)
+  target_link_libraries(BTZ PRIVATE ${TORCH_LIBRARIES})
+endif()
 
 target_link_libraries(BTZ PRIVATE
     juce::juce_audio_utils
