@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useReducer, useMemo } from 'react';
 import { ModernKnobWithSpectrum } from './ModernKnobWithSpectrum';
 import { ToggleButton } from './ToggleButton';
 import { CentralVisualizer } from './CentralVisualizer';
@@ -12,7 +12,8 @@ import { cn } from '@/lib/utils';
 import { PresetsSelect, PresetOption } from './PresetsSelect';
 import { PRO_STYLE_PRESETS } from './proStyles';
 import { Slider } from '@/components/ui/slider';
-
+import { makeBTZReducer } from '@/store/btzReducer';
+import { morphParams } from '@/utils/morph';
 const DEFAULT_PRESET: EnhancedPreset = {
   id: 'default',
   label: 'Default',
@@ -126,9 +127,33 @@ const PERFORMANCE_PRESETS: EnhancedPreset[] = [
   }
 ];
 
+function clampState(s: Partial<BTZPluginState>): Partial<BTZPluginState> {
+  const clamp01 = (v?: number) => (v == null ? v : Math.max(0, Math.min(1, v)));
+  return {
+    ...s,
+    punch: clamp01(s.punch),
+    warmth: clamp01(s.warmth),
+    boom: clamp01(s.boom),
+    mix: clamp01(s.mix),
+    drive: clamp01(s.drive),
+    clippingBlend: clamp01(s.clippingBlend),
+  };
+}
+
 export const EnhancedBTZPlugin: React.FC = () => {
-  const [state, setState] = useState<BTZPluginState>(DEFAULT_PRESET.state);
+  const [state, dispatch] = React.useReducer(makeBTZReducer(DEFAULT_PRESET.state), DEFAULT_PRESET.state);
   const [viewMode, setViewMode] = useState<'primary' | 'advanced' | 'engineering'>('primary');
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const v = localStorage.getItem('btz:view');
+    if (v === 'primary' || v === 'advanced' || v === 'engineering') {
+      setViewMode(v as any);
+    }
+  }, []);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('btz:view', viewMode);
+  }, [viewMode]);
   const [meters, setMeters] = useState({
     inputLevel: 0,
     outputLevel: 0,
@@ -146,126 +171,146 @@ export const EnhancedBTZPlugin: React.FC = () => {
     }
   });
 
+  const specPunch = useMemo(() => meters.spectrumData.subarray(0, 16), [meters.spectrumData]);
+  const specWarmth = useMemo(() => meters.spectrumData.subarray(16, 32), [meters.spectrumData]);
+  const specBoom = useMemo(() => meters.spectrumData.subarray(0, 8), [meters.spectrumData]);
+  const specMix = useMemo(() => meters.spectrumData, [meters.spectrumData]);
+  const specDrive = useMemo(() => meters.spectrumData.subarray(32, 48), [meters.spectrumData]);
+
   // Generate live audio visualization data with AI analysis
   useEffect(() => {
-    const interval = setInterval(() => {
-      if (!state.active) {
-        setMeters(prev => ({ ...prev, isProcessing: false }));
-        return;
-      }
+    if (typeof window === 'undefined') return;
+    let raf = 0;
+    let last = 0;
 
-      const baseLevel = 0.2 + Math.random() * 0.5;
-      let processedLevel = baseLevel * (1 + state.drive * 0.8) * state.mix;
-      
-      // AI Analysis simulation (DeepFilterNet + Neutone style)
-      const transientStrength = Math.min(1, baseLevel * 2 * (state.punch + 0.3));
-      const lowEndEnergy = Math.min(1, baseLevel * 1.5 * (state.boom + 0.2));  
-      const richness = Math.min(1, (state.warmth + (state.texture ? 0.3 : 0)) * 1.2);
-      const loudnessScore = Math.min(1, processedLevel * 1.1);
-      const spectralCentroid = 1000 + richness * 3000; // Hz
-      
-      // AI Automation - adjust parameters based on analysis
-      if (state.aiAutomation) {
-        // Auto-adjust drive based on loudness target
-        if (state.lufsTarget && state.lufsTarget < -10) {
-          const targetGain = (-10 - state.lufsTarget) / 10; // More aggressive for loud targets
-          processedLevel *= (1 + targetGain * 0.3);
+    const tick = (t: number) => {
+      raf = requestAnimationFrame(tick);
+      if (t - last < 1000 / 60) return;
+
+      setMeters(prev => {
+        if (!state.active) {
+          return { ...prev, isProcessing: false };
         }
-        
-        // FL Studio style clipping simulation
-        if (state.clippingEnabled) {
-          const clippingAmount = (state.clippingBlend || 0.5) * 0.4;
-          const threshold = 0.8;
-          
-          if (processedLevel > threshold) {
-            const excess = processedLevel - threshold;
-            let clippedExcess;
-            
-            switch (state.clippingType) {
-              case 'soft':
-                // FL Studio style soft limiting (tanh-based)
-                clippedExcess = Math.tanh(excess * 3) / 3;
-                break;
-              case 'hard':
-                clippedExcess = Math.min(excess, 0.15);
-                break;
-              case 'tube':
-                clippedExcess = excess * Math.pow(Math.E, -excess * 2);
-                break;
-              case 'tape':
-                clippedExcess = excess / (1 + excess * 1.5);
-                break;
-              case 'digital':
-                clippedExcess = excess * 0.7;
-                break;
-              default:
-                clippedExcess = Math.tanh(excess * 2) / 2;
+
+        const baseLevel = 0.2 + Math.random() * 0.5;
+        let processedLevel = baseLevel * (1 + state.drive * 0.8) * state.mix;
+
+        // AI Analysis simulation (DeepFilterNet + Neutone style)
+        const transientStrength = Math.min(1, baseLevel * 2 * (state.punch + 0.3));
+        const lowEndEnergy = Math.min(1, baseLevel * 1.5 * (state.boom + 0.2));
+        const richness = Math.min(1, (state.warmth + (state.texture ? 0.3 : 0)) * 1.2);
+        const loudnessScore = Math.min(1, processedLevel * 1.1);
+        const spectralCentroid = 1000 + richness * 3000; // Hz
+
+        // AI Automation - adjust parameters based on analysis
+        if (state.aiAutomation) {
+          // Auto-adjust drive based on loudness target
+          if (state.lufsTarget && state.lufsTarget < -10) {
+            const targetGain = (-10 - state.lufsTarget) / 10; // More aggressive for loud targets
+            processedLevel *= (1 + targetGain * 0.3);
+          }
+
+          // FL Studio style clipping simulation
+          if (state.clippingEnabled) {
+            const clippingAmount = (state.clippingBlend || 0.5) * 0.4;
+            const threshold = 0.8;
+
+            if (processedLevel > threshold) {
+              const excess = processedLevel - threshold;
+              let clippedExcess = Math.tanh(excess * 2) / 2;
+
+              switch (state.clippingType) {
+                case 'soft':
+                  // FL Studio style soft limiting (tanh-based)
+                  clippedExcess = Math.tanh(excess * 3) / 3;
+                  break;
+                case 'hard':
+                  clippedExcess = Math.min(excess, 0.15);
+                  break;
+                case 'tube':
+                  clippedExcess = excess * Math.pow(Math.E, -excess * 2);
+                  break;
+                case 'tape':
+                  clippedExcess = excess / (1 + excess * 1.5);
+                  break;
+                case 'digital':
+                  clippedExcess = excess * 0.7;
+                  break;
+              }
+
+              const clipped = threshold + clippedExcess;
+              processedLevel = processedLevel * (1 - clippingAmount) + clipped * clippingAmount;
             }
-            
-            const clipped = threshold + clippedExcess;
-            processedLevel = processedLevel * (1 - clippingAmount) + clipped * clippingAmount;
           }
         }
-      }
-      
-      // Generate realistic spectrum for each processing stage
-      const spectrumData = new Float32Array(64);
-      const waveformData = new Float32Array(128);
-      
-      for (let i = 0; i < 64; i++) {
-        const freq = (i / 64) * 20000;
-        let magnitude = Math.random() * 0.1;
-        
-        // Shape spectrum based on controls and AI analysis
-        if (freq < 200) magnitude += state.boom * 0.6 + (lowEndEnergy * 0.2);
-        if (freq > 80 && freq < 800) magnitude += state.punch * 0.5 + (transientStrength * 0.3);
-        if (freq > 1000 && freq < 8000) magnitude += state.warmth * 0.4 + (richness * 0.2);
-        if (freq > 8000) magnitude += state.texture ? 0.3 : 0.1;
-        if (state.clippingEnabled) magnitude += 0.1; // Harmonic content from clipping
-        
-        spectrumData[i] = Math.max(0, Math.min(1, magnitude * (1 + state.drive * 0.3)));
-      }
-      
-      // Generate waveform with more character
-      for (let i = 0; i < 128; i++) {
-        const t = (i / 128) * Math.PI * 4;
-        let wave = Math.sin(t) * processedLevel * (0.8 + Math.random() * 0.4);
-        
-        // Add harmonic content from processing
-        wave += Math.sin(t * 2) * state.warmth * 0.1 * processedLevel;
-        wave += Math.sin(t * 3) * (state.texture ? 0.05 : 0) * processedLevel;
-        
-        waveformData[i] = wave;
-      }
 
-      setMeters({
-        inputLevel: baseLevel,
-        outputLevel: processedLevel,
-        spectrumData,
-        waveformData,
-        lufsIntegrated: (state.lufsTarget || -14) + (Math.random() - 0.5) * 2,
-        truePeak: Math.max(-1.0, (state.lufsTarget || -14) + 12 + (Math.random() - 0.5) * 3),
-        isProcessing: processedLevel > 0.1,
-        analysisData: {
-          transientStrength,
-          lowEndEnergy,
-          loudnessScore,
-          richness,
-          spectralCentroid
+        // Generate realistic spectrum for each processing stage
+        const spectrumData = new Float32Array(64);
+        const waveformData = new Float32Array(128);
+
+        for (let i = 0; i < 64; i++) {
+          const freq = (i / 64) * 20000;
+          let magnitude = Math.random() * 0.1;
+
+          // Shape spectrum based on controls and AI analysis
+          if (freq < 200) magnitude += state.boom * 0.6 + (lowEndEnergy * 0.2);
+          if (freq > 80 && freq < 800) magnitude += state.punch * 0.5 + (transientStrength * 0.3);
+          if (freq > 1000 && freq < 8000) magnitude += state.warmth * 0.4 + (richness * 0.2);
+          if (freq > 8000) magnitude += state.texture ? 0.3 : 0.1;
+          if (state.clippingEnabled) magnitude += 0.1; // Harmonic content from clipping
+
+          spectrumData[i] = Math.max(0, Math.min(1, magnitude * (1 + state.drive * 0.3)));
         }
-      });
-    }, 60);
 
-    return () => clearInterval(interval);
+        // Generate waveform with more character
+        for (let i = 0; i < 128; i++) {
+          const tt = (i / 128) * Math.PI * 4;
+          let wave = Math.sin(tt) * processedLevel * (0.8 + Math.random() * 0.4);
+
+          // Add harmonic content from processing
+          wave += Math.sin(tt * 2) * state.warmth * 0.1 * processedLevel;
+          wave += Math.sin(tt * 3) * (state.texture ? 0.05 : 0) * processedLevel;
+
+          waveformData[i] = wave;
+        }
+
+        const shortLUFS = (state.lufsTarget || -14) + (Math.random() - 0.5) * 2;
+        const lufsIntegrated = prev.lufsIntegrated * 0.92 + shortLUFS * 0.08;
+        const tp = Math.max(-1.0, (state.lufsTarget || -14) + 12 + (Math.random() - 0.5) * 3);
+        const truePeak = prev.truePeak * 0.8 + tp * 0.2;
+
+        return {
+          inputLevel: baseLevel,
+          outputLevel: processedLevel,
+          spectrumData,
+          waveformData,
+          lufsIntegrated,
+          truePeak,
+          isProcessing: processedLevel > 0.1,
+          analysisData: {
+            transientStrength,
+            lowEndEnergy,
+            loudnessScore,
+            richness,
+            spectralCentroid
+          }
+        };
+      });
+
+      last = t;
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [state]);
 
   const updateParameter = useCallback((key: keyof BTZPluginState, value: any) => {
-    setState(prev => ({ ...prev, [key]: value }));
-  }, []);
+    dispatch({ type: 'set', key, value });
+  }, [dispatch]);
 
   const applyPreset = useCallback((preset: EnhancedPreset) => {
-    setState(preset.state);
-  }, []);
+    morphParams(state, preset.state, 200, (patch) => dispatch({ type: 'batch', patch }), () => {});
+  }, [state, dispatch]);
 
   return (
     <div className="w-full max-w-7xl mx-auto rounded-3xl border border-audio-primary/20 overflow-hidden"
@@ -373,7 +418,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 min={0} 
                 max={1}
                 size="sm"
-                spectrumData={meters.spectrumData.slice(0, 16)}
+                spectrumData={specPunch}
                 color="hsl(var(--audio-primary))"
               />
               <ModernKnobWithSpectrum 
@@ -383,7 +428,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 min={0} 
                 max={1}
                 size="sm"
-                spectrumData={meters.spectrumData.slice(16, 32)}
+                spectrumData={specWarmth}
                 color="hsl(var(--audio-secondary))"
               />
               <ModernKnobWithSpectrum 
@@ -393,7 +438,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 min={0} 
                 max={1}
                 size="sm"
-                spectrumData={meters.spectrumData.slice(0, 8)}
+                spectrumData={specBoom}
                 color="hsl(var(--audio-tertiary))"
               />
               <ModernKnobWithSpectrum 
@@ -403,7 +448,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 min={0} 
                 max={1}
                 size="sm"
-                spectrumData={meters.spectrumData}
+                spectrumData={specMix}
                 color="hsl(var(--audio-success))"
               />
               <ModernKnobWithSpectrum 
@@ -413,7 +458,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 min={0} 
                 max={1}
                 size="sm"
-                spectrumData={meters.spectrumData.slice(32, 48)}
+                spectrumData={specDrive}
                 color="hsl(var(--audio-warning))"
               />
             </div>
@@ -474,7 +519,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 <PresetsSelect 
                   presets={PRO_STYLE_PRESETS as unknown as { id: string; label: string; state: Partial<BTZPluginState>; }[]}
                   onApply={(preset) => {
-                    setState(prev => ({ ...prev, ...preset.state }));
+                    dispatch({ type: 'batch', patch: clampState(preset.state) });
                   }}
                 />
               </div>

@@ -27,23 +27,41 @@ export const BTZPlugin: React.FC = () => {
   const [truePeak, setTruePeak] = useState(-3);
 
   useEffect(() => {
-    const interval = setInterval(() => {
+    if (typeof window === 'undefined') return;
+    let raf = 0;
+    let last = 0;
+
+    const ema = { in: 0, out: 0, lufs: -18 };
+
+    const tick = (t: number) => {
+      raf = requestAnimationFrame(tick);
+      if (t - last < 1000 / 60) return;
+
       const baseLevel = 0.3 + Math.random() * 0.4;
       const processedLevel = baseLevel * (1 + state.drive * 0.08) * state.mix * (state.active ? 1 : 0.7);
 
-      setInputLevel(baseLevel + (Math.random() - 0.5) * 0.1);
+      const inLv = baseLevel + (Math.random() - 0.5) * 0.1;
       const out = Math.min(0.98, processedLevel + (Math.random() - 0.5) * 0.05);
-      setOutputLevel(out);
+
+      ema.in = ema.in * 0.85 + inLv * 0.15;
+      ema.out = ema.out * 0.85 + out * 0.15;
+
+      setInputLevel(ema.in);
+      setOutputLevel(ema.out);
       setIsProcessing(Math.random() > 0.7);
 
-      // Pseudo loudness & true peak estimation
       const shortLUFS = -28 + out * 22; // ~[-28, -6]
-      setLufsIntegrated((prev) => prev * 0.96 + shortLUFS * 0.04);
+      ema.lufs = ema.lufs * 0.96 + shortLUFS * 0.04;
+      setLufsIntegrated(ema.lufs);
+
       const tp = -6 + out * 6; // ~[-6, 0]
       setTruePeak(tp);
-    }, 50);
 
-    return () => clearInterval(interval);
+      last = t;
+    };
+
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
   }, [state.drive, state.mix, state.active]);
 
   const updateParameter = (key: keyof BTZPluginState, value: any) => {
