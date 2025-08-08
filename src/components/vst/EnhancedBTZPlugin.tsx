@@ -5,6 +5,8 @@ import { CentralVisualizer } from './CentralVisualizer';
 import { PresetBrowser } from './PresetBrowser';
 import { AIAutomationPanel } from './AIAutomationPanel';
 import { EnhancedClippingControls } from './EnhancedClippingControls';
+import { ProcessingChainVisualizer } from './ProcessingChainVisualizer';
+import { AdvancedMeterPanel } from './AdvancedMeterPanel';
 import { BTZPluginState, EnhancedPreset } from './types';
 import { cn } from '@/lib/utils';
 
@@ -36,63 +38,94 @@ const DEFAULT_PRESET: EnhancedPreset = {
   }
 };
 
+// MVP Specification Presets - Professional drum enhancement presets 💕
 const PERFORMANCE_PRESETS: EnhancedPreset[] = [
   DEFAULT_PRESET,
+  {
+    id: 'mvp-loud-clean',
+    label: 'MVP (-8 LUFS)', 
+    state: { 
+      punch: 0.7, warmth: 0.5, boom: 0.4, mix: 1.0, drive: 0.8, texture: false, 
+      active: true, oversampling: true, clippingType: 'soft', clippingBlend: 0.6,
+      clippingEnabled: true, aiAutomation: true, gateThreshold: -25, transientAmount: 0.6,
+      saturationAmount: 0.4, subHarmonics: true, consoleGlue: true, lufsTarget: -8
+    },
+  },
+  {
+    id: 'streaming-safe',
+    label: 'Streaming Safe (-14 LUFS)',
+    state: { 
+      punch: 0.5, warmth: 0.4, boom: 0.3, mix: 1.0, drive: 0.4, texture: false, 
+      active: true, oversampling: false, clippingType: 'soft', clippingBlend: 0.3,
+      clippingEnabled: false, aiAutomation: true, gateThreshold: -40, transientAmount: 0.4,
+      saturationAmount: 0.2, subHarmonics: false, consoleGlue: true, lufsTarget: -14
+    },
+  },
   {
     id: 'punchy-kick',
     label: 'Punchy Kick',
     state: { 
-      punch: 0.8, warmth: 0.35, boom: 0.6, mix: 0.9, drive: 0.4, texture: false, 
-      active: true, oversampling: false, clippingType: 'hard', clippingBlend: 0.3, 
-      clippingEnabled: true, aiAutomation: true, gateThreshold: -35, transientAmount: 0.7,
-      saturationAmount: 0.2, subHarmonics: true, consoleGlue: true
+      punch: 0.9, warmth: 0.3, boom: 0.8, mix: 0.9, drive: 0.5, texture: false, 
+      active: true, oversampling: false, clippingType: 'hard', clippingBlend: 0.4,
+      clippingEnabled: true, aiAutomation: true, gateThreshold: -30, transientAmount: 0.9,
+      saturationAmount: 0.2, subHarmonics: true, consoleGlue: true, lufsTarget: -10
     },
   },
   {
-    id: 'warm-vocal', 
-    label: 'Warm Vocal',
+    id: 'silky-snare',
+    label: 'Silky Snare',
     state: { 
-      punch: 0.4, warmth: 0.8, boom: 0.2, mix: 0.95, drive: 0.3, texture: true, 
-      active: true, oversampling: false, clippingType: 'tube', clippingBlend: 0.6,
-      clippingEnabled: false, aiAutomation: true, gateThreshold: -45, transientAmount: 0.3,
-      saturationAmount: 0.6, subHarmonics: false, consoleGlue: true
+      punch: 0.8, warmth: 0.6, boom: 0.2, mix: 0.95, drive: 0.4, texture: true, 
+      active: true, oversampling: true, clippingType: 'tube', clippingBlend: 0.5,
+      clippingEnabled: false, aiAutomation: true, gateThreshold: -35, transientAmount: 0.7,
+      saturationAmount: 0.5, subHarmonics: false, consoleGlue: true, lufsTarget: -12
     },
   },
   {
-    id: 'modern-master',
-    label: 'Modern Master', 
+    id: 'room-glue',
+    label: 'Room Glue',
     state: { 
-      punch: 0.7, warmth: 0.5, boom: 0.4, mix: 0.9, drive: 0.6, texture: true, 
-      active: true, oversampling: false, clippingType: 'digital', clippingBlend: 0.4,
-      clippingEnabled: true, aiAutomation: true, gateThreshold: -30, transientAmount: 0.6,
-      saturationAmount: 0.4, subHarmonics: true, consoleGlue: true
+      punch: 0.4, warmth: 0.7, boom: 0.5, mix: 0.8, drive: 0.6, texture: true, 
+      active: true, oversampling: false, clippingType: 'tape', clippingBlend: 0.6,
+      clippingEnabled: true, aiAutomation: true, gateThreshold: -45, transientAmount: 0.3,
+      saturationAmount: 0.6, subHarmonics: true, consoleGlue: true, lufsTarget: -11
     },
   },
   {
-    id: 'vintage-glue',
-    label: 'Vintage Glue',
+    id: 'tape-warmth',
+    label: 'Tape Warmth',
     state: { 
-      punch: 0.5, warmth: 0.9, boom: 0.7, mix: 0.85, drive: 0.8, texture: true, 
+      punch: 0.6, warmth: 0.9, boom: 0.6, mix: 0.9, drive: 0.7, texture: true, 
       active: true, oversampling: false, clippingType: 'tape', clippingBlend: 0.8,
-      clippingEnabled: true, aiAutomation: true, gateThreshold: -25, transientAmount: 0.4,
-      saturationAmount: 0.8, subHarmonics: true, consoleGlue: true
+      clippingEnabled: true, aiAutomation: true, gateThreshold: -40, transientAmount: 0.5,
+      saturationAmount: 0.8, subHarmonics: true, consoleGlue: true, lufsTarget: -9
+    },
+  },
+  {
+    id: 'boom-sculpt',
+    label: 'Boom Sculpt',
+    state: { 
+      punch: 0.7, warmth: 0.4, boom: 0.9, mix: 0.85, drive: 0.8, texture: false, 
+      active: true, oversampling: true, clippingType: 'soft', clippingBlend: 0.5,
+      clippingEnabled: true, aiAutomation: true, gateThreshold: -25, transientAmount: 0.6,
+      saturationAmount: 0.3, subHarmonics: true, consoleGlue: true, lufsTarget: -7
     },
   },
   {
     id: 'billboard-loud',
-    label: 'Billboard Loud',
+    label: 'Billboard Loud (-6 LUFS)',
     state: { 
-      punch: 0.9, warmth: 0.6, boom: 0.5, mix: 1.0, drive: 0.9, texture: false, 
-      active: true, oversampling: true, clippingType: 'soft', clippingBlend: 0.7,
-      clippingEnabled: true, aiAutomation: true, gateThreshold: -20, transientAmount: 0.8,
-      saturationAmount: 0.3, subHarmonics: true, consoleGlue: true, lufsTarget: -6
+      punch: 0.9, warmth: 0.6, boom: 0.5, mix: 1.0, drive: 0.95, texture: false, 
+      active: true, oversampling: true, clippingType: 'soft', clippingBlend: 0.8,
+      clippingEnabled: true, aiAutomation: true, gateThreshold: -18, transientAmount: 0.8,
+      saturationAmount: 0.4, subHarmonics: true, consoleGlue: true, lufsTarget: -6
     },
   }
 ];
 
 export const EnhancedBTZPlugin: React.FC = () => {
   const [state, setState] = useState<BTZPluginState>(DEFAULT_PRESET.state);
-  const [viewMode, setViewMode] = useState<'primary' | 'advanced'>('primary');
+  const [viewMode, setViewMode] = useState<'primary' | 'advanced' | 'engineering'>('primary');
   const [meters, setMeters] = useState({
     inputLevel: 0,
     outputLevel: 0,
@@ -265,7 +298,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
               <button
                 onClick={() => setViewMode('primary')}
                 className={cn(
-                  "px-6 py-2 rounded-full text-sm font-medium transition-all duration-300",
+                  "px-4 py-2 rounded-full text-xs font-medium transition-all duration-300",
                   viewMode === 'primary'
                     ? "bg-audio-primary text-background shadow-lg"
                     : "text-foreground/70 hover:text-foreground"
@@ -276,13 +309,24 @@ export const EnhancedBTZPlugin: React.FC = () => {
               <button
                 onClick={() => setViewMode('advanced')}
                 className={cn(
-                  "px-6 py-2 rounded-full text-sm font-medium transition-all duration-300",
+                  "px-4 py-2 rounded-full text-xs font-medium transition-all duration-300",
                   viewMode === 'advanced'
                     ? "bg-audio-secondary text-background shadow-lg"
                     : "text-foreground/70 hover:text-foreground"
                 )}
               >
                 SOUND DESIGN
+              </button>
+              <button
+                onClick={() => setViewMode('engineering')}
+                className={cn(
+                  "px-4 py-2 rounded-full text-xs font-medium transition-all duration-300",
+                  viewMode === 'engineering'
+                    ? "bg-audio-tertiary text-background shadow-lg"
+                    : "text-foreground/70 hover:text-foreground"
+                )}
+              >
+                ENGINEERING
               </button>
             </div>
             
@@ -467,20 +511,37 @@ export const EnhancedBTZPlugin: React.FC = () => {
               </div>
             </div>
           </div>
+        ) : viewMode === 'advanced' ? (
+          // ADVANCED VIEW - Sound Design Mode  
+          <div className="space-y-8">
+            <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+              {/* AI Automation Panel */}
+              <AIAutomationPanel 
+                state={state}
+                updateParameter={updateParameter}
+                analysisData={meters.analysisData}
+              />
+              
+              {/* Enhanced Clipping Controls */}
+              <EnhancedClippingControls 
+                state={state}
+                updateParameter={updateParameter}
+              />
+            </div>
+          </div>
         ) : (
-          // ADVANCED VIEW - Sound Design Mode
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* AI Automation Panel */}
-            <AIAutomationPanel 
+          // ENGINEERING VIEW - Technical Analysis Mode
+          <div className="space-y-8">
+            {/* Processing Chain Visualizer */}
+            <ProcessingChainVisualizer 
               state={state}
-              updateParameter={updateParameter}
               analysisData={meters.analysisData}
             />
-            
-            {/* Enhanced Clipping Controls */}
-            <EnhancedClippingControls 
+
+            {/* Advanced Metering Panel */}
+            <AdvancedMeterPanel 
               state={state}
-              updateParameter={updateParameter}
+              meters={meters}
             />
           </div>
         )}
