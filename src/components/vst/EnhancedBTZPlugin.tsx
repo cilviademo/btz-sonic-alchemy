@@ -145,17 +145,26 @@ function clampState(s: Partial<BTZPluginState>): Partial<BTZPluginState> {
 export const EnhancedBTZPlugin: React.FC = () => {
   const [state, dispatch] = useReducer(makeBTZReducer(DEFAULT_PRESET.state), DEFAULT_PRESET.state);
   const [viewMode, setViewMode] = useState<'primary' | 'advanced' | 'engineering'>('primary');
+  const [skin, setSkin] = useState<'modern' | 'hardware'>('modern');
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const v = localStorage.getItem('btz:view');
     if (v === 'primary' || v === 'advanced' || v === 'engineering') {
       setViewMode(v as any);
     }
+    const sk = localStorage.getItem('btz:skin');
+    if (sk === 'modern' || sk === 'hardware') {
+      setSkin(sk as any);
+    }
   }, []);
   useEffect(() => {
     if (typeof window === 'undefined') return;
     localStorage.setItem('btz:view', viewMode);
   }, [viewMode]);
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    localStorage.setItem('btz:skin', skin);
+  }, [skin]);
 
   // Audio engine + analyser wiring
   const audio = useAudioEngine();
@@ -280,7 +289,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
   }, [state, dispatch]);
 
   return (
-    <div className="w-full max-w-7xl mx-auto rounded-3xl border border-audio-primary/20 overflow-hidden"
+    <div className={cn("w-full max-w-7xl mx-auto rounded-3xl border border-audio-primary/20 overflow-hidden", skin === 'hardware' && 'skin-hardware')}
          style={{ 
            background: 'var(--gradient-main)',
            boxShadow: 'var(--shadow-panel), 0 0 60px hsl(var(--audio-primary) / 0.1)'
@@ -342,6 +351,30 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 )}
               >
                 ENGINEERING
+              </button>
+            </div>
+            <div className="hidden sm:flex bg-plugin-surface rounded-full p-1 border border-foreground/10">
+              <button
+                onClick={() => setSkin('modern')}
+                className={cn(
+                  "px-3 py-2 rounded-full text-xs font-medium transition-all duration-300",
+                  skin === 'modern'
+                    ? "bg-foreground text-background shadow-lg"
+                    : "text-foreground/70 hover:text-foreground"
+                )}
+              >
+                MODERN
+              </button>
+              <button
+                onClick={() => setSkin('hardware')}
+                className={cn(
+                  "px-3 py-2 rounded-full text-xs font-medium transition-all duration-300",
+                  skin === 'hardware'
+                    ? "bg-foreground text-background shadow-lg"
+                    : "text-foreground/70 hover:text-foreground"
+                )}
+              >
+                HARDWARE
               </button>
             </div>
             {/* Audio Engine Toggle */}
@@ -507,12 +540,8 @@ export const EnhancedBTZPlugin: React.FC = () => {
             {/* Output Metering - Hardware style display */}
             <div className="bg-plugin-surface rounded-2xl p-6 border border-foreground/10"
                  style={{
-                   background: `linear-gradient(145deg, hsl(220, 15%, 8%), hsl(220, 12%, 12%))`,
-                   boxShadow: `
-                     inset 0 2px 8px rgba(0,0,0,0.8),
-                     inset 0 -2px 4px rgba(255,255,255,0.05),
-                     0 8px 32px rgba(0,0,0,0.6)
-                   `
+                   background: `linear-gradient(145deg, hsl(var(--plugin-surface)), hsl(var(--plugin-panel)))`,
+                   boxShadow: `var(--shadow-panel)`
                  }}>
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-bold text-foreground tracking-wide">OUTPUT</h3>
@@ -524,10 +553,10 @@ export const EnhancedBTZPlugin: React.FC = () => {
               
               {/* Waveform Display - Output style with dark background and colorful wave */}
               <div className="h-24 rounded-lg overflow-hidden relative border border-foreground/20"
-                   style={{
-                     background: `linear-gradient(145deg, hsl(220, 20%, 4%), hsl(220, 15%, 8%))`,
-                     boxShadow: `inset 0 4px 12px rgba(0,0,0,0.9)`
-                   }}>
+                    style={{
+                      background: `linear-gradient(145deg, hsl(var(--plugin-panel)), hsl(var(--plugin-raised)))`,
+                      boxShadow: `inset 0 4px 12px rgba(0,0,0,0.25)`
+                    }}>
                 <svg className="w-full h-full">
                   <defs>
                     <linearGradient id="outputWaveGrad" x1="0%" y1="0%" x2="100%" y2="0%">

@@ -142,3 +142,41 @@
     @apply bg-background text-foreground;
   }
 }
+
+/* Hardware Beige skin overrides (scoped to wrapper) */
+@layer base {
+  .skin-hardware {
+    /* Warm, creamy base with dark panels and golden accents */
+    --background: 42 40% 95%;
+    --foreground: 24 10% 18%;
+
+    /* Surfaces */
+    --plugin-surface: 42 38% 96%;
+    --plugin-panel: 24 10% 12%;
+    --plugin-raised: 24 12% 8%;
+
+    /* Knob/accents tuned for hardware feel */
+    --knob-background: 38 70% 72%;
+    --knob-face: 36 60% 88%;
+    --knob-shadow: 24 15% 40%;
+    --knob-accent: 38 85% 55%;
+    --knob-active: 40 90% 60%;
+
+    /* Accent palette */
+    --audio-primary: 38 85% 45%;   /* gold */
+    --audio-primary-glow: 38 92% 60%;
+    --audio-secondary: 28 40% 40%; /* taupe */
+    --audio-tertiary: 20 30% 35%;  /* warm brown */
+    --audio-warning: 12 80% 46%;
+    --audio-success: 140 35% 35%;
+
+    /* Gradients and effects */
+    --gradient-main: linear-gradient(180deg, hsl(42 40% 96%), hsl(42 30% 92%));
+    --gradient-panel: linear-gradient(145deg, hsl(24 12% 10%), hsl(24 12% 6%));
+    --gradient-knob: radial-gradient(circle at 30% 30%, hsl(36 60% 88%), hsl(38 85% 55%), hsl(24 15% 40%));
+
+    --shadow-panel: 0 16px 48px hsl(24 10% 10% / 0.25), 0 8px 24px hsl(38 85% 45% / 0.06);
+    --shadow-knob: 0 8px 24px hsl(38 85% 45% / 0.2), inset 0 2px 6px hsl(36 80% 70% / 0.7);
+    --glow-thermal: 0 0 30px hsl(38 85% 45% / 0.35), 0 0 60px hsl(38 85% 45% / 0.2);
+  }
+}
