@@ -1,0 +1,5 @@
+button,[role="radio"],[role="switch"]{
+  transition: transform .12s ease, box-shadow .18s ease, background .18s ease, border-color .18s ease;
+}
+button:active{ transform: translateY(1px) scale(.98); }
+:focus-visible{ outline: none; box-shadow: 0 0 0 3px rgba(39,75,255,.35); border-radius: 12px; }
