@@ -23,8 +23,9 @@ export const ModuleKnob: React.FC<ModuleKnobProps> = ({
       <button
         onClick={() => !disabled && onOpen(id)}
         className={cn(
-          'relative grid place-items-center rounded-full w-[96px] h-[96px] md:w-[110px] md:h-[110px] transition-all',
-          'bg-[rgba(255,255,255,0.03)] hover:bg-[rgba(255,255,255,0.06)] border border-white/10',
+          'relative grid place-items-center rounded-full w-[96px] h-[96px] md:w-[110px] md:h-[110px] transition-all overflow-hidden',
+          'bg-plugin-surface hover:bg-plugin-surface/80 border border-foreground/10',
+          'ring-0 group-hover:ring-2 ring-audio-primary/30 group-hover:shadow-[0_0_24px_rgba(255,47,185,0.35)] active:scale-95',
           disabled && 'opacity-40 cursor-not-allowed'
         )}
         aria-label={`${label} details`}

@@ -9,7 +9,7 @@ import { useIRConvolver } from '@/hooks/useIRConvolver';
 import { ModuleKnob } from './ModuleKnob';
 import { MiniMeterStrip } from './MiniMeterStrip';
 import { CentralVisualizerCanvas } from '@/components/CentralVisualizerCanvas';
-import { OutputScope } from '@/components/OutputScope';
+import { LEDMeter } from './LEDMeter';
 import { PresetScroller, PresetItem } from '@/components/PresetScroller';
 import { useHotkeys } from '@/hooks/useHotkeys';
 
@@ -174,12 +174,19 @@ export const CompactOnePage: React.FC = () => {
         {/* RIGHT: Output + module knobs */}
         <div className="col-span-5 space-y-6">
           <div className="rounded-xl border border-foreground/10 p-4 bg-plugin-surface/40">
-            <div className="text-sm font-semibold mb-3 text-foreground/80">OUTPUT</div>
-            <OutputScope
-              data={analyser?.waveform ?? new Float32Array(128)}
-              lufs={-14.0}
-              peak={-0.7}
-            />
+            <div className="flex items-center justify-between mb-3">
+              <div className="text-sm font-semibold text-foreground/80">OUTPUT</div>
+              <div className="flex gap-4 text-xs text-foreground/70">
+                <div className="font-mono">LUFS <span className="text-foreground">-14.0</span></div>
+                <div className="font-mono">TP <span className="text-foreground">-0.7 dB</span></div>
+              </div>
+            </div>
+            <div className="flex items-end gap-4" style={{height: 160}}>
+              <div className="flex-1 grid grid-cols-2 gap-3 h-full">
+                <LEDMeter value={analyser?.levelOut ?? 0} />
+                <LEDMeter value={analyser?.levelOut ?? 0} />
+              </div>
+            </div>
           </div>
 
           <div className="grid grid-cols-3 gap-4">
