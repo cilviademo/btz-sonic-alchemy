@@ -1,0 +1,40 @@
+:root {
+  --bg: #0e1319;
+  --panel: #121822;
+  --panel-2: #0f141c;
+  --text: 233 10% 92%;
+  --muted: 233 5% 72%;
+  --accent: 24 100% 56%;
+  --ring-a: #ff8a00;
+  --ring-b: #ff2fb9;
+  --ring-c: #39ff88;
+  --ring-d: #2fd3ff;
+}
+
+.plugin-surface {
+  background:
+    radial-gradient(1200px 600px at 30% -20%, rgba(255,115,0,.12) 0, transparent 40%),
+    radial-gradient(1200px 600px at 90% 0%, rgba(47,211,255,.12) 0, transparent 40%),
+    linear-gradient(180deg, #0c1117, #0e1319);
+}
+
+.card {
+  background: linear-gradient(180deg, var(--panel), var(--panel-2));
+  border: 1px solid rgba(255,255,255,.06);
+  border-radius: 18px;
+  box-shadow: 0 12px 40px rgba(0,0,0,.45);
+}
+
+/* optional: hide horizontal scrollbar chrome for scrollers */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* Overlay grid (toggleable) */
+.plugin-grid-overlay {
+  position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px);
+  background-size: 8px 8px, 8px 8px;
+  border-radius: 18px;
+}
