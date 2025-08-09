@@ -11,7 +11,8 @@ export function useIRConvolver(ctxRef: React.MutableRefObject<AudioContext|undef
     const ctx=ctxRef.current, src=nodeRef.current; if(!ctx||!src) return;
     const wet=wetRef.current=wetRef.current||ctx.createGain(); wet.gain.value=.18;
     const dry=dryRef.current=dryRef.current||ctx.createGain(); dry.gain.value=.82;
-    const cv=convolverRef.current=convolverRef.current||new ConvolverNode(ctx,{normalize:true});
+    const cv=convolverRef.current=convolverRef.current||new ConvolverNode(ctx);
+    cv.normalize = true;
     const preDel=preDelayRef.current=preDelayRef.current||ctx.createDelay(2); preDel.delayTime.value=0;
     const hp=preHPRef.current=preHPRef.current||ctx.createBiquadFilter(); hp.type='highpass'; hp.frequency.value=100;
     const lp=preLPRef.current=preLPRef.current||ctx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=16000;
