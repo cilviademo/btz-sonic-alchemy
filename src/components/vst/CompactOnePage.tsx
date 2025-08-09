@@ -161,40 +161,30 @@ export const CompactOnePage: React.FC = () => {
               label="PUNCH"
               value={state.punch ?? 0}
               onChange={(v)=>update('punch', v)}
-              spectrumData={analyser?.spectrum ?? new Float32Array(64)}
-              waveformData={analyser?.waveform ?? new Float32Array(128)}
               colorA="#ff2fb9" colorB="#39ff88"
             />
             <ThermalKnob
               label="WARMTH"
               value={state.warmth ?? 0}
               onChange={(v)=>update('warmth', v)}
-              spectrumData={analyser?.spectrum ?? new Float32Array(64)}
-              waveformData={analyser?.waveform ?? new Float32Array(128)}
               colorA="#39ff88" colorB="#274bff"
             />
             <ThermalKnob
               label="BOOM"
               value={state.boom ?? 0}
               onChange={(v)=>update('boom', v)}
-              spectrumData={analyser?.spectrum ?? new Float32Array(64)}
-              waveformData={analyser?.waveform ?? new Float32Array(128)}
               colorA="#ff8c00" colorB="#ff2fb9"
             />
             <ThermalKnob
               label="MIX"
               value={state.mix ?? 1}
               onChange={(v)=>update('mix', v)}
-              spectrumData={analyser?.spectrum ?? new Float32Array(64)}
-              waveformData={analyser?.waveform ?? new Float32Array(128)}
               colorA="#00d4ff" colorB="#8a2be2"
             />
             <ThermalKnob
               label="DRIVE"
               value={state.drive ?? 0}
               onChange={(v)=>update('drive', v)}
-              spectrumData={analyser?.spectrum ?? new Float32Array(64)}
-              waveformData={analyser?.waveform ?? new Float32Array(128)}
               colorA="#ffee66" colorB="#ff00ff"
             />
           </div>
