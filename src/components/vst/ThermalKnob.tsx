@@ -27,15 +27,17 @@ export const ThermalKnob: React.FC<Props> = ({
   };
 
   const move = useCallback((e:MouseEvent) => {
+    let nextValue: number | null = null;
     setDrag(prev => {
       if (!prev) return prev;
       const y = e.clientY;
       const dy = prev.y - y;
       const sensitivity = (prev.fine || e.shiftKey) ? (0.003*fine) : 0.01;
       const next = clamp(prev.v + dy * sensitivity);
-      onChange(next);
+      nextValue = next;
       return { ...prev, y };
     });
+    if (nextValue !== null) onChange(nextValue);
   }, [onChange, fine]);
 
   const up = useCallback(() => setDrag(null), []);

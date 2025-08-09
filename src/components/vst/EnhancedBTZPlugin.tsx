@@ -1,6 +1,7 @@
 import React, { useEffect, useReducer, useState } from 'react';
 import './theme.css';
 import { cn } from '@/lib/utils';
+import { useGlobalHotkeys } from '@/hooks/useGlobalHotkeys';
 import type { BTZPluginState } from './types';
 import { ThermalKnob } from './ThermalKnob';
 import { CentralVisualizerCanvas } from './CentralVisualizerCanvas';
@@ -88,6 +89,11 @@ export const EnhancedBTZPlugin:React.FC = () => {
     window.addEventListener('keydown', on);
     return ()=>window.removeEventListener('keydown', on);
   },[]);
+
+  useGlobalHotkeys({
+    toggleMeters: () => setPanel(p => (p === 'meters' ? null : 'meters')),
+    reset: () => dispatch({ type: 'reset' })
+  });
 
   const applyPreset = (p:PresetItem) => dispatch({type:'batch', patch:p.state});
   function update<K extends keyof BTZPluginState>(k: K, v: BTZPluginState[K]) {
