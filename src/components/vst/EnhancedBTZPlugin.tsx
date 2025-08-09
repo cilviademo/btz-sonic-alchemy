@@ -1,7 +1,5 @@
 import React, { useState, useEffect, useCallback, useReducer, useMemo } from 'react';
-import { ModernKnobWithSpectrum } from './ModernKnobWithSpectrum';
 import { ToggleButton } from './ToggleButton';
-import { CentralVisualizer } from './CentralVisualizer';
 import { PresetBrowser } from './PresetBrowser';
 import { AIAutomationPanel } from './AIAutomationPanel';
 import { EnhancedClippingControls } from './EnhancedClippingControls';
@@ -16,6 +14,18 @@ import { makeBTZReducer } from '@/store/btzReducer';
 import { morphParams } from '@/utils/morph';
 import { useAnalyser } from '@/hooks/useAnalyser';
 import { useAudioEngine } from '@/hooks/useAudioEngine';
+import { ThermalKnob } from '@/components/ThermalKnob';
+import { SectionCard } from '@/components/SectionCard';
+import { ClipTypeRadio } from '@/components/ClipTypeRadio';
+import { IRConvolverPanel } from '@/components/IRConvolverPanel';
+import { CentralVisualizerCanvas } from '@/components/CentralVisualizerCanvas';
+import { OutputScope } from '@/components/OutputScope';
+import { StickyControls } from '@/components/StickyControls';
+import { useHotkeys } from '@/hooks/useHotkeys';
+import { usePresetLibrary } from '@/hooks/usePresetLibrary';
+import { asClipType } from '@/utils/params';
+import { useIRConvolver } from '@/hooks/useIRConvolver';
+
 const DEFAULT_PRESET: EnhancedPreset = {
   id: 'default',
   label: 'Default',
@@ -168,10 +178,18 @@ export const EnhancedBTZPlugin: React.FC = () => {
 
   // Audio engine + analyser wiring
   const audio = useAudioEngine();
-  const { running: audioRunning, start: startAudio, stop: stopAudio, update: updateAudio, analyserOut } = audio;
+  const { running: audioRunning, start: startAudio, stop: stopAudio, update: updateAudio, analyserOut, ctxRef, nodeRef } = audio;
   const analyserData = useAnalyser(analyserOut, 60);
 
-
+  const ir = useIRConvolver(ctxRef as any, nodeRef as any);
+  useEffect(() => {
+    if (!audioRunning || !ir.ready) return;
+    const ctx = (ctxRef.current as AudioContext)!;
+    try { ir.dry.current?.disconnect(); ir.wet.current?.disconnect(); } catch {}
+    const analyser = (analyserOut as AnalyserNode);
+    ir.dry.current?.connect(analyser).connect(ctx.destination);
+    ir.wet.current?.connect(analyser).connect(ctx.destination);
+  }, [audioRunning, ir.ready]);
   const [meters, setMeters] = useState({
     inputLevel: 0,
     outputLevel: 0,
@@ -214,7 +232,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
       mix: state.mix,
       drive: state.drive,
       active: state.active,
-      clippingType: state.clippingType,
+      clippingType: asClipType(state.clippingType),
       clippingBlend: state.clippingBlend,
     });
   }, [state.mix, state.drive, state.active, state.clippingType, state.clippingBlend, updateAudio]);
@@ -413,7 +431,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
           <div className="space-y-12">
             {/* Central Visualizer - Smaller size to fit better */}
             <div className="flex justify-center mb-6">
-              <CentralVisualizer 
+              <CentralVisualizerCanvas 
                 spectrumData={meters.spectrumData}
                 waveformData={meters.waveformData}
                 isProcessing={meters.isProcessing}
@@ -423,101 +441,34 @@ export const EnhancedBTZPlugin: React.FC = () => {
 
             {/* Main Controls - 5 Knobs with live visualization */}
             <div className="grid grid-cols-3 sm:grid-cols-5 gap-3 sm:gap-4 md:gap-6 gap-y-6 justify-items-center max-w-md sm:max-w-4xl mx-auto">
-              <ModernKnobWithSpectrum 
-                value={state.punch} 
-                onChange={(v) => updateParameter('punch', v)} 
-                label="PUNCH" 
-                min={0} 
-                max={1}
-                size="sm"
-                spectrumData={specPunch}
-                color="hsl(var(--audio-primary))"
-              />
-              <ModernKnobWithSpectrum 
-                value={state.warmth} 
-                onChange={(v) => updateParameter('warmth', v)} 
-                label="WARMTH" 
-                min={0} 
-                max={1}
-                size="sm"
-                spectrumData={specWarmth}
-                color="hsl(var(--audio-secondary))"
-              />
-              <ModernKnobWithSpectrum 
-                value={state.boom} 
-                onChange={(v) => updateParameter('boom', v)} 
-                label="BOOM" 
-                min={0} 
-                max={1}
-                size="sm"
-                spectrumData={specBoom}
-                color="hsl(var(--audio-tertiary))"
-              />
-              <ModernKnobWithSpectrum 
-                value={state.mix} 
-                onChange={(v) => updateParameter('mix', v)} 
-                label="MIX" 
-                min={0} 
-                max={1}
-                size="sm"
-                spectrumData={specMix}
-                color="hsl(var(--audio-success))"
-              />
-              <ModernKnobWithSpectrum 
-                value={state.drive} 
-                onChange={(v) => updateParameter('drive', v)} 
-                label="DRIVE" 
-                min={0} 
-                max={1}
-                size="sm"
-                spectrumData={specDrive}
-                color="hsl(var(--audio-warning))"
-              />
+              <ThermalKnob label="PUNCH"  value={state.punch}  onChange={(v)=>updateParameter('punch', v)}
+                           spectrumData={specPunch} waveformData={meters.waveformData}
+                           colorA="#ff2fb9" colorB="#39ff88" />
+              <ThermalKnob label="WARMTH" value={state.warmth} onChange={(v)=>updateParameter('warmth', v)}
+                           spectrumData={specWarmth} waveformData={meters.waveformData}
+                           colorA="#39ff88" colorB="#274bff" />
+              <ThermalKnob label="BOOM"   value={state.boom}   onChange={(v)=>updateParameter('boom', v)}
+                           spectrumData={specBoom} waveformData={meters.waveformData}
+                           colorA="#ff8c00" colorB="#ff2fb9" />
+              <ThermalKnob label="MIX"    value={state.mix}    onChange={(v)=>updateParameter('mix', v)}
+                           spectrumData={specMix} waveformData={meters.waveformData}
+                           colorA="#00d4ff" colorB="#8a2be2" />
+              <ThermalKnob label="DRIVE"  value={state.drive}  onChange={(v)=>updateParameter('drive', v)}
+                           spectrumData={specDrive} waveformData={meters.waveformData}
+                           colorA="#ff2fb9" colorB="#ff8c00" />
             </div>
 
-            {/* Texture & Clipping Controls */}
-            <div className="flex flex-wrap justify-center items-center gap-6 sm:gap-8">
-              <ToggleButton 
-                value={state.texture} 
-                onChange={(v) => updateParameter('texture', v)} 
-                label="TEXTURE"
-                className={cn(
-                  "px-8 py-3 rounded-xl border-2 font-bold text-sm transition-all duration-300",
-                  state.texture 
-                    ? "bg-audio-tertiary border-audio-tertiary text-background shadow-[0_0_20px_hsl(var(--audio-tertiary))]" 
-                    : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/70"
-                )}
-              />
-              
-              <ToggleButton 
-                value={!!state.clippingEnabled} 
-                onChange={(v) => updateParameter('clippingEnabled', v)} 
-                label="FL CLIPPER"
-                className={cn(
-                  "px-8 py-3 rounded-xl border-2 font-bold text-sm transition-all duration-300",
-                  state.clippingEnabled 
-                    ? "bg-audio-warning border-audio-warning text-background shadow-[0_0_20px_hsl(var(--audio-warning))]" 
-                    : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/70"
-                )}
-              />
-            </div>
+            <SectionCard title="FL STUDIO CLIPPER" subtitle="Billboard‑level loudness without distortion"
+              right={<ToggleButton value={!!state.clippingEnabled} onChange={(v)=>updateParameter('clippingEnabled', v)} label="Clipping Enabled" />}>
+              <h4 className="text-xs tracking-[.22em] text-foreground/60 mb-3">CLIPPING TYPE</h4>
+              <ClipTypeRadio value={state.clippingType as string} onChange={(v)=>updateParameter('clippingType', v as any)} />
 
-            {/* Compact Blend control for primary view */}
-            <div className="w-full flex justify-center">
-              <div className="flex items-center gap-3 bg-plugin-surface/60 border border-foreground/10 rounded-xl px-4 py-3 mt-2">
-                <span className="text-[10px] sm:text-xs font-semibold tracking-wide text-foreground/80">CLIP BLEND</span>
-                <div className="w-40 sm:w-56">
-                  <Slider
-                    value={[Math.round(((state.clippingBlend ?? 0.5) * 100))]}
-                    onValueChange={(val) => updateParameter('clippingBlend', ((val?.[0] ?? 50) / 100))}
-                    max={100}
-                    step={1}
-                    disabled={!state.clippingEnabled}
-                  />
-                </div>
-                <span className="text-[10px] sm:text-xs font-mono w-10 text-right">{Math.round((state.clippingBlend ?? 0.5) * 100)}%</span>
+              <div className="mt-6 grid place-items-center">
+                <ThermalKnob label="BLEND" value={state.clippingBlend ?? .5} onChange={(v)=>updateParameter('clippingBlend', v)}
+                             spectrumData={meters.spectrumData} waveformData={meters.waveformData} colorA="#ff8c00" colorB="#39ff88" />
+                <p className="mt-2 text-[12px] text-foreground/60">Wet/Dry mix of clipped signal</p>
               </div>
-            </div>
+            </SectionCard>
 
             {/* Presets */}
             <div className="flex flex-col items-center gap-4">
@@ -537,65 +488,9 @@ export const EnhancedBTZPlugin: React.FC = () => {
               </div>
             </div>
 
-            {/* Output Metering - Hardware style display */}
-            <div className="bg-plugin-surface rounded-2xl p-6 border border-foreground/10"
-                 style={{
-                   background: `linear-gradient(145deg, hsl(var(--plugin-surface)), hsl(var(--plugin-panel)))`,
-                   boxShadow: `var(--shadow-panel)`
-                 }}>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-bold text-foreground tracking-wide">OUTPUT</h3>
-                <div className="flex gap-6 text-sm font-mono">
-                  <span>LUFS: <span className="text-audio-primary font-bold">{meters.lufsIntegrated.toFixed(1)}</span></span>
-                  <span>Peak: <span className="text-audio-secondary font-bold">{meters.truePeak > 0 ? '+' : ''}{meters.truePeak.toFixed(1)}dB</span></span>
-                </div>
-              </div>
-              
-              {/* Waveform Display - Output style with dark background and colorful wave */}
-              <div className="h-24 rounded-lg overflow-hidden relative border border-foreground/20"
-                    style={{
-                      background: `linear-gradient(145deg, hsl(var(--plugin-panel)), hsl(var(--plugin-raised)))`,
-                      boxShadow: `inset 0 4px 12px rgba(0,0,0,0.25)`
-                    }}>
-                <svg className="w-full h-full">
-                  <defs>
-                    <linearGradient id="outputWaveGrad" x1="0%" y1="0%" x2="100%" y2="0%">
-                      <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.9"/>
-                      <stop offset="25%" stopColor="#8a2be2" stopOpacity="1"/>
-                      <stop offset="50%" stopColor="#ff1493" stopOpacity="1"/>
-                      <stop offset="75%" stopColor="#ff8c00" stopOpacity="1"/>
-                      <stop offset="100%" stopColor="#ffff00" stopOpacity="0.9"/>
-                    </linearGradient>
-                  </defs>
-                  <polyline
-                    points={Array.from(meters.waveformData).map((value, i) => 
-                      `${(i / meters.waveformData.length) * 100},${50 + value * 35}`
-                    ).join(' ')}
-                    fill="none"
-                    stroke="url(#outputWaveGrad)"
-                    strokeWidth="3"
-                    style={{ 
-                      filter: 'drop-shadow(0 0 8px #ff1493) drop-shadow(0 0 16px #8a2be2)',
-                      strokeLinecap: 'round',
-                      strokeLinejoin: 'round'
-                    }}
-                  />
-                  
-                  {/* Grid lines for professional look */}
-                  <g stroke="rgba(255,255,255,0.05)" strokeWidth="1">
-                    <line x1="0" y1="25" x2="100" y2="25" />
-                    <line x1="0" y1="50" x2="100" y2="50" />
-                    <line x1="0" y1="75" x2="100" y2="75" />
-                    <line x1="25" y1="0" x2="25" y2="100" />
-                    <line x1="50" y1="0" x2="50" y2="100" />
-                    <line x1="75" y1="0" x2="75" y2="100" />
-                  </g>
-                </svg>
-              </div>
-            </div>
+            <OutputScope data={meters.waveformData} lufs={meters.lufsIntegrated} peak={meters.truePeak} />
           </div>
         ) : viewMode === 'advanced' ? (
-          // ADVANCED VIEW - Sound Design Mode  
           <div className="space-y-8">
             <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
               {/* AI Automation Panel */}
@@ -611,6 +506,14 @@ export const EnhancedBTZPlugin: React.FC = () => {
                 updateParameter={updateParameter}
               />
             </div>
+
+            {/* IR Convolver Panel */}
+            <IRConvolverPanel
+              loadIRFromUrl={ir.loadIRFromUrl}
+              loadIRFromArrayBuffer={ir.loadIRFromArrayBuffer}
+              setWet={ir.setWet} setDry={ir.setDry}
+              setPreDelay={ir.setPreDelay} setHP={ir.setHP} setLP={ir.setLP} setDamp={ir.setDamp}
+            />
           </div>
         ) : (
           // ENGINEERING VIEW - Technical Analysis Mode
