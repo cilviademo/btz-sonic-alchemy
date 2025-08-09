@@ -7,6 +7,8 @@ import { CentralVisualizerCanvas } from './CentralVisualizerCanvas';
 import { PresetStrip, type PresetItem } from './PresetStrip';
 import { MiniMeterStrip } from './MiniMeterStrip';
 import { OverlayGrid } from './OverlayGrid';
+import { PanelDrawer } from './PanelDrawer';
+import { renderPanel, type PanelId } from './PanelRegistry';
 
 // ---- defaults & presets (compatible with existing types)
 const DEFAULT_STATE: BTZPluginState = {
@@ -66,6 +68,7 @@ export const EnhancedBTZPlugin:React.FC = () => {
   const [lufs, setLUFS] = useState(-14.2);
   const [peak, setPeak] = useState(-0.7);
   const [showGrid, setShowGrid] = useState(false);
+  const [panel, setPanel] = useState<PanelId | null>(null);
 
   // simple analyser sim to keep UI alive (replace with real engine updates)
   useEffect(() => {
@@ -87,6 +90,7 @@ export const EnhancedBTZPlugin:React.FC = () => {
   },[]);
 
   const applyPreset = (p:PresetItem) => dispatch({type:'batch', patch:p.state});
+  const update = <K extends keyof BTZPluginState>(k: K, v: BTZPluginState[K]) => dispatch({type:'set', key:k, value:v});
 
   const peakNorm = Math.max(0, Math.min(1, (peak + 20) / 20));
 
@@ -108,16 +112,22 @@ export const EnhancedBTZPlugin:React.FC = () => {
               {k:'mix',   cA:'#2fd3ff', cB:'#8a2be2', label:'MIX'},
               {k:'drive', cA:'#ff8a00', cB:'#ff2fb9', label:'DRIVE'},
             ].map(n=>(
-              <ThermalKnob
-                key={n.k as string}
-                label={n.label}
-                value={(state as any)[n.k] ?? 0}
-                onChange={(v)=>dispatch({type:'set', key:n.k as any, value:v})}
-                colorA={n.cA} colorB={n.cB}
-              />
+              <div key={n.k as string} className="group text-center">
+                <ThermalKnob
+                  label={n.label}
+                  value={(state as any)[n.k] ?? 0}
+                  onChange={(v)=>dispatch({type:'set', key:n.k as any, value:v})}
+                  colorA={n.cA} colorB={n.cB}
+                />
+                <button
+                  className="block mx-auto mt-1 text-[10px] text-white/40 opacity-0 group-hover:opacity-100 transition"
+                  onClick={()=>setPanel('deep')}
+                >
+                  PRECISION…
+                </button>
+              </div>
             ))}
           </div>
-        </div>
 
         {/* Output + module knobs */}
         <div className="col-span-4 space-y-4">
@@ -145,25 +155,25 @@ export const EnhancedBTZPlugin:React.FC = () => {
                        value={state.sparkMix ?? 1}
                        setOn={(v)=>dispatch({type:'set',key:'sparkEnabled',value:v})}
                        setVal={(v)=>dispatch({type:'set',key:'sparkMix',value:v})}
-                       colorA="#ff8a00" colorB="#ff2fb9"/>
+                       colorA="#ff8a00" colorB="#ff2fb9" open={()=>setPanel('spark')}/>
               <ModKnob label="SHINE" on={!!state.shineEnabled}
                        value={state.shineMix ?? 0.5}
                        setOn={(v)=>dispatch({type:'set',key:'shineEnabled',value:v})}
                        setVal={(v)=>dispatch({type:'set',key:'shineMix',value:v})}
-                       colorA="#2fd3ff" colorB="#8a2be2"/>
+                       colorA="#2fd3ff" colorB="#8a2be2" open={()=>setPanel('shine')}/>
               <ModKnob label="MASTER" on={!!state.masterEnabled}
                        value={state.masterMix ?? 1}
                        setOn={(v)=>dispatch({type:'set',key:'masterEnabled',value:v})}
                        setVal={(v)=>dispatch({type:'set',key:'masterMix',value:v})}
-                       colorA="#39ff88" colorB="#2fd3ff"/>
+                       colorA="#39ff88" colorB="#2fd3ff" open={()=>setPanel('master')}/>
               <ModKnob label="AI" on={true}
-                       value={1} setOn={()=>{}} setVal={()=>{}} colorA="#ff6a3d" colorB="#ff2fb9" disabled/>
+                       value={1} setOn={()=>{}} setVal={()=>{}} colorA="#ff6a3d" colorB="#ff2fb9" disabled open={()=>setPanel('meters')}/>
               <ModKnob label="CONVOLVER" on={!!state.subEnabled}
                        value={(state as any).subAmount ?? 0}
                        setOn={(v)=>dispatch({type:'set',key:'subEnabled',value:v})}
                        setVal={(v)=>dispatch({type:'set',key:'subAmount' as any,value:v})}
-                       colorA="#ff2fb9" colorB="#2fd3ff"/>
-              <ModKnob label="METERS" on={true} value={1} setOn={()=>{}} setVal={()=>{}} colorA="#8a2be2" colorB="#2fd3ff" disabled/>
+                       colorA="#ff2fb9" colorB="#2fd3ff" open={()=>setPanel('convolver')}/>
+              <ModKnob label="METERS" on={true} value={1} setOn={()=>{}} setVal={()=>{}} colorA="#8a2be2" colorB="#2fd3ff" disabled open={()=>setPanel('meters')}/>
             </div>
             <div className="mt-3 text:[10px] text-white/45">Click a module knob to open its deep panel.</div>
           </div>
@@ -181,12 +191,14 @@ export const EnhancedBTZPlugin:React.FC = () => {
 // small wrapper knob for module rows (with ON/OFF)
 const ModKnob:React.FC<{
   label:string; on:boolean; value:number; setOn:(v:boolean)=>void; setVal:(v:number)=>void;
-  colorA:string; colorB:string; disabled?:boolean;
-}> = ({label,on,value,setOn,setVal,colorA,colorB,disabled})=>{
+  colorA:string; colorB:string; disabled?:boolean; open?:()=>void;
+}> = ({label,on,value,setOn,setVal,colorA,colorB,disabled,open})=>{
   return (
     <div className="text-center">
-      <ThermalKnob value={value} onChange={setVal} colorA={colorA} colorB={colorB} size={104} disabled={disabled}/>
-      <div className="text-[10px] tracking-[.22em] text-white/70 mt-1">{label}</div>
+      <button className="group block mx-auto" onClick={!disabled ? open : undefined}>
+        <ThermalKnob value={value} onChange={setVal} colorA={colorA} colorB={colorB} size={104} disabled={disabled}/>
+        <div className="text-[10px] tracking-[.22em] text-white/70 mt-1">{label}</div>
+      </button>
       <button
         className={cn(
           'mt-1 px-2 py-1 rounded text-[10px] border',
