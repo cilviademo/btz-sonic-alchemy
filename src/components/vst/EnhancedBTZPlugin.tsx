@@ -25,7 +25,6 @@ import { AdvancedMeterPanel } from './AdvancedMeterPanel';
 
 import { ToggleButton } from './ToggleButton';
 import { PRO_STYLE_PRESETS } from './proStyles';
-import { BTZFrame } from './BTZFrame';
 
 import type { BTZPluginState, EnhancedPreset } from './types';
 
@@ -253,23 +252,109 @@ export const EnhancedBTZPlugin: React.FC = () => {
   const applyPreset = useCallback((preset: EnhancedPreset) => {
     morphParams(state, preset.state, 200, (patch) => dispatch({ type: 'batch', patch }), () => {});
   }, [state]);
-  const STYLE_PRESETS = useMemo<EnhancedPreset[]>(() => PRO_STYLE_PRESETS.map(p => ({ id: `style-${p.id}`, label: p.label, state: { ...DEFAULT_PRESET.state, ...(p.state as any) } as BTZPluginState })), []);
-  const COMBINED_PRESETS = useMemo(() => [...PERFORMANCE_PRESETS, ...STYLE_PRESETS], [STYLE_PRESETS]);
 
   // =========================================
   //                RENDER
   // =========================================
   return (
-    <div className="w-full flex justify-center items-start py-6 overflow-x-auto">
-      <BTZFrame
-        state={state}
-        presets={COMBINED_PRESETS}
-        onApplyPreset={applyPreset}
-        update={updateParameter}
-        meters={{ waveformData: meters.waveformData, lufsIntegrated: meters.lufsIntegrated, truePeak: meters.truePeak }}
-        spectrum={meters.spectrumData}
-        scale={1}
-      />
+    <div className={cn("w-full max-w-7xl mx-auto rounded-3xl border border-audio-primary/20 overflow-hidden", skin === 'hardware' && 'skin-hardware')}
+         style={{ background: 'var(--gradient-main)', boxShadow: 'var(--shadow-panel), 0 0 60px hsl(var(--audio-primary) / 0.1)' }}>
+
+      {/* Header */}
+      <div className="relative border-b border-audio-primary/20 p-6 bg-gradient-to-r from-plugin-surface/50 to-plugin-panel/50">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-8">
+            <div className="relative">
+              <h1 className="text-4xl font-black text-transparent bg-gradient-to-r from-audio-primary to-audio-secondary bg-clip-text tracking-wider" style={{ filter: 'drop-shadow(0 0 20px hsl(var(--audio-primary) / 0.5))', fontFamily: 'var(--font-display)' }}>BTZ</h1>
+              <div className="absolute -top-2 -right-2 w-3 h-3 rounded-full bg-audio-primary animate-pulse" style={{ boxShadow: '0 0 10px hsl(var(--audio-primary))' }} />
+            </div>
+            <div>
+              <h2 className="text-lg font-bold text-foreground tracking-wide">BOX TONE ZONE</h2>
+              <h3 className="text-xs text-foreground/70 tracking-[0.2em] uppercase">Enhanced Audio Processor</h3>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <div className="hidden sm:flex bg-plugin-surface rounded-full p-1 border border-foreground/10">
+              <button onClick={() => setSkin('modern')}   className={cn("px-3 py-2 rounded-full text-xs font-medium", skin === 'modern'   ? "bg-foreground text-background" : "text-foreground/70 hover:text-foreground")}>MODERN</button>
+              <button onClick={() => setSkin('hardware')} className={cn("px-3 py-2 rounded-full text-xs font-medium", skin === 'hardware' ? "bg-foreground text-background" : "text-foreground/70 hover:text-foreground")}>HARDWARE</button>
+            </div>
+            <button onClick={() => (audioRunning ? stopAudio?.() : startAudio?.())}
+              className={cn("px-4 py-2 rounded-full text-xs font-bold border", audioRunning ? "bg-audio-success text-background border-audio-success" : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/80")}
+              aria-pressed={!!audioRunning}>
+              {audioRunning ? 'AUDIO ON' : 'ENABLE AUDIO'}
+            </button>
+            <ToggleButton value={state.active} onChange={(v) => updateParameter('active', v)} label="POWER"
+              className={cn("px-8 py-3 rounded-full border-2 font-bold",
+                state.active ? "bg-audio-primary border-audio-primary text-background shadow-[0_0_20px_hsl(var(--audio-primary))]" : "bg-plugin-raised/50 border-plugin-raised hover:bg-plugin-raised text-foreground/70")} />
+          </div>
+        </div>
+      </div>
+
+      {/* Unified Console */}
+      <div className="p-6 md:p-8 space-y-8">
+
+        {/* Visual + 5 knobs */}
+        <div className="grid xl:grid-cols-[1.2fr_1fr] gap-8">
+          <SectionCard title="" subtitle="">
+            <div className="flex justify-center mb-6">
+              <CentralVisualizerCanvas spectrumData={meters.spectrumData} waveformData={meters.waveformData} isProcessing={meters.isProcessing} level={meters.outputLevel} />
+            </div>
+
+            <div className="grid grid-cols-3 sm:grid-cols-5 gap-4 justify-items-center max-w-4xl mx-auto">
+              <ThermalKnob label="PUNCH"  value={state.punch}  onChange={(v)=>updateParameter('punch', v)}  spectrumData={specPunch} waveformData={meters.waveformData} colorA="#ff2fb9" colorB="#39ff88" />
+              <ThermalKnob label="WARMTH" value={state.warmth} onChange={(v)=>updateParameter('warmth', v)} spectrumData={specWarmth} waveformData={meters.waveformData} colorA="#39ff88" colorB="#274bff" />
+              <ThermalKnob label="BOOM"   value={state.boom}   onChange={(v)=>updateParameter('boom', v)}   spectrumData={specBoom}  waveformData={meters.waveformData} colorA="#ff8c00" colorB="#ff2fb9" />
+              <ThermalKnob label="MIX"    value={state.mix}    onChange={(v)=>updateParameter('mix', v)}    spectrumData={specMix}    waveformData={meters.waveformData} colorA="#00d4ff" colorB="#8a2be2" />
+              <ThermalKnob label="DRIVE"  value={state.drive}  onChange={(v)=>updateParameter('drive', v)}  spectrumData={specDrive}  waveformData={meters.waveformData} colorA="#ff2fb9" colorB="#ff8c00" />
+            </div>
+          </SectionCard>
+
+          <SectionCard title="OUTPUT" subtitle="">
+            <OutputScope data={meters.waveformData} lufs={meters.lufsIntegrated} peak={meters.truePeak} />
+          </SectionCard>
+        </div>
+
+        {/* Scrolling Presets (Performance tiles + renamed styles in dropdown style) */}
+        <PresetScroller
+          presets={PERFORMANCE_PRESETS}
+          proStyles={PRO_STYLE_PRESETS}
+          onApply={(p) => applyPreset(p)}
+          onApplyStyle={(preset) => dispatch({ type: 'batch', patch: clampState(preset.state) })}
+        />
+
+        {/* SPARK (clipper) */}
+        <SparkPanel state={state} update={updateParameter} />
+
+        {/* SHINE + MASTER + DEEP in a 2-col row */}
+        <div className="grid lg:grid-cols-2 gap-8">
+          <ShinePanel state={state} updateParameter={updateParameter} />
+          <MasterGluePanel state={state} update={updateParameter} />
+        </div>
+        <DeepControlsPanel state={state} update={updateParameter} />
+
+        {/* IR Convolver + AI card side-by-side */}
+        <div className="grid lg:grid-cols-2 gap-8">
+          <SectionCard title="Convolution Reverb" subtitle="Drag & drop IR WAVs or use presets">
+            <div className="text-center text-foreground/60 py-8">
+              IR Convolver Panel placeholder - integrate your existing IR panel here
+            </div>
+          </SectionCard>
+
+          <AIAutomationPanel state={state} updateParameter={updateParameter} analysisData={meters.analysisData} />
+        </div>
+
+        {/* Engineering: foldable cards (chain + meters) */}
+        <div className="grid lg:grid-cols-2 gap-8">
+          <FoldCard title="Signal Processing Chain">
+            <ProcessingChainVisualizer state={state} analysisData={meters.analysisData} />
+          </FoldCard>
+          <FoldCard title="Professional Metering">
+            <AdvancedMeterPanel state={state} meters={meters} />
+          </FoldCard>
+        </div>
+
+      </div>
     </div>
   );
 };
