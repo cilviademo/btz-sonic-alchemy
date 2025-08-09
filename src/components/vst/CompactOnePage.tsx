@@ -23,7 +23,7 @@ import { IRConvolverPanel } from '@/components/IRConvolverPanel';
 import { AIAutomationPanel } from './AIAutomationPanel';
 import { AdvancedMeterPanel } from './AdvancedMeterPanel';
 import { ProcessingChainVisualizer } from './ProcessingChainVisualizer';
-
+import { GridOverlay } from '@/components/dev/GridOverlay';
 import { useModalRoute } from './useModalRoute';
 import type { BTZPluginState } from './types';
 
@@ -111,8 +111,8 @@ export const CompactOnePage: React.FC = () => {
   });
   return (
     <div
-      className="mx-auto rounded-2xl border border-foreground/10 overflow-hidden"
-      style={{ width: 1200, minHeight: 650, background: 'hsl(var(--plugin-panel))' }}
+      className="mx-auto relative rounded-2xl border border-foreground/10 overflow-hidden"
+      style={{ width: 1200, height: 700, background: 'hsl(var(--plugin-panel))' }}
       aria-label="BTZ Compact Console"
     >
       {/* HEADER */}
@@ -301,6 +301,8 @@ export const CompactOnePage: React.FC = () => {
         )}
         {route === 'chain'   && <ProcessingChainVisualizer state={state} analysisData={{ transientStrength:0,lowEndEnergy:0,loudnessScore:0, richness:0, spectralCentroid:0 }} />}
       </ModalSheet>
+
+      <GridOverlay show={false} />
     </div>
   );
 };
