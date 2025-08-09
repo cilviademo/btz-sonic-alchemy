@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useReducer } from 'react';
+import React, { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { makeBTZReducer } from '@/store/btzReducer';
 import { DEFAULT_PRESET } from './defaults';
@@ -7,9 +7,11 @@ import { useAnalyser } from '@/hooks/useAnalyser';
 import { useIRConvolver } from '@/hooks/useIRConvolver';
 
 import { ModuleKnob } from './ModuleKnob';
+import { MiniMeterStrip } from './MiniMeterStrip';
 import { CentralVisualizerCanvas } from '@/components/CentralVisualizerCanvas';
 import { OutputScope } from '@/components/OutputScope';
 import { PresetScroller, PresetItem } from '@/components/PresetScroller';
+import { useHotkeys } from '@/hooks/useHotkeys';
 
 // Pop-out panels
 import { SparkPanel } from './SparkPanel';
@@ -26,14 +28,20 @@ import type { BTZPluginState } from './types';
 
 export const CompactOnePage: React.FC = () => {
   const [state, dispatch] = useReducer(makeBTZReducer(DEFAULT_PRESET.state), DEFAULT_PRESET.state);
-  const update = <K extends keyof BTZPluginState>(k: K, v: BTZPluginState[K]) =>
+  const historyRef = useRef<BTZPluginState[]>([]);
+  const update = <K extends keyof BTZPluginState>(k: K, v: BTZPluginState[K]) => {
+    historyRef.current.push({ ...state });
+    if (historyRef.current.length > 50) historyRef.current.shift();
     dispatch({ type: 'set', key: k, value: v });
+  };
 
   const audio = useAudioEngine();
   const analyser = useAnalyser(audio.analyserOut, 60);
   const ir = useIRConvolver(audio.ctxRef as any, audio.nodeRef as any);
 
   const { route, open, close } = useModalRoute();
+
+  // Hotkeys are initialized after presets declaration
 
   // Engine param push
   const engineParams = useMemo(() => ({
@@ -75,17 +83,41 @@ export const CompactOnePage: React.FC = () => {
     { id: 'stream', label: 'Streaming Safe', payload: { lufsTarget: -14, sparkEnabled: true, sparkLUFS: -14 } },
     { id: 'punch-kick', label: 'Punchy Kick', payload: { punch: 0.85, boom: 0.7, clippingEnabled: true } },
   ], []);
+  const [selectedPresetId, setSelectedPresetId] = useState<string>('default');
 
+  const selectPresetByDelta = (delta: number) => {
+    const idx = Math.max(0, presets.findIndex(p => p.id === selectedPresetId));
+    const ni = (idx + delta + presets.length) % presets.length;
+    const next = presets[ni];
+    setSelectedPresetId(next.id);
+    historyRef.current.push({ ...state });
+    dispatch({ type: 'batch', patch: next.payload as any });
+  };
+
+  useHotkeys({
+    ' ': () => update('active', !state.active),
+    'Space': () => update('active', !state.active),
+    'M': () => (route === 'meters' ? close() : open('meters')),
+    'ArrowUp': () => selectPresetByDelta(1),
+    'ArrowDown': () => selectPresetByDelta(-1),
+    'R': () => { historyRef.current.push({ ...state }); setSelectedPresetId('default'); dispatch({ type:'batch', patch: DEFAULT_PRESET.state }); },
+    'Cmd+Z': () => { const prev = historyRef.current.pop(); if (prev) { dispatch({ type:'batch', patch: prev as any }); } },
+    'Ctrl+Z': () => { const prev = historyRef.current.pop(); if (prev) { dispatch({ type:'batch', patch: prev as any }); } },
+  });
   return (
     <div
       className="mx-auto rounded-2xl border border-foreground/10 overflow-hidden"
-      style={{ width: 1200, minHeight: 700, background: 'hsl(var(--plugin-panel))' }}
+      style={{ width: 1200, minHeight: 650, background: 'hsl(var(--plugin-panel))' }}
       aria-label="BTZ Compact Console"
     >
       {/* HEADER */}
       <div className="flex items-center justify-between px-8 py-6 border-b border-foreground/10 bg-plugin-surface/60">
         <div className="text-xl font-black tracking-wide">
           BTZ <span className="text-foreground/60 font-medium ml-3">BOX TONE ZONE</span>
+        </div>
+
+        <div className="flex-1 px-6">
+          <MiniMeterStrip lufs={-14.2} truePeakDb={-0.7} peakNorm={analyser?.levelOut ?? 0} />
         </div>
 
         <div className="flex gap-3">
@@ -130,8 +162,12 @@ export const CompactOnePage: React.FC = () => {
           <PresetScroller
             title="PRESETS"
             presets={presets}
-            selectedId={undefined}
-            onSelect={(p) => dispatch({ type: 'batch', patch: p.payload })}
+            selectedId={selectedPresetId}
+            onSelect={(p) => {
+              setSelectedPresetId(p.id);
+              historyRef.current.push({ ...state });
+              dispatch({ type: 'batch', patch: p.payload });
+            }}
           />
         </div>
 
@@ -167,6 +203,15 @@ export const CompactOnePage: React.FC = () => {
                         onOpen={()=>open('meters')} />
           </div>
         </div>
+      </div>
+
+      {/* Shortcuts strip */}
+      <div className="px-8 py-2 border-t border-foreground/10 bg-plugin-surface/60 text-xs text-foreground/80 flex flex-wrap gap-x-4 gap-y-1">
+        <span>Space: Bypass</span>
+        <span>M: Toggle Meters</span>
+        <span>↑/↓: Next/Prev Preset</span>
+        <span>R: Reset</span>
+        <span>Cmd/Ctrl+Z: Undo</span>
       </div>
 
       {/* SHEET MODAL */}
