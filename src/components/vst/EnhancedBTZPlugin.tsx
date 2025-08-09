@@ -253,22 +253,24 @@ export const EnhancedBTZPlugin: React.FC = () => {
   const applyPreset = useCallback((preset: EnhancedPreset) => {
     morphParams(state, preset.state, 200, (patch) => dispatch({ type: 'batch', patch }), () => {});
   }, [state]);
-  const STYLE_PRESETS = useMemo<EnhancedPreset[]>(() => PRO_STYLE_PRESETS.map(p => ({ id: p.id, label: p.label, state: { ...DEFAULT_PRESET.state, ...(p.state as any) } as BTZPluginState })), []);
+  const STYLE_PRESETS = useMemo<EnhancedPreset[]>(() => PRO_STYLE_PRESETS.map(p => ({ id: `style-${p.id}`, label: p.label, state: { ...DEFAULT_PRESET.state, ...(p.state as any) } as BTZPluginState })), []);
   const COMBINED_PRESETS = useMemo(() => [...PERFORMANCE_PRESETS, ...STYLE_PRESETS], [STYLE_PRESETS]);
 
   // =========================================
   //                RENDER
   // =========================================
   return (
-    <BTZFrame
-      state={state}
-      presets={COMBINED_PRESETS}
-      onApplyPreset={applyPreset}
-      update={updateParameter}
-      meters={{ waveformData: meters.waveformData, lufsIntegrated: meters.lufsIntegrated, truePeak: meters.truePeak }}
-      spectrum={meters.spectrumData}
-      scale={1}
-    />
+    <div className="w-full flex justify-center items-start py-6 overflow-x-auto">
+      <BTZFrame
+        state={state}
+        presets={COMBINED_PRESETS}
+        onApplyPreset={applyPreset}
+        update={updateParameter}
+        meters={{ waveformData: meters.waveformData, lufsIntegrated: meters.lufsIntegrated, truePeak: meters.truePeak }}
+        spectrum={meters.spectrumData}
+        scale={1}
+      />
+    </div>
   );
 };
 
