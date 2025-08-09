@@ -1,6 +1,6 @@
 import React from 'react';
 import { SectionCard } from '@/components/SectionCard';
-import { ToggleButton } from '@/components/ToggleButton';
+import { ToggleButton } from '@/components/vst/ToggleButton';
 import { Slider } from '@/components/ui/slider';
 import { BTZPluginState, ClipType } from './types';
 

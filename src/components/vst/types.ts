@@ -5,10 +5,10 @@ export interface BTZPluginState {
   // Existing core
   punch: number; warmth: number; boom: number; mix: number; drive: number;
   texture: boolean; active: boolean; oversampling: boolean;
-  clippingType: ClipType; clippingBlend: number; clippingEnabled: boolean;
-  lufsTarget: number; aiEnhance: boolean; timbralTransfer: boolean; aiAutomation: boolean;
-  gateThreshold: number; transientAmount: number; saturationAmount: number;
-  subHarmonics: boolean; consoleGlue: boolean; oversamplingRate: number;
+  clippingType?: ClipType; clippingBlend?: number; clippingEnabled?: boolean;
+  lufsTarget?: number; aiEnhance?: boolean; timbralTransfer?: boolean; aiAutomation?: boolean;
+  gateThreshold?: number; transientAmount?: number; saturationAmount?: number;
+  subHarmonics?: boolean; consoleGlue?: boolean; oversamplingRate?: number;
 
   // ==== SPARK (master clipper) ====
   sparkEnabled?: boolean;            // default true

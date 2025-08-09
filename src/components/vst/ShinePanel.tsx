@@ -1,7 +1,7 @@
 import React from 'react';
 import { Slider } from '@/components/ui/slider';
 import { BTZPluginState } from './types';
-import { ToggleButton } from '@/components/ToggleButton';
+import { ToggleButton } from '@/components/vst/ToggleButton';
 import { SectionCard } from '@/components/SectionCard';
 
 export const ShinePanel: React.FC<{
