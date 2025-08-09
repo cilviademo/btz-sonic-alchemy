@@ -90,7 +90,9 @@ export const EnhancedBTZPlugin:React.FC = () => {
   },[]);
 
   const applyPreset = (p:PresetItem) => dispatch({type:'batch', patch:p.state});
-  const update = <K extends keyof BTZPluginState>(k: K, v: BTZPluginState[K]) => dispatch({type:'set', key:k, value:v});
+  function update<K extends keyof BTZPluginState>(k: K, v: BTZPluginState[K]) {
+    dispatch({type:'set', key:k, value:v});
+  }
 
   const peakNorm = Math.max(0, Math.min(1, (peak + 20) / 20));
 
@@ -128,6 +130,7 @@ export const EnhancedBTZPlugin:React.FC = () => {
               </div>
             ))}
           </div>
+        </div>
 
         {/* Output + module knobs */}
         <div className="col-span-4 space-y-4">
@@ -175,7 +178,7 @@ export const EnhancedBTZPlugin:React.FC = () => {
                        colorA="#ff2fb9" colorB="#2fd3ff" open={()=>setPanel('convolver')}/>
               <ModKnob label="METERS" on={true} value={1} setOn={()=>{}} setVal={()=>{}} colorA="#8a2be2" colorB="#2fd3ff" disabled open={()=>setPanel('meters')}/>
             </div>
-            <div className="mt-3 text:[10px] text-white/45">Click a module knob to open its deep panel.</div>
+            <div className="mt-3 text-[10px] text-white/45">Click a module knob to open its deep panel.</div>
           </div>
         </div>
 
@@ -184,6 +187,10 @@ export const EnhancedBTZPlugin:React.FC = () => {
           <PresetStrip presets={PRESETS} onApply={applyPreset}/>
         </div>
       </div>
+
+      <PanelDrawer open={!!panel} onClose={()=>setPanel(null)} title={panel?.toUpperCase()}>
+        {panel && renderPanel(panel, state, update)}
+      </PanelDrawer>
     </div>
   );
 };
