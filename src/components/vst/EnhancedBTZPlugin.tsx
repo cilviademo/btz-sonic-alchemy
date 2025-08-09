@@ -26,6 +26,10 @@ import { StickyControls } from '@/components/StickyControls';
 import { useHotkeys } from '@/hooks/useHotkeys';
 import { asClipType } from '@/utils/params';
 import { useIRConvolver } from '@/hooks/useIRConvolver';
+import { ArturiaFrame } from '@/components/arturia/ArturiaFrame';
+import { ArturiaToggle } from '@/components/arturia/ArturiaToggle';
+import { VUMeterNeedle } from '@/components/arturia/VUMeterNeedle';
+import { ArturiaKnob } from '@/components/arturia/ArturiaKnob';
 
 // helpers
 import { useRafThrottle } from '@/utils/useRafThrottle';
@@ -500,20 +504,77 @@ export const EnhancedBTZPlugin: React.FC = () => {
             </div>
           ) : viewMode === 'advanced' ? (
             <Suspense fallback={<div className="text-foreground/70 p-6">Loading advanced modules…</div>}>
-              <div className="space-y-8">
-                <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                  <AIAutomationPanel
-                    state={state}
-                    updateParameter={updateParameter}
-                    analysisData={meters.analysisData}
-                  />
-                  <EnhancedClippingControls
-                    state={state}
-                    updateParameter={updateParameter}
-                  />
+              <div className="space-y-8 skin-arturia">
+                {/* Top bar — analog meter with live needle next to AI panel */}
+                <div className="grid grid-cols-1 xl:grid-cols-[1.6fr_.9fr] gap-8">
+                  <ArturiaFrame title="AI AUTOMATION" subtitle="Adaptive processing">
+                    <AIAutomationPanel
+                      state={state}
+                      updateParameter={updateParameter}
+                      analysisData={meters.analysisData}
+                    />
+                  </ArturiaFrame>
+
+                  <ArturiaFrame title="OUTPUT MONITOR" subtitle="Analog VU">
+                    <div className="grid gap-4">
+                      <VUMeterNeedle value={Math.min(1, Math.max(0, (meters.outputLevel ?? 0)))} />
+                      <div className="grid grid-cols-2 gap-3">
+                        <ArturiaToggle
+                          checked={!!state.consoleGlue}
+                          onChange={(v)=>updateParameter('consoleGlue', v)}
+                          label="BUS GLUE"
+                        />
+                        <ArturiaToggle
+                          checked={!!state.texture}
+                          onChange={(v)=>updateParameter('texture', v)}
+                          label="AIR/TEXTURE"
+                        />
+                      </div>
+                    </div>
+                  </ArturiaFrame>
                 </div>
 
-                {/* IR Convolver */}
+                {/* Knob bank in Arturia style, but keeping animated Thermal cores */}
+                <ArturiaFrame title="DEEP CONTROLS" subtitle="Punch • Warmth • Boom • Mix • Drive">
+                  <div className="grid grid-cols-3 sm:grid-cols-5 gap-12 justify-items-center">
+                    <ArturiaKnob label="PUNCH"  value={state.punch}  onChange={(v)=>updateParameter('punch', v)}
+                                 spectrumData={meters.spectrumData.subarray(0,16)} waveformData={meters.waveformData}
+                                 colorA="#ff2fb9" colorB="#39ff88" />
+                    <ArturiaKnob label="WARMTH" value={state.warmth} onChange={(v)=>updateParameter('warmth', v)}
+                                 spectrumData={meters.spectrumData.subarray(16,32)} waveformData={meters.waveformData}
+                                 colorA="#39ff88" colorB="#274bff" />
+                    <ArturiaKnob label="BOOM"   value={state.boom}   onChange={(v)=>updateParameter('boom', v)}
+                                 spectrumData={meters.spectrumData.subarray(0,8)} waveformData={meters.waveformData}
+                                 colorA="#ff8c00" colorB="#ff2fb9" />
+                    <ArturiaKnob label="MIX"    value={state.mix}    onChange={(v)=>updateParameter('mix', v)}
+                                 spectrumData={meters.spectrumData} waveformData={meters.waveformData}
+                                 colorA="#00d4ff" colorB="#8a2be2" />
+                    <ArturiaKnob label="DRIVE"  value={state.drive}  onChange={(v)=>updateParameter('drive', v)}
+                                 spectrumData={meters.spectrumData.subarray(32,48)} waveformData={meters.waveformData}
+                                 colorA="#ff2fb9" colorB="#ff8c00" />
+                  </div>
+                </ArturiaFrame>
+
+                {/* Clipper retains neon motion, mounted into a cream hardware frame */}
+                <ArturiaFrame title="CLIPPER" subtitle="Soft / Hard / Tube / Tape / Digital">
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
+                    <EnhancedClippingControls state={state} updateParameter={updateParameter} />
+                    <div className="grid content-start gap-6">
+                      <div>
+                        <div className="text-[11px] tracking-[.18em] font-semibold opacity-70 mb-2">Clipped Blend</div>
+                        <Slider
+                          value={[Math.round(((state.clippingBlend ?? 0.5) * 100))]}
+                          onValueChange={(val) => updateParameter('clippingBlend', ((val?.[0] ?? 50) / 100))}
+                          max={100}
+                          step={1}
+                        />
+                      </div>
+                      <VUMeterNeedle value={Math.min(1, Math.max(0, (meters.outputLevel ?? 0)))} label="POST-CLIP" />
+                    </div>
+                  </div>
+                </ArturiaFrame>
+
+                {/* IR Convolver in Arturia chassis */}
                 <IRConvolverPanel
                   loadIRFromUrl={ir.loadIRFromUrl}
                   loadIRFromArrayBuffer={ir.loadIRFromArrayBuffer}

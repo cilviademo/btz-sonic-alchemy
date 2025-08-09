@@ -180,3 +180,52 @@
     --glow-thermal: 0 0 30px hsl(38 85% 45% / 0.35), 0 0 60px hsl(38 85% 45% / 0.2);
   }
 }
+
+/* === Arturia skin tokens === */
+@layer base {
+  :root {
+    --art-bg: #efede9;            /* ivory */
+    --art-bg-2: #e6e3de;          /* deeper ivory for bevel */
+    --art-ink: #171717;            /* text */
+    --art-accent: #f6683b;        /* warm orange */
+    --art-accent-2: #e2b25a;      /* brass */
+    --art-shadow: rgba(0,0,0,.2);
+    --art-edge: rgba(0,0,0,.08);
+    --art-screw: #b1aca3;
+    --art-plate: #f7f5f2;
+    --art-display: #1c1e24;       /* dark displays inside the cream unit */
+    --art-led: #7CFC56;
+  }
+
+  /* skin switcher */
+  .skin-arturia {
+    --panel-bg: var(--art-bg);
+    --panel-ink: var(--art-ink);
+    --panel-accent: var(--art-accent);
+    --panel-shadow: var(--art-shadow);
+  }
+
+  /* subtle hardware bevel */
+  .art-plate {
+    background: linear-gradient(180deg, var(--art-bg), var(--art-bg-2));
+    box-shadow:
+      inset 0 1px 0 #fff,
+      inset 0 -1px 0 var(--art-edge),
+      0 8px 20px var(--art-shadow);
+    border-radius: 16px;
+    border: 1px solid rgba(0,0,0,.06);
+  }
+
+  /* tiny screws in corners */
+  .art-screw {
+    width: 14px; height: 14px; border-radius: 50%;
+    background: radial-gradient(circle at 35% 35%, #ddd, var(--art-screw));
+    box-shadow: inset 0 1px 0 #fff, inset 0 -1px 2px rgba(0,0,0,.25);
+    position: absolute;
+  }
+  .art-screw:after {
+    content: ''; position: absolute; left: 3px; right: 3px; top: 6px; height: 2px;
+    background: rgba(0,0,0,.45); border-radius: 2px;
+  }
+}
+
