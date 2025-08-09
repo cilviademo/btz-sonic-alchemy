@@ -9,6 +9,7 @@ import { useIRConvolver } from '@/hooks/useIRConvolver';
 import { ModuleKnob } from './ModuleKnob';
 import { MiniMeterStrip } from './MiniMeterStrip';
 import { CentralVisualizerCanvas } from '@/components/CentralVisualizerCanvas';
+import { ThermalKnob } from './ThermalKnob';
 import { LEDMeter } from './LEDMeter';
 import { PresetScroller, PresetItem } from '@/components/PresetScroller';
 import { useHotkeys } from '@/hooks/useHotkeys';
@@ -98,8 +99,12 @@ export const CompactOnePage: React.FC = () => {
     ' ': () => update('active', !state.active),
     'Space': () => update('active', !state.active),
     'M': () => (route === 'meters' ? close() : open('meters')),
+    'A': () => update('aiAutomation', !state.aiAutomation),
+    '/': () => update('sparkEnabled', !state.sparkEnabled),
     'ArrowUp': () => selectPresetByDelta(1),
     'ArrowDown': () => selectPresetByDelta(-1),
+    'ArrowRight': () => selectPresetByDelta(1),
+    'ArrowLeft': () => selectPresetByDelta(-1),
     'R': () => { historyRef.current.push({ ...state }); setSelectedPresetId('default'); dispatch({ type:'batch', patch: DEFAULT_PRESET.state }); },
     'Cmd+Z': () => { const prev = historyRef.current.pop(); if (prev) { dispatch({ type:'batch', patch: prev as any }); } },
     'Ctrl+Z': () => { const prev = historyRef.current.pop(); if (prev) { dispatch({ type:'batch', patch: prev as any }); } },
@@ -151,12 +156,47 @@ export const CompactOnePage: React.FC = () => {
             />
           </div>
 
-          <div className="flex items-center justify-between">
-            <ModuleKnob id="punch"  label="PUNCH"  valuePct={(state.punch ?? 0)*100}  colorA="#ff2fb9" colorB="#39ff88" onOpen={()=>open('deep')} />
-            <ModuleKnob id="warmth" label="WARMTH" valuePct={(state.warmth ?? 0)*100} colorA="#39ff88" colorB="#274bff" onOpen={()=>open('deep')} />
-            <ModuleKnob id="boom"   label="BOOM"   valuePct={(state.boom ?? 0)*100}   colorA="#ff8c00" colorB="#ff2fb9" onOpen={()=>open('deep')} />
-            <ModuleKnob id="mix"    label="MIX"    valuePct={(state.mix ?? 1)*100}    colorA="#00d4ff" colorB="#8a2be2" onOpen={()=>open('deep')} />
-            <ModuleKnob id="drive"  label="DRIVE"  valuePct={(state.drive ?? 0)*100}  colorA="#ffee66" colorB="#ff00ff" onOpen={()=>open('deep')} />
+          <div className="grid grid-cols-5 gap-6">
+            <ThermalKnob
+              label="PUNCH"
+              value={state.punch ?? 0}
+              onChange={(v)=>update('punch', v)}
+              spectrumData={analyser?.spectrum ?? new Float32Array(64)}
+              waveformData={analyser?.waveform ?? new Float32Array(128)}
+              colorA="#ff2fb9" colorB="#39ff88"
+            />
+            <ThermalKnob
+              label="WARMTH"
+              value={state.warmth ?? 0}
+              onChange={(v)=>update('warmth', v)}
+              spectrumData={analyser?.spectrum ?? new Float32Array(64)}
+              waveformData={analyser?.waveform ?? new Float32Array(128)}
+              colorA="#39ff88" colorB="#274bff"
+            />
+            <ThermalKnob
+              label="BOOM"
+              value={state.boom ?? 0}
+              onChange={(v)=>update('boom', v)}
+              spectrumData={analyser?.spectrum ?? new Float32Array(64)}
+              waveformData={analyser?.waveform ?? new Float32Array(128)}
+              colorA="#ff8c00" colorB="#ff2fb9"
+            />
+            <ThermalKnob
+              label="MIX"
+              value={state.mix ?? 1}
+              onChange={(v)=>update('mix', v)}
+              spectrumData={analyser?.spectrum ?? new Float32Array(64)}
+              waveformData={analyser?.waveform ?? new Float32Array(128)}
+              colorA="#00d4ff" colorB="#8a2be2"
+            />
+            <ThermalKnob
+              label="DRIVE"
+              value={state.drive ?? 0}
+              onChange={(v)=>update('drive', v)}
+              spectrumData={analyser?.spectrum ?? new Float32Array(64)}
+              waveformData={analyser?.waveform ?? new Float32Array(128)}
+              colorA="#ffee66" colorB="#ff00ff"
+            />
           </div>
 
           <PresetScroller
