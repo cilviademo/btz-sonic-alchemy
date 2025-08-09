@@ -30,6 +30,8 @@ import { ArturiaFrame } from '@/components/arturia/ArturiaFrame';
 import { ArturiaToggle } from '@/components/arturia/ArturiaToggle';
 import { VUMeterNeedle } from '@/components/arturia/VUMeterNeedle';
 import { ArturiaKnob } from '@/components/arturia/ArturiaKnob';
+import { SparkPanel } from '@/components/vst/SparkPanel';
+import { ShinePanel } from '@/components/vst/ShinePanel';
 
 // helpers
 import { useRafThrottle } from '@/utils/useRafThrottle';
@@ -47,11 +49,11 @@ const DEFAULT_PRESET: EnhancedPreset = {
     drive: 0,
     texture: false,
     active: true,
-    oversampling: false,
+    oversampling: true,
     clippingType: 'soft',
-    clippingBlend: 0.5,
-    clippingEnabled: false,
-    lufsTarget: -14,
+    clippingBlend: 1,
+    clippingEnabled: true,
+    lufsTarget: -5,
     aiEnhance: false,
     timbralTransfer: false,
     aiAutomation: true,
@@ -60,7 +62,20 @@ const DEFAULT_PRESET: EnhancedPreset = {
     saturationAmount: 0,
     subHarmonics: false,
     consoleGlue: true,
-    oversamplingRate: 4
+    oversamplingRate: 8,
+    // SPARK defaults
+    sparkEnabled: true,
+    sparkLufsTarget: -5,
+    sparkCeilingDb: -0.3,
+    sparkMix: 1,
+    sparkOversampling: 'auto',
+    // SHINE defaults
+    shineEnabled: true,
+    shineFreqHz: 20000,
+    shineGainDb: 3,
+    shineQ: 0.5,
+    shineMix: 0.5,
+    shineAB: false,
   }
 };
 
@@ -243,7 +258,14 @@ export const EnhancedBTZPlugin: React.FC = () => {
     active: state.active,
     clippingType: asClipType(state.clippingType),
     clippingBlend: state.clippingBlend,
-  }), [state.mix, state.drive, state.active, state.clippingType, state.clippingBlend]);
+    // SPARK mapping
+    sparkMix: state.sparkMix ?? state.clippingBlend,
+    sparkOn: (state.sparkEnabled ?? state.clippingEnabled) ?? true,
+    ceilingDb: state.sparkCeilingDb ?? -0.3,
+    osFactor: (state.sparkOversampling === 'auto'
+      ? ((state.sparkEnabled ?? state.clippingEnabled) ? 8 : 1)
+      : (state.sparkOversampling as any)) || 4,
+  }), [state.mix, state.drive, state.active, state.clippingType, state.clippingBlend, state.sparkMix, state.sparkEnabled, state.sparkCeilingDb, state.sparkOversampling]);
 
   useEffect(() => { updateAudio?.(engineParams); }, [engineParams, updateAudio]);
 
@@ -462,7 +484,7 @@ export const EnhancedBTZPlugin: React.FC = () => {
 
               {/* Clipper */}
               <SectionCard
-                title="FL STUDIO CLIPPER"
+                title="SPARK"
                 subtitle="Billboard-level loudness without harshness"
                 right={
                   <ToggleButton
@@ -555,23 +577,14 @@ export const EnhancedBTZPlugin: React.FC = () => {
                   </div>
                 </ArturiaFrame>
 
-                {/* Clipper retains neon motion, mounted into a cream hardware frame */}
-                <ArturiaFrame title="CLIPPER" subtitle="Soft / Hard / Tube / Tape / Digital">
-                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-8">
-                    <EnhancedClippingControls state={state} updateParameter={updateParameter} />
-                    <div className="grid content-start gap-6">
-                      <div>
-                        <div className="text-[11px] tracking-[.18em] font-semibold opacity-70 mb-2">Clipped Blend</div>
-                        <Slider
-                          value={[Math.round(((state.clippingBlend ?? 0.5) * 100))]}
-                          onValueChange={(val) => updateParameter('clippingBlend', ((val?.[0] ?? 50) / 100))}
-                          max={100}
-                          step={1}
-                        />
-                      </div>
-                      <VUMeterNeedle value={Math.min(1, Math.max(0, (meters.outputLevel ?? 0)))} label="POST-CLIP" />
-                    </div>
-                  </div>
+                {/* SPARK: advanced clipper */}
+                <ArturiaFrame title="SPARK" subtitle="Transparent, brutal loudness">
+                  <SparkPanel state={state} meters={meters} updateParameter={updateParameter} />
+                </ArturiaFrame>
+
+                {/* SHINE: air enhancer */}
+                <ArturiaFrame title="SHINE" subtitle="Ethereal air band">
+                  <ShinePanel state={state} meters={meters} updateParameter={updateParameter} />
                 </ArturiaFrame>
 
                 {/* IR Convolver in Arturia chassis */}

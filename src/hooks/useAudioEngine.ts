@@ -4,6 +4,8 @@ type EngineParams = {
   mix?: number; drive?: number; active?: boolean;
   clippingType?: 'soft'|'hard'|'tube'|'tape'|'digital';
   clippingBlend?: number;
+  // SPARK additions
+  sparkMix?: number; sparkOn?: boolean; ceilingDb?: number; osFactor?: 1|2|4|8|16;
 };
 
 export function useAudioEngine(){
@@ -16,7 +18,7 @@ export function useAudioEngine(){
     if(running || typeof window==='undefined') return;
     const ctx=new AudioContext({ latencyHint:'interactive' });
     await ctx.audioWorklet.addModule('/worklets/btz-processor.js');
-    const node=new AudioWorkletNode(ctx,'btz-processor',{ parameterData:{ mix:1, drive:0, active:1, clipBlend:.5 } });
+    const node=new AudioWorkletNode(ctx,'btz-processor',{ parameterData:{ mix:1, drive:0, active:1, clipBlend:.5, sparkMix:1, sparkOn:1, ceiling:-0.3 } });
     const analyser=ctx.createAnalyser(); analyser.fftSize=2048;
 
     // temporary input: microphone (replace with host bridge in native build)
@@ -41,6 +43,10 @@ export function useAudioEngine(){
     if(p.drive!=null) set('drive', p.drive);
     if(p.active!=null) set('active', p.active?1:0);
     if(p.clippingBlend!=null) set('clipBlend', p.clippingBlend);
+    if(p.sparkMix!=null) set('sparkMix', p.sparkMix);
+    if(p.sparkOn!=null) set('sparkOn', p.sparkOn?1:0);
+    if(p.ceilingDb!=null) set('ceiling', p.ceilingDb);
+    if(p.osFactor) node.port.postMessage({ type:'os', value:p.osFactor });
     if(p.clippingType) node.port.postMessage({ type:'clipType', value:p.clippingType });
   },[]);
 
