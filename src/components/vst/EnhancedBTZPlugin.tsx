@@ -9,7 +9,6 @@ import { BTZPluginState, EnhancedPreset } from './types';
 import { cn } from '@/lib/utils';
 import { PresetsSelect } from './PresetsSelect';
 import { PRO_STYLE_PRESETS } from './proStyles';
-import { Slider } from '@/components/ui/slider';
 import { makeBTZReducer } from '@/store/btzReducer';
 import { morphParams } from '@/utils/morph';
 import { useAnalyser } from '@/hooks/useAnalyser';
@@ -22,9 +21,11 @@ import { CentralVisualizerCanvas } from '@/components/CentralVisualizerCanvas';
 import { OutputScope } from '@/components/OutputScope';
 import { StickyControls } from '@/components/StickyControls';
 import { useHotkeys } from '@/hooks/useHotkeys';
-import { usePresetLibrary } from '@/hooks/usePresetLibrary';
 import { asClipType } from '@/utils/params';
 import { useIRConvolver } from '@/hooks/useIRConvolver';
+import { ErrorBoundary } from '@/utils/ErrorBoundary';
+import { useLocalStorage } from '@/utils/useLocalStorage';
+import { useRafThrottle } from '@/utils/useRafThrottle';
 
 const DEFAULT_PRESET: EnhancedPreset = {
   id: 'default',
@@ -154,32 +155,14 @@ function clampState(s: Partial<BTZPluginState>): Partial<BTZPluginState> {
 
 export const EnhancedBTZPlugin: React.FC = () => {
   const [state, dispatch] = useReducer(makeBTZReducer(DEFAULT_PRESET.state), DEFAULT_PRESET.state);
-  const [viewMode, setViewMode] = useState<'primary' | 'advanced' | 'engineering'>('primary');
-  const [skin, setSkin] = useState<'modern' | 'hardware'>('modern');
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const v = localStorage.getItem('btz:view');
-    if (v === 'primary' || v === 'advanced' || v === 'engineering') {
-      setViewMode(v as any);
-    }
-    const sk = localStorage.getItem('btz:skin');
-    if (sk === 'modern' || sk === 'hardware') {
-      setSkin(sk as any);
-    }
-  }, []);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem('btz:view', viewMode);
-  }, [viewMode]);
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem('btz:skin', skin);
-  }, [skin]);
+  const [viewMode, setViewMode] = useLocalStorage<'primary' | 'advanced' | 'engineering'>('btz:view', 'primary');
+  const [skin, setSkin] = useLocalStorage<'modern' | 'hardware'>('btz:skin', 'modern');
 
   // Audio engine + analyser wiring
   const audio = useAudioEngine();
   const { running: audioRunning, start: startAudio, stop: stopAudio, update: updateAudio, analyserOut, ctxRef, nodeRef } = audio;
   const analyserData = useAnalyser(analyserOut, 60);
+  const applyMetersThrottled = useRafThrottle(60);
 
   const ir = useIRConvolver(ctxRef as any, nodeRef as any);
   useEffect(() => {
@@ -216,15 +199,17 @@ export const EnhancedBTZPlugin: React.FC = () => {
   // Map analyser to meters if audio is running
   useEffect(() => {
     if (!analyserOut || !analyserData) return;
-    setMeters(prev => ({
-      ...prev,
-      spectrumData: analyserData.spectrum,
-      waveformData: analyserData.waveform,
-      inputLevel: analyserData.levelIn,
-      outputLevel: analyserData.levelOut,
-      isProcessing: (state.active ?? true) && !!audioRunning,
-    }));
-  }, [analyserOut, analyserData?.spectrum, analyserData?.waveform, analyserData?.levelIn, analyserData?.levelOut, audioRunning, state.active]);
+    applyMetersThrottled(() => {
+      setMeters(prev => ({
+        ...prev,
+        spectrumData: analyserData.spectrum,
+        waveformData: analyserData.waveform,
+        inputLevel: analyserData.levelIn,
+        outputLevel: analyserData.levelOut,
+        isProcessing: (state.active ?? true) && !!audioRunning,
+      }));
+    });
+  }, [analyserOut, analyserData, audioRunning, state.active, applyMetersThrottled]);
 
   // Push UI param changes into audio engine
   useEffect(() => {
@@ -302,11 +287,18 @@ export const EnhancedBTZPlugin: React.FC = () => {
     dispatch({ type: 'set', key, value });
   }, [dispatch]);
 
+  useHotkeys({
+    ' ': () => updateParameter('active', !state.active),
+    'B': () => updateParameter('clippingEnabled', !state.clippingEnabled),
+    'M': () => updateParameter('mix', 1),
+  });
+
   const applyPreset = useCallback((preset: EnhancedPreset) => {
     morphParams(state, preset.state, 200, (patch) => dispatch({ type: 'batch', patch }), () => {});
   }, [state, dispatch]);
 
   return (
+    <ErrorBoundary>
     <div className={cn("w-full max-w-7xl mx-auto rounded-3xl border border-audio-primary/20 overflow-hidden", skin === 'hardware' && 'skin-hardware')}
          style={{ 
            background: 'var(--gradient-main)',
@@ -515,23 +507,28 @@ export const EnhancedBTZPlugin: React.FC = () => {
               setPreDelay={ir.setPreDelay} setHP={ir.setHP} setLP={ir.setLP} setDamp={ir.setDamp}
             />
           </div>
-        ) : (
-          // ENGINEERING VIEW - Technical Analysis Mode
-          <div className="space-y-8">
-            {/* Processing Chain Visualizer */}
-            <ProcessingChainVisualizer 
-              state={state}
-              analysisData={meters.analysisData}
-            />
-
-            {/* Advanced Metering Panel */}
-            <AdvancedMeterPanel 
-              state={state}
-              meters={meters}
-            />
-          </div>
         )}
       </div>
+      <StickyControls
+        left={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => (audioRunning ? stopAudio?.() : startAudio?.())}
+              className={cn("px-3 py-1.5 rounded-full text-[11px] border",
+                audioRunning ? "bg-audio-success text-background border-audio-success" : "bg-plugin-raised/50 border-plugin-raised text-foreground/80")}
+            >
+              {audioRunning ? 'AUDIO ON' : 'ENABLE AUDIO'}
+            </button>
+            <ToggleButton value={state.active} onChange={(v)=>updateParameter('active', v)} label="POWER" />
+          </div>
+        }
+        right={
+          <div className="text-[11px] text-foreground/80 font-mono">
+            LUFS {meters.lufsIntegrated.toFixed(1)} • Peak {meters.truePeak.toFixed(1)} dB
+          </div>
+        }
+      />
     </div>
+  </ErrorBoundary>
   );
 };
