@@ -32,6 +32,9 @@ import { VUMeterNeedle } from '@/components/arturia/VUMeterNeedle';
 import { ArturiaKnob } from '@/components/arturia/ArturiaKnob';
 import { SparkPanel } from '@/components/vst/SparkPanel';
 import { ShinePanel } from '@/components/vst/ShinePanel';
+import { MasterGluePanel } from '@/components/vst/MasterGluePanel';
+import { DeepControlsPanel } from '@/components/vst/DeepControlsPanel';
+import { PresetScroller, PresetItem } from '@/components/PresetScroller';
 
 // helpers
 import { useRafThrottle } from '@/utils/useRafThrottle';
@@ -42,40 +45,27 @@ const DEFAULT_PRESET: EnhancedPreset = {
   id: 'default',
   label: 'Default',
   state: {
-    punch: 0,
-    warmth: 0,
-    boom: 0,
-    mix: 1.0,
-    drive: 0,
-    texture: false,
-    active: true,
-    oversampling: true,
-    clippingType: 'soft',
-    clippingBlend: 1,
-    clippingEnabled: true,
-    lufsTarget: -5,
-    aiEnhance: false,
-    timbralTransfer: false,
-    aiAutomation: true,
-    gateThreshold: -40,
-    transientAmount: 0,
-    saturationAmount: 0,
-    subHarmonics: false,
-    consoleGlue: true,
-    oversamplingRate: 8,
-    // SPARK defaults
-    sparkEnabled: true,
-    sparkLufsTarget: -5,
-    sparkCeilingDb: -0.3,
-    sparkMix: 1,
-    sparkOversampling: 'auto',
-    // SHINE defaults
-    shineEnabled: true,
-    shineFreqHz: 20000,
-    shineGainDb: 3,
-    shineQ: 0.5,
-    shineMix: 0.5,
-    shineAB: false,
+    punch: 0, warmth: 0, boom: 0, mix: 1, drive: 0,
+    texture: false, active: true, oversampling: true,
+    clippingType: 'soft', clippingBlend: 0.5, clippingEnabled: false,
+    lufsTarget: -5, aiEnhance: false, timbralTransfer: false, aiAutomation: true,
+    gateThreshold: -40, transientAmount: 0, saturationAmount: 0,
+    subHarmonics: false, consoleGlue: true, oversamplingRate: 4,
+
+    sparkEnabled: true, sparkLUFS: -5, sparkCeiling: -0.3, sparkMix: 1,
+    sparkOS: 8, sparkAutoOS: true, sparkMode: 'soft', sparkGR: 0,
+
+    shineEnabled: false, shineFreqHz: 20000, shineGainDb: 3, shineQ: 0.5, shineMix: 0.5, shineAutoOS: true, shineAB: false,
+
+    masterEnabled: false, masterMacro: .5, masterBlend: 'transparent', masterMix: 1,
+    masterCompAttack: 10, masterCompRelease: 100, masterCompRatio: 2,
+    masterLimiterCeiling: -0.3, masterLimiterLookahead: 0.8,
+
+    transEnabled: false, eqEnabled: false, dynEnabled: false, subEnabled: false, consoleEnabled: false,
+    transAttack: 0, transSustain: 0, transDetect: 'wide',
+    eqLowGain: 0, eqLowFreq: 80, eqMidGain: 0, eqMidFreq: 1200, eqMidQ: 1, eqHighGain: 0, eqHighFreq: 8000,
+    dynThreshold: 0, dynRatio: 2, dynAttack: 8, dynRelease: 120, dynKnee: 2,
+    subAmount: 0, subFreq: 50, consoleDrive: .15, consoleCrosstalk: .1,
   }
 };
 
@@ -236,6 +226,16 @@ export const EnhancedBTZPlugin: React.FC = () => {
   const specMix = meters.spectrumData;
   const specDrive = useMemo(() => meters.spectrumData.subarray(32, 48), [meters.spectrumData]);
 
+  // Preset scroller data
+  const ALL_PRESETS: PresetItem[] = useMemo(() => {
+    const featured = PERFORMANCE_PRESETS.map(p => ({ id: p.id, label: p.label, payload: p }));
+    const styles = (PRO_STYLE_PRESETS as any[]).map(p => ({
+      id: `style-${p.id}`, label: p.label, payload: { id: p.id, label: p.label, state: p.state }
+    }));
+    const order = (a: PresetItem, b: PresetItem) => (a.label === 'Default' ? -1 : b.label === 'Default' ? 1 : 0);
+    return [...featured, ...styles].sort(order);
+  }, []);
+
   // analyser -> meters (real audio path)
   useEffect(() => {
     if (!analyserOut || !analyserData) return;
@@ -258,14 +258,12 @@ export const EnhancedBTZPlugin: React.FC = () => {
     active: state.active,
     clippingType: asClipType(state.clippingType),
     clippingBlend: state.clippingBlend,
-    // SPARK mapping
-    sparkMix: state.sparkMix ?? state.clippingBlend,
-    sparkOn: (state.sparkEnabled ?? state.clippingEnabled) ?? true,
-    ceilingDb: state.sparkCeilingDb ?? -0.3,
-    osFactor: (state.sparkOversampling === 'auto'
-      ? ((state.sparkEnabled ?? state.clippingEnabled) ? 8 : 1)
-      : (state.sparkOversampling as any)) || 4,
-  }), [state.mix, state.drive, state.active, state.clippingType, state.clippingBlend, state.sparkMix, state.sparkEnabled, state.sparkCeilingDb, state.sparkOversampling]);
+    // SPARK mapping for current audio engine
+    sparkMix: state.sparkMix ?? 1,
+    sparkOn: !!state.sparkEnabled,
+    ceilingDb: state.sparkCeiling ?? -0.3,
+    osFactor: state.sparkOS ?? 8,
+  }), [state.mix, state.drive, state.active, state.clippingType, state.clippingBlend, state.sparkMix, state.sparkEnabled, state.sparkCeiling, state.sparkOS]);
 
   useEffect(() => { updateAudio?.(engineParams); }, [engineParams, updateAudio]);
 
@@ -482,44 +480,17 @@ export const EnhancedBTZPlugin: React.FC = () => {
                              colorA="#ff2fb9" colorB="#ff8c00" />
               </section>
 
-              {/* Clipper */}
-              <SectionCard
-                title="SPARK"
-                subtitle="Billboard-level loudness without harshness"
-                right={
-                  <ToggleButton
-                    value={!!state.clippingEnabled}
-                    onChange={(v) => updateParameter('clippingEnabled', v)}
-                    label="Clipping Enabled"
-                  />
-                }
-              >
-                <h4 className="text-[11px] tracking-[.22em] text-foreground/60 mb-3">CLIPPING TYPE</h4>
-                <ClipTypeRadio value={state.clippingType as string} onChange={(v)=>updateParameter('clippingType', v as any)} />
-                <div className="mt-6 grid place-items-center">
-                  <ThermalKnob
-                    label="BLEND"
-                    value={state.clippingBlend ?? 0.5}
-                    onChange={(v)=>updateParameter('clippingBlend', v)}
-                    spectrumData={meters.spectrumData}
-                    waveformData={meters.waveformData}
-                    colorA="#ff8c00"
-                    colorB="#39ff88"
-                  />
-                  <p className="mt-2 text-[12px] text-foreground/60">Wet/Dry of clipped vs. clean path</p>
-                </div>
-              </SectionCard>
+              {/* SPARK master clipper */}
+              <SparkPanel state={state} update={(k,v)=>dispatch({type:'set', key:k, value:v})} />
 
-              {/* Presets */}
-              <section className="flex flex-col items-center gap-4">
-                <PresetBrowser presets={PERFORMANCE_PRESETS} onApplyPreset={applyPreset} />
-                <div className="w-full max-w-xs">
-                  <PresetsSelect
-                    presets={PRO_STYLE_PRESETS as unknown as { id: string; label: string; state: Partial<BTZPluginState>; }[]}
-                    onApply={(preset) => dispatch({ type: 'batch', patch: clampState(preset.state) })}
-                  />
-                </div>
-              </section>
+              {/* Scrolling presets */}
+              <PresetScroller
+                presets={ALL_PRESETS}
+                onSelect={(item) => {
+                  const preset = item.payload as EnhancedPreset;
+                  morphParams(state, preset.state, 200, (patch)=>dispatch({type:'batch', patch}), ()=>{});
+                }}
+              />
 
               {/* Output Scope */}
               <OutputScope data={meters.waveformData} lufs={meters.lufsIntegrated} peak={meters.truePeak} />
@@ -579,13 +550,17 @@ export const EnhancedBTZPlugin: React.FC = () => {
 
                 {/* SPARK: advanced clipper */}
                 <ArturiaFrame title="SPARK" subtitle="Transparent, brutal loudness">
-                  <SparkPanel state={state} meters={meters} updateParameter={updateParameter} />
+                  <SparkPanel state={state} update={(k,v)=>dispatch({type:'set', key:k, value:v})} />
                 </ArturiaFrame>
 
                 {/* SHINE: air enhancer */}
                 <ArturiaFrame title="SHINE" subtitle="Ethereal air band">
-                  <ShinePanel state={state} meters={meters} updateParameter={updateParameter} />
+                  <ShinePanel state={state} updateParameter={(k,v)=>dispatch({type:'set', key:k, value:v})} />
                 </ArturiaFrame>
+
+                {/* MASTER & DEEP CONTROLS */}
+                <MasterGluePanel state={state} update={(k,v)=>dispatch({type:'set', key:k, value:v})} />
+                <DeepControlsPanel state={state} update={(k,v)=>dispatch({type:'set', key:k, value:v})} />
 
                 {/* IR Convolver in Arturia chassis */}
                 <IRConvolverPanel
