@@ -23,8 +23,10 @@
 #include "DSP/Oversampling.h"
 #include "DSP/TPTFilters.h"
 #include "Utilities/DSPValidation.h"
+#include "ProductionSafety.h"
 
-class BTZAudioProcessor : public juce::AudioProcessor
+class BTZAudioProcessor : public juce::AudioProcessor,
+                           private juce::AsyncUpdater
 {
 public:
     BTZAudioProcessor();
@@ -67,6 +69,9 @@ public:
     float getGainReduction() const { return gainReduction.load(); }
     float getStereoCorrelation() const { return stereoCorrelation.load(); }
 
+    // RT-safe logging (call from editor timer to flush messages)
+    void processRTLogMessages() { rtLogger.processMessages(); }
+
 private:
     // Parameter state
     juce::AudioProcessorValueTreeState apvts;
@@ -87,6 +92,10 @@ private:
     // DC blocking filters (TPT - removes DC offset after saturation)
     std::array<TPTDCBlocker, 2> dcBlockerInput;
     std::array<TPTDCBlocker, 2> dcBlockerOutput;
+
+    // Production safety (prevents crashes from host call order issues)
+    HostCallOrderGuard callOrderGuard;
+    RTSafeLogger rtLogger;
 
     // Parameter smoothing (prevents zipper noise)
     juce::SmoothedValue<float> smoothedPunch, smoothedWarmth, smoothedBoom;
@@ -115,6 +124,11 @@ private:
 
     void updateMetering(const juce::AudioBuffer<float>& buffer);
     bool isBufferSilent(const juce::AudioBuffer<float>& buffer);
+
+    // P0 FIX: Async oversampling factor update (prevents allocation in audio thread)
+    void handleAsyncUpdate() override;
+    std::atomic<int> pendingOSFactor { 8 };  // Default 8x (matches sparkOS index 3)
+    std::atomic<bool> osFactorNeedsUpdate { false };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BTZAudioProcessor)
 };

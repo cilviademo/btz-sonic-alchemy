@@ -87,6 +87,9 @@ void BTZAudioProcessor::changeProgramName (int index, const juce::String& newNam
 
 void BTZAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    // Mark as prepared (prevents crashes if host calls processBlock before prepare)
+    callOrderGuard.markPrepared(sampleRate, samplesPerBlock);
+
     // FIX #1: CRITICAL - Denormal protection (prevents 10-100x CPU spikes)
     juce::FloatVectorOperations::disableDenormalisedNumberSupport();
 
@@ -131,6 +134,8 @@ void BTZAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
 void BTZAudioProcessor::releaseResources()
 {
+    // Mark as released (prevents stale processing if host re-uses instance)
+    callOrderGuard.markReleased();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -157,6 +162,14 @@ bool BTZAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
 void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     juce::ScopedNoDenormals noDenormals;
+
+    // P0 FIX: Host call order guard (some hosts call process before prepare!)
+    if (!callOrderGuard.safeToProcess())
+    {
+        buffer.clear();
+        return; // Skip processing if not prepared
+    }
+
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
 
@@ -228,7 +241,14 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     sparkLimiter.setTargetLUFS(sparkLUFS);
     sparkLimiter.setCeiling(sparkCeiling);
     sparkLimiter.setMix(sparkMix);
-    sparkLimiter.setOversamplingFactor(1 << sparkOSIndex); // 1x, 2x, 4x, 8x, 16x
+    // P0 FIX: Detect OS factor change and defer to message thread (prevents allocation)
+    int newOSFactor = 1 << sparkOSIndex; // 1x, 2x, 4x, 8x, 16x
+    if (newOSFactor != pendingOSFactor.load(std::memory_order_relaxed))
+    {
+        pendingOSFactor.store(newOSFactor, std::memory_order_relaxed);
+        osFactorNeedsUpdate.store(true, std::memory_order_release);
+        triggerAsyncUpdate(); // Defer to message thread
+    }
     sparkLimiter.setMode(sparkModeIndex == 0 ? SparkLimiter::Mode::Soft : SparkLimiter::Mode::Hard);
 
     shineEQ.setFrequency(shineFreqHz);
@@ -326,18 +346,19 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // 8. Output gain
     outputGainProcessor.process(context);
 
-    // NEW: DSP validation in DEBUG builds (catches NaN/Inf before they reach the DAW)
+    // P0 FIX: DSP validation with RT-safe logging (no DBG allocations!)
     #if JUCE_DEBUG
     if (!BTZValidation::validateBuffer(buffer))
     {
-        DBG("BTZ: Invalid samples detected in output buffer!");
+        rtLogger.logRT("BTZ: Invalid samples detected in output buffer!");
         BTZValidation::sanitizeBuffer(buffer); // Replace NaN/Inf with silence
     }
 
     // Check for DC offset (should be < 0.01 after DC blockers)
     if (BTZValidation::hasDCOffset(buffer, 0.01f))
     {
-        DBG("BTZ: DC offset detected: " + juce::String(BTZValidation::measureDCOffset(buffer, 0)));
+        rtLogger.logRT("BTZ: DC offset detected");
+        // Note: Cannot log numeric value in RT context (would require sprintf)
     }
     #endif
 
@@ -448,6 +469,31 @@ void BTZAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
         if (xmlState->hasTagName (apvts.state.getType()))
             apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
     }
+}
+
+// P0 FIX: Async oversampling factor update (message thread only - safe to allocate)
+void BTZAudioProcessor::handleAsyncUpdate()
+{
+    // Check if update is needed (atomic flag prevents race)
+    if (!osFactorNeedsUpdate.exchange(false, std::memory_order_acquire))
+        return;
+
+    int newFactor = pendingOSFactor.load(std::memory_order_relaxed);
+
+    // Update oversampler (allocation happens here, but we're on message thread - SAFE!)
+    oversampler.setOversamplingFactor(newFactor);
+
+    // Update SparkLimiter OS factor
+    sparkLimiter.setOversamplingFactor(newFactor);
+
+    // Recalculate latency
+    int sparkOSIndex = apvts.getRawParameterValue(BTZParams::IDs::sparkOS)->load();
+    int oversamplingFactor = 1 << sparkOSIndex;
+    int samplesPerBlock = getBlockSize();
+    int estimatedLatency = (oversamplingFactor - 1) * samplesPerBlock / 2;
+    setLatencySamples(estimatedLatency);
+
+    DBG("BTZ: Oversampling factor updated to " + juce::String(newFactor) + "x on message thread");
 }
 
 // FIX #5: Silence detection implementation
