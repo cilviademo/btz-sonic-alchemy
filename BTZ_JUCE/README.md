@@ -124,6 +124,39 @@ add_subdirectory(/path/to/JUCE build)  # Adjust this path
 
 ---
 
+## ✅ Testing & Validation
+
+**BTZ follows industry-standard plugin quality assurance** used by Waves, UAD, and Plugin Alliance.
+
+### Quick Validation
+
+```bash
+# Run automated pluginval tests
+./scripts/run_pluginval.sh
+```
+
+**Required for ship:**
+- ✅ pluginval passes (VST3 + AU)
+- ✅ Pro Tools: Zero RT violations
+- ✅ Logic Pro: auval passes
+- ✅ Automation smooth at 32-sample buffers
+
+### Full Testing Guide
+
+See **[TESTING.md](TESTING.md)** for comprehensive validation protocols including:
+- pluginval integration (official VST3/AU validator)
+- Real-time safety verification (Instruments/Valgrind)
+- Host compatibility matrix (6 major DAWs)
+- DSP quality verification (anti-aliasing, smoothing, latency)
+- Performance benchmarking
+
+**Testing Pyramid:**
+1. **Unit Tests** - DSP correctness (coming soon)
+2. **pluginval** - Official compliance validation
+3. **Host Matrix** - Real-world DAW testing
+
+---
+
 ## 🎛️ DSP Architecture
 
 ### Signal Flow
