@@ -23,6 +23,7 @@
 #include "DSP/Oversampling.h"
 #include "DSP/TPTFilters.h"
 #include "Utilities/DSPValidation.h"
+#include "Utilities/DSPConstants.h"
 #include "ProductionSafety.h"
 
 class BTZAudioProcessor : public juce::AudioProcessor,
@@ -102,9 +103,9 @@ private:
     juce::SmoothedValue<float> smoothedMix, smoothedDrive;
     juce::SmoothedValue<float> smoothedInputGain, smoothedOutputGain;
 
-    // Metering (atomic for thread-safe GUI access)
-    std::atomic<float> currentLUFS { -14.0f };
-    std::atomic<float> currentPeak { -6.0f };
+    // P2-3: Metering (atomic for thread-safe GUI access) - using constants
+    std::atomic<float> currentLUFS { BTZConstants::defaultLUFS };
+    std::atomic<float> currentPeak { BTZConstants::defaultPeak };
     std::atomic<float> gainReduction { 1.0f };
     std::atomic<float> stereoCorrelation { 1.0f };
 
@@ -112,10 +113,8 @@ private:
     float lufsAccumulator = 0.0f;
     int lufsSampleCount = 0;
 
-    // Silence detection (optimization)
-    float silenceThreshold = 1e-6f;
+    // Silence detection (optimization) - using constants
     int consecutiveSilentBuffers = 0;
-    static constexpr int maxSilentBuffersBeforeSkip = 10;
 
     // Plugin version for preset compatibility
     static constexpr int pluginVersionMajor = 1;
