@@ -7,6 +7,11 @@ export interface BTZPluginState {
   punch: number; warmth: number; boom: number; mix: number; drive: number;
   texture: boolean; active: boolean; oversampling: boolean;
 
+  // I/O (UX improvement #11)
+  inputGain: number;       // -12 to +12 dB
+  outputGain: number;      // -12 to +12 dB
+  autoGain: boolean;       // loudness matching
+
   // Spark (limiter/exciter)
   sparkEnabled: boolean;
   sparkLUFS: number;       // target loudness
@@ -36,6 +41,9 @@ export interface BTZPluginState {
 
   // optional params used by sub panel
   subAmount?: number;
+
+  // UX state (UX improvement #9)
+  precisionMode: boolean;  // quantized, fine-grained adjustments
 }
 
 export type PanelId =
@@ -50,6 +58,8 @@ export const DEFAULT_STATE: BTZPluginState = {
   punch: 0, warmth: 0, boom: 0, mix: 1, drive: 0,
   texture: false, active: true, oversampling: true,
 
+  inputGain: 0, outputGain: 0, autoGain: false,
+
   sparkEnabled: true, sparkLUFS: -5, sparkCeiling: -0.3, sparkMix: 1,
   sparkOS: 8, sparkAutoOS: true, sparkMode: 'soft',
 
@@ -58,5 +68,7 @@ export const DEFAULT_STATE: BTZPluginState = {
   masterEnabled: false, masterMacro: 0.5, masterBlend: 'transparent', masterMix: 1,
 
   transEnabled: false, eqEnabled: false, dynEnabled: false, subEnabled: false, consoleEnabled: false,
-  subAmount: 0.5
+  subAmount: 0.5,
+
+  precisionMode: false
 };
