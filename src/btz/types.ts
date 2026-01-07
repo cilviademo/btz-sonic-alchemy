@@ -12,22 +12,26 @@ export interface BTZPluginState {
   outputGain: number;      // -12 to +12 dB
   autoGain: boolean;       // loudness matching
 
-  // Spark (limiter/exciter)
-  sparkEnabled: boolean;
-  sparkLUFS: number;       // target loudness
-  sparkCeiling: number;    // dBTP
-  sparkMix: number;        // 0..1
-  sparkOS: Oversample;
-  sparkAutoOS: boolean;
-  sparkMode: SparkMode;
+  // SPARK - Advanced Clipping & Limiting Engine
+  // FL Studio Clipper + GoldClip + BigClipper + KClip + Acustica clippers
+  // The magic of BTZ: brutal loudness with surgical transparency
+  sparkEnabled: boolean;   // Default: true (globally activated for instant loudness)
+  sparkLUFS: number;       // target integrated loudness: -14 to 0 LUFS (default: -5 for commercial competitiveness)
+  sparkCeiling: number;    // true peak ceiling: -3 to 0 dBTP (default: -0.3 to prevent inter-sample peaks)
+  sparkMix: number;        // wet/dry blend: 0..1 (default: 1.0 = 100% for full effect)
+  sparkOS: Oversample;     // oversampling factor: 1, 2, 4, 8, or 16 (default: 8 for artifact-free processing)
+  sparkAutoOS: boolean;    // auto-engage oversampling based on signal analysis (default: true)
+  sparkMode: SparkMode;    // 'soft' (musical/warm) or 'hard' (aggressive/punchy)
 
-  // Shine (air band)
-  shineEnabled: boolean;
-  shineFreqHz: number;
-  shineGainDb: number;
-  shineQ: number;
-  shineMix: number;
-  shineAutoOS: boolean;
+  // SHINE - Ultra-High Frequency Air Enhancement
+  // SSL Fusion Air + Maag EQ Air Band (10kHz-80kHz+ ultrasonic magic)
+  // Ethereal highs, crystalline crispness, analog-inspired sheen
+  shineEnabled: boolean;   // Default: false (user-activated for selective sweetening)
+  shineFreqHz: number;     // center frequency: 10k-80kHz (default: 20kHz, extends beyond Nyquist via oversampling)
+  shineGainDb: number;     // boost/cut: -12 to +12 dB (default: +3 for gentle, organic lift)
+  shineQ: number;          // resonance/width: 0.1 (broad sheen) to 2.0 (focused crispness), default: 0.5
+  shineMix: number;        // wet/dry blend: 0..1 (default: 0.5 = 50% for subtle layering)
+  shineAutoOS: boolean;    // auto-engage oversampling for ultrasonic transparency (default: true)
 
   // Master macro
   masterEnabled: boolean;

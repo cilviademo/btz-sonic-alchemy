@@ -16,9 +16,17 @@ import { ABToggle } from './components/ABToggle';
 import { ActivePathStrip } from './components/ActivePathStrip';
 import { QuickModeButtons } from './components/QuickModeButtons';
 
-// ---- presets
+// ---- BTZ Presets: Renamed from company-affiliated names
+// Default preset has everything at 0 except SPARK at full capacity for instant professional sound
 const PRESETS: PresetItem[] = [
-  { id:'default', label:'Default', state:{ punch:0,warmth:0,boom:0,drive:0,mix:1, sparkEnabled:true,sparkLUFS:-5,sparkCeiling:-0.3,sparkMix:1 } },
+  {
+    id:'default',
+    label:'Default',
+    state:{
+      punch:0, warmth:0, boom:0, drive:0, mix:1,
+      sparkEnabled:true, sparkLUFS:-5, sparkCeiling:-0.3, sparkMix:1, sparkOS:8, sparkMode:'soft'
+    }
+  },
   { id:'dynamic-design', label:'Dynamic-Design', state:{ punch:.65, warmth:.2, boom:.25, drive:.35 } },
   { id:'punch-smack', label:'Punch-Smack', state:{ punch:.9, boom:.35, mix:.95 } },
   { id:'precision-q', label:'Precision-Q', state:{ warmth:.35, boom:.2 } },
