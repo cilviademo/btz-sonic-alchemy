@@ -21,7 +21,7 @@ export const PanelDrawer: React.FC<{
           'fixed inset-0 bg-black/40 transition-opacity',
           open ? 'opacity-100' : 'pointer-events-none opacity-0'
         )}
-        aria-hidden
+        aria-hidden="true"
         onClick={onClose}
       />
       <aside

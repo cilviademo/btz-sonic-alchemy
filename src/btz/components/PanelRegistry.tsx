@@ -48,7 +48,7 @@ export function renderPanel(id: PanelId, state: BTZPluginState, update: Update):
           <label className="block">Blend
             <select className="ml-2 bg-white/5 px-2 py-1"
               value={state.masterBlend}
-              onChange={e=>update('masterBlend', e.target.value as any)}
+              onChange={e=>update('masterBlend', e.target.value as BTZPluginState['masterBlend'])}
             >
               <option value="transparent">Transparent</option>
               <option value="glue">Glue</option>

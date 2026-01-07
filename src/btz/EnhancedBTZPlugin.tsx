@@ -51,7 +51,7 @@ type Act =
 
 function reducer(s:BTZPluginState, a:Act):BTZPluginState {
   switch(a.type){
-    case 'set':   return { ...s, [a.key]: a.value } as BTZPluginState;
+    case 'set':   return { ...s, [a.key]: a.value };
     case 'batch': return { ...s, ...a.patch };
     case 'reset': return { ...DEFAULT_STATE };
     default:      return s;
@@ -82,22 +82,20 @@ export const EnhancedBTZPlugin:React.FC = () => {
     return () => cancelAnimationFrame(raf);
   }, [state.active, state.drive, state.punch, state.boom]);
 
+  const toggleMeters = useCallback(() => setPanel(p => (p === 'meters' ? null : 'meters')), []);
+  const resetPlugin = useCallback(() => dispatch({ type: 'reset' }), []);
+  const toggleGrid = useCallback(() => setShowGrid(s => !s), []);
+
   useGlobalHotkeys({
-    toggleMeters: () => setPanel(p => (p === 'meters' ? null : 'meters')),
-    reset:        () => dispatch({ type: 'reset' }),
-    toggleGrid:   () => setShowGrid(s => !s)
+    toggleMeters,
+    reset: resetPlugin,
+    toggleGrid
   });
 
-  const applyPreset = (p:PresetItem) => dispatch({type:'batch', patch:p.state});
+  const applyPreset = useCallback((p:PresetItem) => dispatch({type:'batch', patch:p.state}), []);
   const update = useCallback(<K extends keyof BTZPluginState>(k:K, v:BTZPluginState[K]) => {
     dispatch({ type:'set', key:k, value:v });
   }, []);
-
-  const setParam = useCallback(
-    <K extends keyof BTZPluginState>(k: K) =>
-      (v: BTZPluginState[K]) => dispatch({ type: 'set', key: k, value: v }),
-    []
-  );
 
   const peakNorm = useMemo(() => Math.max(0, Math.min(1, (peak + 20) / 20)), [peak]);
 
@@ -126,9 +124,9 @@ export const EnhancedBTZPlugin:React.FC = () => {
                 key={n.k}
                 label={n.label}
                 value={state[n.k as keyof BTZPluginState] as number}
-                onChange={setParam(n.k as keyof BTZPluginState)}
+                onChange={(v) => update(n.k as keyof BTZPluginState, v)}
                 colorA={n.cA} colorB={n.cB}
-                toDisplay={n.toDisplay as any}
+                toDisplay={n.toDisplay}
               />
             ))}
           </div>
@@ -215,7 +213,7 @@ export const EnhancedBTZPlugin:React.FC = () => {
 
       {/* Panel Drawer */}
       <PanelDrawer open={!!panel} onClose={()=>setPanel(null)} title={panel?.toUpperCase()}>
-        {panel && renderPanel(panel, state, (k,v)=>update(k as any, v as any))}
+        {panel && renderPanel(panel, state, update)}
       </PanelDrawer>
     </div>
   );

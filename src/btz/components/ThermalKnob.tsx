@@ -76,6 +76,7 @@ export const ThermalKnob: React.FC<Props> = ({
       aria-valuemin={0}
       aria-valuemax={1}
       aria-valuenow={Number(value.toFixed(3))}
+      aria-valuetext={toDisplay ? toDisplay(value) : undefined}
       tabIndex={disabled ? -1 : 0}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
