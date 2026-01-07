@@ -76,6 +76,11 @@ private:
     juce::dsp::Gain<float> inputGainProcessor;
     juce::dsp::Gain<float> outputGainProcessor;
 
+    // Parameter smoothing (prevents zipper noise)
+    juce::SmoothedValue<float> smoothedPunch, smoothedWarmth, smoothedBoom;
+    juce::SmoothedValue<float> smoothedMix, smoothedDrive;
+    juce::SmoothedValue<float> smoothedInputGain, smoothedOutputGain;
+
     // Metering (atomic for thread-safe GUI access)
     std::atomic<float> currentLUFS { -14.0f };
     std::atomic<float> currentPeak { -6.0f };
@@ -86,7 +91,18 @@ private:
     float lufsAccumulator = 0.0f;
     int lufsSampleCount = 0;
 
+    // Silence detection (optimization)
+    float silenceThreshold = 1e-6f;
+    int consecutiveSilentBuffers = 0;
+    static constexpr int maxSilentBuffersBeforeSkip = 10;
+
+    // Plugin version for preset compatibility
+    static constexpr int pluginVersionMajor = 1;
+    static constexpr int pluginVersionMinor = 0;
+    static constexpr int pluginVersionPatch = 0;
+
     void updateMetering(const juce::AudioBuffer<float>& buffer);
+    bool isBufferSilent(const juce::AudioBuffer<float>& buffer);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (BTZAudioProcessor)
 };
