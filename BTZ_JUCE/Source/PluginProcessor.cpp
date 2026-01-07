@@ -200,7 +200,7 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         return; // Bypass
     }
 
-    // FIX #3: Use smoothed parameters (prevents zipper noise during automation)
+    // P0-4 FIX: Set parameter targets once at start of block
     smoothedPunch.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::punch)->load());
     smoothedWarmth.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::warmth)->load());
     smoothedBoom.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::boom)->load());
@@ -209,14 +209,27 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     smoothedInputGain.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::inputGain)->load());
     smoothedOutputGain.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::outputGain)->load());
 
-    float punchAmount = smoothedPunch.getNextValue();
-    float warmthAmount = smoothedWarmth.getNextValue();
-    float boomAmount = smoothedBoom.getNextValue();
-    float mixAmount = smoothedMix.getNextValue();
-    float driveAmount = smoothedDrive.getNextValue();
-    float inputGainDb = smoothedInputGain.getNextValue();
-    float outputGainDb = smoothedOutputGain.getNextValue();
+    // P0-4 FIX: Advance smoothers by buffer length and get smoothed values
+    // This provides block-rate smoothing (better than single-sample but not perfect)
+    // Future: Implement sub-block processing for true sample-accurate smoothing
+    const int numSamples = buffer.getNumSamples();
+    smoothedPunch.skip(numSamples);
+    smoothedWarmth.skip(numSamples);
+    smoothedBoom.skip(numSamples);
+    smoothedMix.skip(numSamples);
+    smoothedDrive.skip(numSamples);
+    smoothedInputGain.skip(numSamples);
+    smoothedOutputGain.skip(numSamples);
 
+    float punchAmount = smoothedPunch.getCurrentValue();
+    float warmthAmount = smoothedWarmth.getCurrentValue();
+    float boomAmount = smoothedBoom.getCurrentValue();
+    float mixAmount = smoothedMix.getCurrentValue();
+    float driveAmount = smoothedDrive.getCurrentValue();
+    float inputGainDb = smoothedInputGain.getCurrentValue();
+    float outputGainDb = smoothedOutputGain.getCurrentValue();
+
+    // Read non-smoothed parameters once (these don't cause zipper noise - they're on/off or discrete)
     bool sparkEnabled = apvts.getRawParameterValue(BTZParams::IDs::sparkEnabled)->load() > 0.5f;
     float sparkLUFS = apvts.getRawParameterValue(BTZParams::IDs::sparkLUFS)->load();
     float sparkCeiling = apvts.getRawParameterValue(BTZParams::IDs::sparkCeiling)->load();
