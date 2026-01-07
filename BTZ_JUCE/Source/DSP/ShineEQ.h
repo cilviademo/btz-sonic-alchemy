@@ -3,10 +3,13 @@
   SHINE - Ultra-High Frequency Air Enhancement
   SSL Fusion Air + Maag EQ Air Band emulation
   10kHz-80kHz+ ultrasonic magic - ethereal highs, crystalline crispness
+
+  NOW USES: Professional RBJ biquad filters for correct frequency response
 */
 
 #pragma once
 #include <JuceHeader.h>
+#include "RBJFilters.h"
 
 class ShineEQ
 {
@@ -40,15 +43,8 @@ public:
                 float sample = input[i];
                 float drySample = sample;
 
-                // Biquad high-shelf filter
-                float filtered = b0 * sample + b1 * z1[channel] + b2 * z2[channel]
-                               - a1 * z1_out[channel] - a2 * z2_out[channel];
-
-                // Update delay line
-                z2[channel] = z1[channel];
-                z1[channel] = sample;
-                z2_out[channel] = z1_out[channel];
-                z1_out[channel] = filtered;
+                // Professional RBJ high-shelf filter
+                float filtered = highShelfFilter[channel].processSample(sample);
 
                 // Wet/dry mix
                 output[i] = drySample + mixAmount * (filtered - drySample);
@@ -63,15 +59,8 @@ private:
     float mixAmount = 0.5f;
     double sampleRate = 44100.0;
 
-    // Biquad coefficients
-    float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f;
-    float a1 = 0.0f, a2 = 0.0f;
-
-    // Delay line (z^-1 and z^-2)
-    std::array<float, 2> z1 = {0.0f, 0.0f};
-    std::array<float, 2> z2 = {0.0f, 0.0f};
-    std::array<float, 2> z1_out = {0.0f, 0.0f};
-    std::array<float, 2> z2_out = {0.0f, 0.0f};
+    // Professional RBJ biquad filters (one per channel)
+    std::array<RBJBiquad, 2> highShelfFilter;
 
     void updateCoefficients();
 };

@@ -87,6 +87,9 @@ void BTZAudioProcessor::changeProgramName (int index, const juce::String& newNam
 
 void BTZAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    // FIX #1: CRITICAL - Denormal protection (prevents 10-100x CPU spikes)
+    juce::FloatVectorOperations::disableDenormalisedNumberSupport();
+
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
     spec.maximumBlockSize = samplesPerBlock;
@@ -103,6 +106,27 @@ void BTZAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 
     inputGainProcessor.prepare(spec);
     outputGainProcessor.prepare(spec);
+
+    // FIX #3: Initialize parameter smoothing (prevents zipper noise)
+    smoothedPunch.reset(sampleRate, 0.02);      // 20ms ramp
+    smoothedWarmth.reset(sampleRate, 0.02);
+    smoothedBoom.reset(sampleRate, 0.02);
+    smoothedMix.reset(sampleRate, 0.02);
+    smoothedDrive.reset(sampleRate, 0.02);
+    smoothedInputGain.reset(sampleRate, 0.05);  // 50ms for gain changes
+    smoothedOutputGain.reset(sampleRate, 0.05);
+
+    // NEW: Initialize TPT DC blockers (removes DC offset from saturation)
+    for (auto& blocker : dcBlockerInput)
+        blocker.prepare(sampleRate);
+    for (auto& blocker : dcBlockerOutput)
+        blocker.prepare(sampleRate);
+
+    // FIX #4: Report latency to DAW for automatic compensation
+    int sparkOSIndex = apvts.getRawParameterValue(BTZParams::IDs::sparkOS)->load();
+    int oversamplingFactor = 1 << sparkOSIndex;  // 1x, 2x, 4x, 8x, 16x
+    int estimatedLatency = (oversamplingFactor - 1) * samplesPerBlock / 2;
+    setLatencySamples(estimatedLatency);
 }
 
 void BTZAudioProcessor::releaseResources()
@@ -140,6 +164,21 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
+    // FIX #5: Silence optimization (skip processing if buffer is silent)
+    if (isBufferSilent(buffer))
+    {
+        consecutiveSilentBuffers++;
+        if (consecutiveSilentBuffers > maxSilentBuffersBeforeSkip)
+        {
+            updateMetering(buffer); // Still update meters
+            return; // Skip DSP entirely
+        }
+    }
+    else
+    {
+        consecutiveSilentBuffers = 0;
+    }
+
     // Check if plugin is active
     bool isActive = apvts.getRawParameterValue(BTZParams::IDs::active)->load() > 0.5f;
     if (!isActive)
@@ -148,15 +187,22 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         return; // Bypass
     }
 
-    // Get all parameters
-    float punchAmount = apvts.getRawParameterValue(BTZParams::IDs::punch)->load();
-    float warmthAmount = apvts.getRawParameterValue(BTZParams::IDs::warmth)->load();
-    float boomAmount = apvts.getRawParameterValue(BTZParams::IDs::boom)->load();
-    float mixAmount = apvts.getRawParameterValue(BTZParams::IDs::mix)->load();
-    float driveAmount = apvts.getRawParameterValue(BTZParams::IDs::drive)->load();
+    // FIX #3: Use smoothed parameters (prevents zipper noise during automation)
+    smoothedPunch.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::punch)->load());
+    smoothedWarmth.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::warmth)->load());
+    smoothedBoom.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::boom)->load());
+    smoothedMix.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::mix)->load());
+    smoothedDrive.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::drive)->load());
+    smoothedInputGain.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::inputGain)->load());
+    smoothedOutputGain.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::outputGain)->load());
 
-    float inputGainDb = apvts.getRawParameterValue(BTZParams::IDs::inputGain)->load();
-    float outputGainDb = apvts.getRawParameterValue(BTZParams::IDs::outputGain)->load();
+    float punchAmount = smoothedPunch.getNextValue();
+    float warmthAmount = smoothedWarmth.getNextValue();
+    float boomAmount = smoothedBoom.getNextValue();
+    float mixAmount = smoothedMix.getNextValue();
+    float driveAmount = smoothedDrive.getNextValue();
+    float inputGainDb = smoothedInputGain.getNextValue();
+    float outputGainDb = smoothedOutputGain.getNextValue();
 
     bool sparkEnabled = apvts.getRawParameterValue(BTZParams::IDs::sparkEnabled)->load() > 0.5f;
     float sparkLUFS = apvts.getRawParameterValue(BTZParams::IDs::sparkLUFS)->load();
@@ -214,23 +260,62 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // 1. Input gain
     inputGainProcessor.process(context);
 
+    // NEW: DC blocking at input (removes any DC offset from source)
+    for (size_t ch = 0; ch < buffer.getNumChannels(); ++ch)
+    {
+        auto* data = buffer.getWritePointer(ch);
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+            data[i] = dcBlockerInput[ch].process(data[i]);
+    }
+
     // 2. Punch (transient shaping)
     if (punchAmount > 0.01f)
         transientShaper.process(context);
 
-    // 3. Warmth (saturation)
-    if (warmthAmount > 0.01f)
-        saturation.process(context);
+    // FIX #2: OVERSAMPLING INTEGRATION (was never actually used!)
+    // Non-linear modules (saturation, spark) need oversampling to prevent aliasing
+    bool needsOversampling = (warmthAmount > 0.01f || sparkEnabled);
+
+    if (needsOversampling)
+    {
+        // Upsample to 2x/4x/8x/16x sample rate
+        int oversamplingFactor = 1 << sparkOSIndex;
+        auto oversampledBlock = oversampler.processUp(block);
+        juce::dsp::ProcessContextReplacing<float> oversampledContext(oversampledBlock);
+
+        // 3. Warmth (saturation) - at high sample rate, no aliasing!
+        if (warmthAmount > 0.01f)
+            saturation.process(oversampledContext);
+
+        // 5. SPARK (advanced clipping/limiting) - at high SR
+        if (sparkEnabled)
+            sparkLimiter.process(oversampledContext);
+
+        // Downsample with anti-aliasing filter
+        oversampler.processDown(block);
+    }
+    else
+    {
+        // No oversampling needed, process normally
+        if (warmthAmount > 0.01f)
+            saturation.process(context);
+        if (sparkEnabled)
+            sparkLimiter.process(context);
+    }
+
+    // NEW: DC blocking after non-linear processing (removes DC offset from saturation)
+    for (size_t ch = 0; ch < buffer.getNumChannels(); ++ch)
+    {
+        auto* data = buffer.getWritePointer(ch);
+        for (int i = 0; i < buffer.getNumSamples(); ++i)
+            data[i] = dcBlockerOutput[ch].process(data[i]);
+    }
 
     // 4. Boom (subharmonic synthesis)
     if (boomAmount > 0.01f)
         subHarmonic.process(context);
 
-    // 5. SPARK (advanced clipping/limiting)
-    if (sparkEnabled)
-        sparkLimiter.process(context);
-
-    // 6. SHINE (ultra-high frequency air)
+    // 6. SHINE (ultra-high frequency air) - now uses professional RBJ filters
     if (shineEnabled)
         shineEQ.process(context);
 
@@ -240,6 +325,21 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     // 8. Output gain
     outputGainProcessor.process(context);
+
+    // NEW: DSP validation in DEBUG builds (catches NaN/Inf before they reach the DAW)
+    #if JUCE_DEBUG
+    if (!BTZValidation::validateBuffer(buffer))
+    {
+        DBG("BTZ: Invalid samples detected in output buffer!");
+        BTZValidation::sanitizeBuffer(buffer); // Replace NaN/Inf with silence
+    }
+
+    // Check for DC offset (should be < 0.01 after DC blockers)
+    if (BTZValidation::hasDCOffset(buffer, 0.01f))
+    {
+        DBG("BTZ: DC offset detected: " + juce::String(BTZValidation::measureDCOffset(buffer, 0)));
+    }
+    #endif
 
     // Update metering for GUI
     updateMetering(buffer);
@@ -316,8 +416,16 @@ juce::AudioProcessorEditor* BTZAudioProcessor::createEditor()
 
 void BTZAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
+    // FIX #6: Add version for preset backward compatibility
     auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
+
+    // Add version attributes for future migration logic
+    xml->setAttribute("pluginVersion", juce::String(pluginVersionMajor) + "." +
+                                        juce::String(pluginVersionMinor) + "." +
+                                        juce::String(pluginVersionPatch));
+    xml->setAttribute("pluginName", "BTZ");
+
     copyXmlToBinary (*xml, destData);
 }
 
@@ -326,8 +434,34 @@ void BTZAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
     std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
 
     if (xmlState.get() != nullptr)
+    {
+        // FIX #6: Check version for parameter migration
+        juce::String loadedVersion = xmlState->getStringAttribute("pluginVersion", "0.0.0");
+
+        // Future: Add parameter migration logic here if structure changes
+        // Example:
+        // if (loadedVersion == "1.0.0")
+        // {
+        //     // Migrate old parameters to new structure
+        // }
+
         if (xmlState->hasTagName (apvts.state.getType()))
             apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+    }
+}
+
+// FIX #5: Silence detection implementation
+bool BTZAudioProcessor::isBufferSilent(const juce::AudioBuffer<float>& buffer)
+{
+    const int numChannels = buffer.getNumChannels();
+    const int numSamples = buffer.getNumSamples();
+
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        if (buffer.getMagnitude(ch, 0, numSamples) > silenceThreshold)
+            return false;
+    }
+    return true;
 }
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()

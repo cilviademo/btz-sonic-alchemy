@@ -7,10 +7,16 @@
   - Dominion (Digital Fish Phones) - attack/sustain control
   - Voxengo TransGainer (envelope adjustment algorithm)
 
+  NOW USES: TPT (Topology-Preserving Transform) filters for envelope following
+  - No frequency warping (Vadim Zavalishin)
+  - More stable than exponential smoothing
+  - Mathematically correct analog emulation
+
   Sources:
   - https://bedroomproducersblog.com/free-vst-plugins/transient-shaper/
   - https://www.voxengo.com/product/transgainer/ (algorithm description)
   - Flux BitterSweet user manual (public documentation)
+  - "The Art of VA Filter Design" by Vadim Zavalishin
 
   Techniques implemented:
   1. Multi-band envelope detection (frequency-dependent transient shaping)
@@ -22,6 +28,7 @@
 
 #pragma once
 #include <JuceHeader.h>
+#include "TPTFilters.h"
 
 class AdvancedTransientShaper
 {
@@ -101,7 +108,14 @@ private:
     bool multiband = false;
     double sampleRate = 44100.0;
 
-    // Envelope detector coefficients
+    // TPT one-pole filters for envelope following (replaces exponential smoothing)
+    std::array<TPTOnePole, 2> attackEnvFilter;    // Fast attack
+    std::array<TPTOnePole, 2> releaseEnvFilter;   // Slow release
+    std::array<TPTOnePole, 2> sustainAttackFilter;
+    std::array<TPTOnePole, 2> sustainReleaseFilter;
+    std::array<TPTOnePole, 2> adaptiveThresholdFilter; // Very slow adaptation
+
+    // Legacy coefficients (kept for backward compatibility, but TPT is preferred)
     float attackCoeff = 0.0f;
     float releaseCoeff = 0.0f;
     float sustainAttackCoeff = 0.0f;

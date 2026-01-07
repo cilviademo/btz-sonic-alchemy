@@ -74,29 +74,41 @@ void AdvancedTransientShaper::updateCoefficients()
 
     float sustainRelease = sustainTimeMs;
     sustainReleaseCoeff = 1.0f - std::exp(-1.0f / (static_cast<float>(sampleRate) * sustainRelease / 1000.0f));
+
+    // UPDATE: Configure TPT filters (more stable than exponential)
+    // Convert time constants to TPT cutoff frequencies
+    for (size_t ch = 0; ch < 2; ++ch)
+    {
+        attackEnvFilter[ch].setCutoff(1000.0f / attackTime, sampleRate);
+        releaseEnvFilter[ch].setCutoff(1000.0f / releaseTime, sampleRate);
+        sustainAttackFilter[ch].setCutoff(1000.0f / sustainAttack, sampleRate);
+        sustainReleaseFilter[ch].setCutoff(1000.0f / sustainRelease, sampleRate);
+        adaptiveThresholdFilter[ch].setCutoff(0.1f, sampleRate); // Very slow (10s time constant)
+    }
 }
 
 //=============================================================================
 // PEAK ENVELOPE DETECTION
 // Fast response, ideal for drum transients
+// NOW USES: TPT filters for no frequency warping
 //=============================================================================
 float AdvancedTransientShaper::detectPeakEnvelope(float sample, size_t channel)
 {
     float absSample = std::abs(sample);
-    float& envelope = peakEnvelope[channel];
 
-    // Ballistics: fast attack, slower release
-    if (absSample > envelope)
-        envelope = attackCoeff * absSample + (1.0f - attackCoeff) * envelope;
-    else
-        envelope = releaseCoeff * absSample + (1.0f - releaseCoeff) * envelope;
+    // Use TPT one-pole for attack/release (more stable than exponential)
+    float envelope = (absSample > peakEnvelope[channel])
+        ? attackEnvFilter[channel].process(absSample)
+        : releaseEnvFilter[channel].process(absSample);
 
+    peakEnvelope[channel] = envelope;
     return envelope;
 }
 
 //=============================================================================
 // RMS ENVELOPE DETECTION
 // Smoother, program-dependent detection
+// NOW USES: TPT filters for smoothing
 //=============================================================================
 float AdvancedTransientShaper::detectRMSEnvelope(float sample, size_t channel)
 {
@@ -114,13 +126,12 @@ float AdvancedTransientShaper::detectRMSEnvelope(float sample, size_t channel)
 
     float rms = std::sqrt(sumSquares / rmsWindowSize);
 
-    // Smooth with envelope follower
-    float& envelope = rmsEnvelope[channel];
-    if (rms > envelope)
-        envelope = attackCoeff * rms + (1.0f - attackCoeff) * envelope;
-    else
-        envelope = releaseCoeff * rms + (1.0f - releaseCoeff) * envelope;
+    // Smooth with TPT envelope follower (no frequency warping)
+    float envelope = (rms > rmsEnvelope[channel])
+        ? attackEnvFilter[channel].process(rms)
+        : releaseEnvFilter[channel].process(rms);
 
+    rmsEnvelope[channel] = envelope;
     return envelope;
 }
 
@@ -156,26 +167,25 @@ float AdvancedTransientShaper::detectHalfSpectralEnvelope(float sample, size_t c
 // ADAPTIVE ENVELOPE DETECTION
 // Flux BitterSweet technique - program-dependent, no internal thresholds
 // Automatically adapts to material
+// NOW USES: TPT filters for threshold adaptation and envelope following
 //=============================================================================
 float AdvancedTransientShaper::detectAdaptiveEnvelope(float sample, size_t channel)
 {
     float absSample = std::abs(sample);
 
-    // Update adaptive threshold (running average of signal level)
-    float& threshold = adaptiveThreshold[channel];
-    float thresholdCoeff = 0.0001f; // Very slow adaptation
-    threshold = thresholdCoeff * absSample + (1.0f - thresholdCoeff) * threshold;
+    // Update adaptive threshold using TPT filter (very slow, ~10s time constant)
+    float threshold = adaptiveThresholdFilter[channel].process(absSample);
+    adaptiveThreshold[channel] = threshold;
 
     // Normalize envelope relative to adaptive threshold
     float normalizedSample = (threshold > 0.0001f) ? (absSample / threshold) : absSample;
 
-    // Peak detection with normalization
-    float& envelope = peakEnvelope[channel];
-    if (normalizedSample > envelope)
-        envelope = attackCoeff * normalizedSample + (1.0f - attackCoeff) * envelope;
-    else
-        envelope = releaseCoeff * normalizedSample + (1.0f - releaseCoeff) * envelope;
+    // Peak detection with normalization using TPT
+    float envelope = (normalizedSample > peakEnvelope[channel])
+        ? attackEnvFilter[channel].process(normalizedSample)
+        : releaseEnvFilter[channel].process(normalizedSample);
 
+    peakEnvelope[channel] = envelope;
     return envelope;
 }
 
