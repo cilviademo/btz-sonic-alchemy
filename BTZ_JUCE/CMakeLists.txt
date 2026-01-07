@@ -31,6 +31,9 @@ target_sources(BTZ
         Source/DSP/ShineEQ.cpp
         Source/DSP/ConsoleEmulator.cpp
         Source/DSP/Oversampling.cpp
+        Source/DSP/AdvancedSaturation.cpp
+        Source/DSP/AdvancedTransientShaper.cpp
+        Source/DSP/LUFSMeter.cpp
         Source/GUI/ThermalKnob.cpp
         Source/GUI/MeterStrip.cpp)
 
