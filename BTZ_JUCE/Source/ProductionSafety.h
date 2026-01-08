@@ -14,7 +14,8 @@
 */
 
 #pragma once
-#include <JuceHeader.h>
+#include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_dsp/juce_dsp.h>
 #include <atomic>
 #include <array>
 
@@ -289,7 +290,7 @@ public:
             return Host::AbletonLive;
         else if (hostType.isFruityLoops())
             return Host::FLStudio;
-        else if (hostType.isLogicPro())
+        else if (hostType.isLogic())
             return Host::LogicPro;
         else if (hostType.isProTools())
             return Host::ProTools;

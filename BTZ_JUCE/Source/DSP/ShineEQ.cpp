@@ -10,7 +10,7 @@ ShineEQ::ShineEQ()
     // Initialize both filters as high-shelf
     for (auto& filter : highShelfFilter)
     {
-        filter.setFilterType(RBJBiquad::FilterType::HighShelf);
+        filter.setType(RBJBiquad::FilterType::HighShelf);
     }
 }
 
@@ -21,7 +21,7 @@ void ShineEQ::prepare(const juce::dsp::ProcessSpec& spec)
     // Prepare all filters
     for (auto& filter : highShelfFilter)
     {
-        filter.setSampleRate(sampleRate);
+        filter.prepare(sampleRate);
     }
 
     reset();

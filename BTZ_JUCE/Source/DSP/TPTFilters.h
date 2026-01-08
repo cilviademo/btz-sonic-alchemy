@@ -16,7 +16,8 @@
 */
 
 #pragma once
-#include <JuceHeader.h>
+#include <juce_audio_processors/juce_audio_processors.h>
+#include <juce_dsp/juce_dsp.h>
 
 //=============================================================================
 // TPT ONE-POLE FILTER
@@ -219,6 +220,11 @@ public:
     void reset()
     {
         filter.reset();
+    }
+
+    inline float process(float input)
+    {
+        return filter.process(input);
     }
 
     template<typename ProcessContext>
