@@ -31,6 +31,7 @@ target_sources(BTZ
         Source/DSP/ShineEQ.cpp
         Source/DSP/ConsoleEmulator.cpp
         Source/DSP/Oversampling.cpp
+        Source/DSP/OversamplingManager.cpp
         # Temporarily disabled files with compilation issues:
         # Source/DSP/AdvancedSaturation.cpp
         # Source/DSP/AdvancedTransientShaper.cpp
