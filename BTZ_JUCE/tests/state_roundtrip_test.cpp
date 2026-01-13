@@ -134,6 +134,7 @@ void test_basic_roundtrip() {
     std::cout << "[TEST] Basic State Round-Trip... ";
 
     BTZAudioProcessor processor1;
+    processor1.prepareToPlay(48000.0, 512);  // Initialize processor
 
     // Set known state
     setAllParametersToKnownState(processor1.getAPVTS());
@@ -144,6 +145,8 @@ void test_basic_roundtrip() {
 
     // Create new processor and load state
     BTZAudioProcessor processor2;
+    processor2.prepareToPlay(48000.0, 512);
+    processor2.prepareToPlay(48000.0, 512);  // Initialize processor
     processor2.setStateInformation(stateData.getData(), (int)stateData.getSize());
 
     // Verify all parameters match
@@ -157,6 +160,7 @@ void test_default_state_roundtrip() {
     std::cout << "[TEST] Default State Round-Trip... ";
 
     BTZAudioProcessor processor1;
+    processor1.prepareToPlay(48000.0, 512);
     // Use default parameters (no modifications)
 
     // Save state
@@ -165,6 +169,7 @@ void test_default_state_roundtrip() {
 
     // Load into new processor
     BTZAudioProcessor processor2;
+    processor2.prepareToPlay(48000.0, 512);
     processor2.setStateInformation(stateData.getData(), (int)stateData.getSize());
 
     // Verify match
@@ -201,6 +206,7 @@ void test_extreme_values_roundtrip() {
 
     // Load min state into new processor
     BTZAudioProcessor processor2;
+    processor2.prepareToPlay(48000.0, 512);
     processor2.setStateInformation(stateData1.getData(), (int)stateData1.getSize());
 
     // Verify all parameters are at min
@@ -227,6 +233,7 @@ void test_deterministic_serialization() {
     std::cout << "[TEST] Deterministic Serialization... ";
 
     BTZAudioProcessor processor;
+    processor.prepareToPlay(48000.0, 512);
     setAllParametersToKnownState(processor.getAPVTS());
 
     // Save state twice
@@ -247,6 +254,7 @@ void test_version_field_present() {
     std::cout << "[TEST] Version Field Present... ";
 
     BTZAudioProcessor processor;
+    processor.prepareToPlay(48000.0, 512);
 
     // Save state
     MemoryBlock stateData;
@@ -279,6 +287,7 @@ void test_all_27_parameters_preserved() {
 
     // Load into new processor
     BTZAudioProcessor processor2;
+    processor2.prepareToPlay(48000.0, 512);
     processor2.setStateInformation(stateData.getData(), (int)stateData.getSize());
 
     // Verify parameter count
@@ -315,6 +324,9 @@ void test_all_27_parameters_preserved() {
 // Main Test Runner
 
 int main(int argc, char* argv[]) {
+    // Initialize JUCE MessageManager (required for AudioProcessor construction)
+    juce::ScopedJuceInitialiser_GUI juceInit;
+
     std::cout << "========================================\n";
     std::cout << "BTZ State Round-Trip Tests\n";
     std::cout << "========================================\n\n";
