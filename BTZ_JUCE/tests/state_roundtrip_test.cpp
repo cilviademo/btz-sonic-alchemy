@@ -105,8 +105,8 @@ void setAllParametersToKnownState(AudioProcessorValueTreeState& apvts) {
         p->setValueNotifyingHost(0.5f);  // 2x
 }
 
-bool compareAPVTS(const AudioProcessorValueTreeState& apvts1,
-                  const AudioProcessorValueTreeState& apvts2) {
+bool compareAPVTS(AudioProcessorValueTreeState& apvts1,
+                  AudioProcessorValueTreeState& apvts2) {
     auto state1 = apvts1.copyState();
     auto state2 = apvts2.copyState();
 

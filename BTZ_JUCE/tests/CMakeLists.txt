@@ -7,6 +7,27 @@ if(NOT TARGET juce::juce_audio_processors)
     add_subdirectory(../JUCE ${CMAKE_CURRENT_BINARY_DIR}/JUCE)
 endif()
 
+# Common plugin definitions for tests that instantiate BTZAudioProcessor
+set(BTZ_PLUGIN_DEFINITIONS
+    JUCE_WEB_BROWSER=0
+    JUCE_USE_CURL=0
+    JUCE_DISPLAY_SPLASH_SCREEN=0
+    JUCE_REPORT_APP_USAGE=0
+    JucePlugin_Name="BTZ"
+    JucePlugin_Desc="BTZ Audio Enhancer"
+    JucePlugin_Manufacturer="BTZ Audio"
+    JucePlugin_ManufacturerCode=0x42747a7a
+    JucePlugin_PluginCode=0x42747a70
+    JucePlugin_IsSynth=0
+    JucePlugin_WantsMidiInput=0
+    JucePlugin_ProducesMidiOutput=0
+    JucePlugin_IsMidiEffect=0
+    JucePlugin_EditorRequiresKeyboardFocus=0
+    JucePlugin_Version=1.0.0
+    JucePlugin_VersionCode=0x10000
+    JucePlugin_VersionString="1.0.0"
+)
+
 # Lifecycle Stress Test Executable
 add_executable(lifecycle_stress_test
     lifecycle_stress_test.cpp
@@ -36,13 +57,7 @@ target_link_libraries(lifecycle_stress_test
         juce::juce_recommended_warning_flags
 )
 
-target_compile_definitions(lifecycle_stress_test
-    PRIVATE
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0
-        JUCE_REPORT_APP_USAGE=0
-)
+target_compile_definitions(lifecycle_stress_test PRIVATE ${BTZ_PLUGIN_DEFINITIONS})
 
 # Parameter Conversion Test (Ship Gate #9)
 add_executable(parameter_conversion_test
@@ -97,13 +112,7 @@ target_link_libraries(state_roundtrip_test
         juce::juce_recommended_warning_flags
 )
 
-target_compile_definitions(state_roundtrip_test
-    PRIVATE
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0
-        JUCE_REPORT_APP_USAGE=0
-)
+target_compile_definitions(state_roundtrip_test PRIVATE ${BTZ_PLUGIN_DEFINITIONS})
 
 # Bypass Bit-Perfect Test (Ship Gate #8)
 add_executable(bypass_bitperfect_test
@@ -134,13 +143,7 @@ target_link_libraries(bypass_bitperfect_test
         juce::juce_recommended_warning_flags
 )
 
-target_compile_definitions(bypass_bitperfect_test
-    PRIVATE
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0
-        JUCE_REPORT_APP_USAGE=0
-)
+target_compile_definitions(bypass_bitperfect_test PRIVATE ${BTZ_PLUGIN_DEFINITIONS})
 
 # Automation Torture Test (Ship Gate #7)
 add_executable(automation_torture_test
@@ -171,13 +174,7 @@ target_link_libraries(automation_torture_test
         juce::juce_recommended_warning_flags
 )
 
-target_compile_definitions(automation_torture_test
-    PRIVATE
-        JUCE_WEB_BROWSER=0
-        JUCE_USE_CURL=0
-        JUCE_DISPLAY_SPLASH_SCREEN=0
-        JUCE_REPORT_APP_USAGE=0
-)
+target_compile_definitions(automation_torture_test PRIVATE ${BTZ_PLUGIN_DEFINITIONS})
 
 # Enable testing
 enable_testing()
