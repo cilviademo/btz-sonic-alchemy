@@ -9,8 +9,13 @@
 #include "BTZKnob.h"
 
 BTZKnob::BTZKnob(const juce::String& labelText)
-    : label(labelText)
+    : juce::Slider(juce::Slider::RotaryHorizontalVerticalDrag, juce::Slider::NoTextBox),
+      label(labelText)
 {
+    setRotaryParameters(rotaryStartAngle, rotaryEndAngle, true);
+    setVelocityBasedMode(true);
+    setVelocityModeParameters(1.0, 1, 0.0, false);
+    setDoubleClickReturnValue(true, 0.5); // Default to center
     juce::Component::setSize(BTZTheme::Layout::knobSize, BTZTheme::Layout::knobSize + 40);
 }
 
@@ -23,10 +28,14 @@ void BTZKnob::paint(juce::Graphics& g)
     g.setColour(BTZTheme::Colors::knobBackground);
     g.fillEllipse(knobBounds);
 
+    // Calculate current angle based on slider value
+    auto value = getValue();
+    auto normalizedValue = (value - getMinimum()) / (getMaximum() - getMinimum());
+    auto angle = rotaryStartAngle + (rotaryEndAngle - rotaryStartAngle) * normalizedValue;
+
     // Draw filled arc representing value
     auto center = knobBounds.getCentre();
     auto radius = knobSize / 2.0f - 4.0f;
-    auto angle = rotaryStartAngle + (rotaryEndAngle - rotaryStartAngle) * currentValue;
 
     juce::Path arcPath;
     arcPath.addCentredArc(center.x, center.y, radius, radius,
@@ -62,111 +71,23 @@ void BTZKnob::paint(juce::Graphics& g)
     auto valueBounds = bounds;
     g.setFont(BTZTheme::Fonts::getValue());
     g.setColour(BTZTheme::Colors::textSecondary);
-    g.drawText(getDisplayValue(), valueBounds, juce::Justification::centred);
-}
 
-void BTZKnob::resized()
-{
-    // Layout handled in paint
-}
-
-void BTZKnob::mouseDown(const juce::MouseEvent& event)
-{
-    dragStartY = event.y;
-    dragStartValue = currentValue;
-}
-
-void BTZKnob::mouseDrag(const juce::MouseEvent& event)
-{
-    auto dragDistance = dragStartY - event.y;
-    auto sensitivity = 0.005f;
-
-    // Shift for fine control
-    if (event.mods.isShiftDown())
-        sensitivity *= 0.1f;
-
-    auto newValue = juce::jlimit(0.0f, 1.0f, dragStartValue + dragDistance * sensitivity);
-
-    if (parameter != nullptr)
+    // Format value display
+    juce::String valueText;
+    if (valueSuffix.isNotEmpty())
     {
-        parameter->setValueNotifyingHost(newValue);
-        currentValue = parameter->getValue();
+        valueText = juce::String(value, 1) + valueSuffix;
     }
     else
     {
-        currentValue = newValue;
+        valueText = juce::String((int)(normalizedValue * 100)) + "%";
     }
 
-    repaint();
+    g.drawText(valueText, valueBounds, juce::Justification::centred);
 }
 
-void BTZKnob::mouseUp(const juce::MouseEvent&)
+void BTZKnob::setKnobSize(float diameter)
 {
-    // Drag complete
-}
-
-void BTZKnob::mouseDoubleClick(const juce::MouseEvent&)
-{
-    // Reset to default
-    if (parameter != nullptr)
-    {
-        parameter->setValueNotifyingHost(parameter->getDefaultValue());
-        currentValue = parameter->getValue();
-    }
-    else
-    {
-        currentValue = defaultValue;
-    }
-
-    repaint();
-}
-
-void BTZKnob::mouseWheelMove(const juce::MouseEvent& event, const juce::MouseWheelDetails& wheel)
-{
-    auto delta = wheel.deltaY * 0.05f;
-
-    // Shift for fine control
-    if (event.mods.isShiftDown())
-        delta *= 0.1f;
-
-    auto newValue = juce::jlimit(0.0f, 1.0f, currentValue + delta);
-
-    if (parameter != nullptr)
-    {
-        parameter->setValueNotifyingHost(newValue);
-        currentValue = parameter->getValue();
-    }
-    else
-    {
-        currentValue = newValue;
-    }
-
-    repaint();
-}
-
-void BTZKnob::setParameter(juce::RangedAudioParameter* param)
-{
-    parameter = param;
-    if (parameter != nullptr)
-    {
-        currentValue = parameter->getValue();
-        defaultValue = parameter->getDefaultValue();
-        repaint();
-    }
-}
-
-juce::String BTZKnob::getDisplayValue() const
-{
-    if (valueFormatter)
-    {
-        return valueFormatter(currentValue);
-    }
-
-    if (parameter != nullptr)
-    {
-        return parameter->getText(currentValue, 50) + valueSuffix;
-    }
-
-    // Default: show percentage
-    return juce::String((int)(currentValue * 100)) + "%";
+    knobSize = diameter;
+    juce::Component::setSize((int)diameter, (int)diameter + 40);
 }

@@ -12,6 +12,7 @@ MainView::MainView(juce::AudioProcessorValueTreeState& apvts)
     : audioProcessorValueTreeState(apvts)
 {
     createControls();
+    createParameterAttachments();
     setSize(BTZTheme::UI::windowWidth, BTZTheme::UI::windowHeight);
 }
 
@@ -22,23 +23,28 @@ void MainView::createControls()
     // =========================================================================
 
     punchKnob = std::make_unique<BTZKnob>("PUNCH");
-    punchKnob->setParameter(audioProcessorValueTreeState.getParameter("punch"));
+    punchKnob->setRange(0.0, 100.0, 0.1);
+    punchKnob->setValue(50.0);
     addAndMakeVisible(punchKnob.get());
 
     warmthKnob = std::make_unique<BTZKnob>("WARMTH");
-    warmthKnob->setParameter(audioProcessorValueTreeState.getParameter("warmth"));
+    warmthKnob->setRange(0.0, 100.0, 0.1);
+    warmthKnob->setValue(50.0);
     addAndMakeVisible(warmthKnob.get());
 
     boomKnob = std::make_unique<BTZKnob>("BOOM");
-    boomKnob->setParameter(audioProcessorValueTreeState.getParameter("boom"));
+    boomKnob->setRange(0.0, 100.0, 0.1);
+    boomKnob->setValue(50.0);
     addAndMakeVisible(boomKnob.get());
 
     shineKnob = std::make_unique<BTZKnob>("SHINE");
-    shineKnob->setParameter(audioProcessorValueTreeState.getParameter("shine"));
+    shineKnob->setRange(0.0, 100.0, 0.1);
+    shineKnob->setValue(50.0);
     addAndMakeVisible(shineKnob.get());
 
     driveKnob = std::make_unique<BTZKnob>("DRIVE");
-    driveKnob->setParameter(audioProcessorValueTreeState.getParameter("drive"));
+    driveKnob->setRange(0.0, 100.0, 0.1);
+    driveKnob->setValue(0.0);
     addAndMakeVisible(driveKnob.get());
 
     // =========================================================================
@@ -46,17 +52,20 @@ void MainView::createControls()
     // =========================================================================
 
     mixKnob = std::make_unique<BTZKnob>("MIX");
-    mixKnob->setParameter(audioProcessorValueTreeState.getParameter("mix"));
+    mixKnob->setRange(0.0, 100.0, 0.1);
+    mixKnob->setValue(100.0);
     mixKnob->setValueSuffix("%");
     addAndMakeVisible(mixKnob.get());
 
     inputGainKnob = std::make_unique<BTZKnob>("INPUT");
-    inputGainKnob->setParameter(audioProcessorValueTreeState.getParameter("inputGain"));
+    inputGainKnob->setRange(-12.0, 12.0, 0.1);
+    inputGainKnob->setValue(0.0);
     inputGainKnob->setValueSuffix(" dB");
     addAndMakeVisible(inputGainKnob.get());
 
     outputGainKnob = std::make_unique<BTZKnob>("OUTPUT");
-    outputGainKnob->setParameter(audioProcessorValueTreeState.getParameter("outputGain"));
+    outputGainKnob->setRange(-12.0, 12.0, 0.1);
+    outputGainKnob->setValue(0.0);
     outputGainKnob->setValueSuffix(" dB");
     addAndMakeVisible(outputGainKnob.get());
 
@@ -70,7 +79,8 @@ void MainView::createControls()
     addAndMakeVisible(sparkEnabledButton.get());
 
     sparkCeilingKnob = std::make_unique<BTZKnob>("CEILING");
-    sparkCeilingKnob->setParameter(audioProcessorValueTreeState.getParameter("sparkCeiling"));
+    sparkCeilingKnob->setRange(-12.0, 0.0, 0.1);
+    sparkCeilingKnob->setValue(-0.3);
     sparkCeilingKnob->setValueSuffix(" dB");
     addAndMakeVisible(sparkCeilingKnob.get());
 
@@ -81,6 +91,7 @@ void MainView::createControls()
     presetAButton = std::make_unique<BTZButton>("A");
     presetAButton->setClickingTogglesState(true);
     presetAButton->setToggleColors(BTZTheme::Colors::primary, BTZTheme::Colors::panelBorder);
+    presetAButton->setToggleState(true, juce::dontSendNotification);
     addAndMakeVisible(presetAButton.get());
 
     presetBButton = std::make_unique<BTZButton>("B");
@@ -100,21 +111,46 @@ void MainView::createControls()
     activeButton = std::make_unique<BTZButton>("ACTIVE");
     activeButton->setClickingTogglesState(true);
     activeButton->setToggleColors(BTZTheme::Colors::primary, BTZTheme::Colors::buttonDisabled);
+    activeButton->setToggleState(true, juce::dontSendNotification);
     addAndMakeVisible(activeButton.get());
 
     bypassButton = std::make_unique<BTZButton>("BYPASS");
     bypassButton->setClickingTogglesState(true);
     bypassButton->setToggleColors(BTZTheme::Colors::meterHigh, BTZTheme::Colors::buttonDisabled);
     addAndMakeVisible(bypassButton.get());
-
-    // Create parameter attachments
-    createParameterAttachments();
 }
 
 void MainView::createParameterAttachments()
 {
-    // Note: Button attachments would be created here if the parameters exist in APVTS
-    // For now, buttons are interactive but not yet connected to actual parameters
+    // Create slider attachments for all knobs
+    knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessorValueTreeState, "punch", *punchKnob));
+
+    knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessorValueTreeState, "warmth", *warmthKnob));
+
+    knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessorValueTreeState, "boom", *boomKnob));
+
+    knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessorValueTreeState, "shine", *shineKnob));
+
+    knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessorValueTreeState, "drive", *driveKnob));
+
+    knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessorValueTreeState, "mix", *mixKnob));
+
+    knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessorValueTreeState, "inputGain", *inputGainKnob));
+
+    knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessorValueTreeState, "outputGain", *outputGainKnob));
+
+    knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+        audioProcessorValueTreeState, "sparkCeiling", *sparkCeilingKnob));
+
+    // Note: Button attachments for preset system will be added when preset management is implemented
 }
 
 void MainView::paint(juce::Graphics& g)
