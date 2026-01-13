@@ -43,7 +43,7 @@ public:
 
     // Appearance
     void setLabel(const juce::String& text) { label = text; repaint(); }
-    void setSize(float diameter) { knobSize = diameter; setSize((int)diameter, (int)diameter + 40); }
+    void setKnobSize(float diameter) { knobSize = diameter; juce::Component::setSize((int)diameter, (int)diameter + 40); }
 
 private:
     void updateValue();

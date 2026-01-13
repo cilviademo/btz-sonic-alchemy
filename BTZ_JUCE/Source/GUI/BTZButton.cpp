@@ -11,7 +11,7 @@
 BTZButton::BTZButton(const juce::String& buttonText)
     : juce::TextButton(buttonText)
 {
-    setSize(BTZTheme::Layout::buttonWidth, BTZTheme::Layout::buttonHeight);
+    juce::Component::setSize(BTZTheme::Layout::buttonWidth, BTZTheme::Layout::buttonHeight);
 }
 
 void BTZButton::paintButton(juce::Graphics& g, bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)

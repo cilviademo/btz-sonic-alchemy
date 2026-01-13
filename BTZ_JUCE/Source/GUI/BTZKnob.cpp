@@ -11,7 +11,7 @@
 BTZKnob::BTZKnob(const juce::String& labelText)
     : label(labelText)
 {
-    setSize(BTZTheme::Layout::knobSize, BTZTheme::Layout::knobSize + 40);
+    juce::Component::setSize(BTZTheme::Layout::knobSize, BTZTheme::Layout::knobSize + 40);
 }
 
 void BTZKnob::paint(juce::Graphics& g)
