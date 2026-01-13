@@ -37,7 +37,10 @@ target_sources(BTZ
         # Source/DSP/WDFSaturation.cpp
         # Source/DSP/LUFSMeter.cpp
         Source/GUI/ThermalKnob.cpp
-        Source/GUI/MeterStrip.cpp)
+        Source/GUI/MeterStrip.cpp
+        Source/GUI/BTZKnob.cpp
+        Source/GUI/BTZButton.cpp
+        Source/GUI/MainView.cpp)
 
 # Header-only infrastructure files (included for IDE support)
 # - Source/ProductionSafety.h (HostCallOrderGuard, RTSafeLogger)
