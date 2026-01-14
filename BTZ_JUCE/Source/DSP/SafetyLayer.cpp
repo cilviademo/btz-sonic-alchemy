@@ -7,7 +7,11 @@
 */
 
 #include "SafetyLayer.h"
-#include <xmmintrin.h> // For SSE denormal control
+
+// Platform-specific includes (guarded for cross-platform compatibility)
+#if JUCE_USE_SSE_INTRINSICS
+    #include <xmmintrin.h> // For SSE denormal control (x86/x64 only)
+#endif
 
 // ============================================================================
 // DCBlocker Implementation
