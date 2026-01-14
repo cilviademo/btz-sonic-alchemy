@@ -40,6 +40,9 @@ target_sources(BTZ
         # Phase 2 Realism Components
         Source/DSP/LongTermMemory.cpp
         Source/DSP/StereoEnhancement.cpp
+        # Phase 3 Polish & Production
+        Source/DSP/PerformanceGuardrails.cpp
+        Source/DSP/DeterministicProcessing.cpp
         # Temporarily disabled files with compilation issues:
         # Source/DSP/AdvancedSaturation.cpp
         # Source/DSP/AdvancedTransientShaper.cpp
