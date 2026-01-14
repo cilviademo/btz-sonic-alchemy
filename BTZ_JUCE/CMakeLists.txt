@@ -37,6 +37,9 @@ target_sources(BTZ
         Source/DSP/EnhancedSHINE.cpp
         Source/DSP/ComponentVariance.cpp
         Source/DSP/SafetyLayer.cpp
+        # Phase 2 Realism Components
+        Source/DSP/LongTermMemory.cpp
+        Source/DSP/StereoEnhancement.cpp
         # Temporarily disabled files with compilation issues:
         # Source/DSP/AdvancedSaturation.cpp
         # Source/DSP/AdvancedTransientShaper.cpp
