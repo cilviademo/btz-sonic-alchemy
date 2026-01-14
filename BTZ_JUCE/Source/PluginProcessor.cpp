@@ -98,7 +98,7 @@ void BTZAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     spec.maximumBlockSize = samplesPerBlock;
     spec.numChannels = getTotalNumOutputChannels();
 
-    // Prepare all DSP modules
+    // Prepare all DSP modules (legacy)
     transientShaper.prepare(spec);
     saturation.prepare(spec);
     subHarmonic.prepare(spec);
@@ -106,6 +106,20 @@ void BTZAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     shineEQ.prepare(spec);
     consoleEmulator.prepare(spec);
     oversampler.prepare(spec);
+
+    // Phase 1-3: Prepare enhanced modules
+    enhancedSpark.prepare(sampleRate, samplesPerBlock, spec.numChannels);
+    enhancedShine.prepare(sampleRate, samplesPerBlock, spec.numChannels);
+    safetyLayer.prepare(sampleRate, samplesPerBlock);
+    longTermMemory.prepare(sampleRate);
+    stereoEnhancement.prepare(sampleRate, samplesPerBlock);
+    performanceGuardrails.prepare(sampleRate, samplesPerBlock);
+    deterministicProcessing.prepare(sampleRate);
+    oversamplingManager.prepare(sampleRate, samplesPerBlock, spec.numChannels);
+
+    // ComponentVariance: Initialize with per-instance seed
+    componentVariance.randomizeSeed();  // Each instance gets unique character
+    componentVariance.setVarianceAmount(1.0f);  // Full analog variance enabled
 
     inputGainProcessor.prepare(spec);
     outputGainProcessor.prepare(spec);
@@ -119,11 +133,7 @@ void BTZAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     smoothedInputGain.reset(sampleRate, BTZConstants::gainSmoothingTime);
     smoothedOutputGain.reset(sampleRate, BTZConstants::gainSmoothingTime);
 
-    // NEW: Initialize TPT DC blockers (removes DC offset from saturation)
-    for (auto& blocker : dcBlockerInput)
-        blocker.prepare(sampleRate);
-    for (auto& blocker : dcBlockerOutput)
-        blocker.prepare(sampleRate);
+    // DC blockers now handled by SafetyLayer (Phase 1)
 
     // P1-5 & P2-3: Report TOTAL latency to DAW (oversampling + lookahead)
     int sparkOSIndex = apvts.getRawParameterValue(BTZParams::IDs::sparkOS)->load();
@@ -163,6 +173,9 @@ bool BTZAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) cons
 
 void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
+    // Phase 3: Performance monitoring - start timing this block
+    performanceGuardrails.startBlock();
+
     // P2-6 FIX: Denormal protection at block level (some hosts reset FTZ flags)
     juce::ScopedNoDenormals noDenormals;
     juce::FloatVectorOperations::disableDenormalisedNumberSupport();
@@ -171,7 +184,17 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     if (!callOrderGuard.safeToProcess())
     {
         buffer.clear();
+        performanceGuardrails.endBlock();  // End timing even if bypassed
         return; // Skip processing if not prepared
+    }
+
+    // Phase 3: Deterministic processing - detect render mode (realtime vs offline)
+    if (auto* playHead = getPlayHead())
+    {
+        if (auto posInfo = playHead->getPosition())
+        {
+            deterministicProcessing.update(*posInfo);
+        }
     }
 
     auto totalNumInputChannels  = getTotalNumInputChannels();
@@ -188,6 +211,7 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         if (consecutiveSilentBuffers > BTZConstants::maxSilentBuffersBeforeSkip)
         {
             updateMetering(buffer); // Still update meters
+            performanceGuardrails.endBlock();  // End timing
             return; // Skip DSP entirely
         }
     }
@@ -201,6 +225,7 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     if (!isActive)
     {
         updateMetering(buffer);
+        performanceGuardrails.endBlock();  // End timing
         return; // Bypass
     }
 
@@ -255,6 +280,7 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     saturation.setWarmth(warmthAmount);
     subHarmonic.setBoom(boomAmount);
 
+    // Legacy SparkLimiter (keeping for backward compatibility)
     sparkLimiter.setTargetLUFS(sparkLUFS);
     sparkLimiter.setCeiling(sparkCeiling);
     sparkLimiter.setMix(sparkMix);
@@ -268,10 +294,26 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     }
     sparkLimiter.setMode(sparkModeIndex == 0 ? SparkLimiter::Mode::Soft : SparkLimiter::Mode::Hard);
 
+    // Phase 1: EnhancedSPARK (true-peak limiter with hysteresis)
+    enhancedSpark.setCeiling(sparkCeiling);
+    enhancedSpark.setEnabled(sparkEnabled);
+    // Map OS index to quality tier: 0=Eco, 1=Normal, 2+=High
+    EnhancedSPARK::QualityTier tier = (sparkOSIndex == 0) ? EnhancedSPARK::QualityTier::Eco :
+                                       (sparkOSIndex == 1) ? EnhancedSPARK::QualityTier::Normal :
+                                                             EnhancedSPARK::QualityTier::High;
+    enhancedSpark.setQualityTier(tier);
+
+    // Legacy ShineEQ
     shineEQ.setFrequency(shineFreqHz);
     shineEQ.setGain(shineGainDb);
     shineEQ.setQ(shineQ);
     shineEQ.setMix(shineMix);
+
+    // Phase 1: EnhancedSHINE (psychoacoustic air band EQ)
+    enhancedShine.setFrequencyCenter(shineFreqHz);
+    enhancedShine.setShineAmount(juce::jmap(shineGainDb, -12.0f, 12.0f, 0.0f, 1.0f));
+    enhancedShine.setEnabled(shineEnabled);
+    enhancedShine.setPsychoacousticMode(true);  // Always use psychoacoustic processing
 
     ConsoleEmulator::Type consoleType;
     switch (masterBlendIndex)
@@ -297,12 +339,15 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     // 1. Input gain
     inputGainProcessor.process(context);
 
-    // NEW: DC blocking at input (removes any DC offset from source)
-    for (size_t ch = 0; ch < buffer.getNumChannels(); ++ch)
+    // Phase 1: Safety layer - DC blocking, denormal guard, NaN/Inf protection (pre)
+    safetyLayer.process(buffer);
+
+    // Phase 2: Long-term memory - track energy across multiple time scales
+    // This feeds adaptive processing (harmonic rotation, dynamic saturation)
+    if (buffer.getNumChannels() > 0)
     {
-        auto* data = buffer.getWritePointer(ch);
-        for (int i = 0; i < buffer.getNumSamples(); ++i)
-            data[i] = dcBlockerInput[ch].process(data[i]);
+        const float* inputData = buffer.getReadPointer(0);
+        longTermMemory.update(inputData, buffer.getNumSamples());
     }
 
     // P1-1 FIX: Include TransientShaper in oversampling for anti-aliasing
@@ -342,14 +387,6 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             sparkLimiter.process(context);
     }
 
-    // NEW: DC blocking after non-linear processing (removes DC offset from saturation)
-    for (size_t ch = 0; ch < buffer.getNumChannels(); ++ch)
-    {
-        auto* data = buffer.getWritePointer(ch);
-        for (int i = 0; i < buffer.getNumSamples(); ++i)
-            data[i] = dcBlockerOutput[ch].process(data[i]);
-    }
-
     // 4. Boom (subharmonic synthesis)
     if (boomAmount > 0.01f)
         subHarmonic.process(context);
@@ -362,28 +399,25 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     if (masterEnabled || mixAmount < 0.99f)
         consoleEmulator.process(context);
 
+    // Phase 2: Stereo enhancement (micro-drift and width)
+    // Apply subtle analog-style stereo character
+    stereoEnhancement.setDriftAmount(0.3f);   // Subtle drift
+    stereoEnhancement.setDepthAmount(0.2f);   // Subtle depth
+    stereoEnhancement.setWidth(1.0f);         // Normal width (no widening)
+    stereoEnhancement.process(buffer);
+
     // 8. Output gain
     outputGainProcessor.process(context);
 
-    // P2-4 FIX: DSP validation in ALL builds (not just DEBUG)
-    // NaN/Inf must be caught in release mode too - silent failures are worse than crashes
-    if (!BTZValidation::validateBuffer(buffer))
-    {
-        rtLogger.logRT("BTZ: Invalid samples detected - sanitizing");
-        BTZValidation::sanitizeBuffer(buffer); // Replace NaN/Inf with silence
-    }
-
-    #if JUCE_DEBUG
-    // Additional validation in DEBUG builds only
-    if (BTZValidation::hasDCOffset(buffer, BTZConstants::dcOffsetThreshold))
-    {
-        rtLogger.logRT("BTZ: DC offset detected");
-        // Note: Cannot log numeric value in RT context (would require sprintf)
-    }
-    #endif
+    // Phase 1: Safety layer - DC blocking, denormal guard, NaN/Inf protection (post)
+    // This replaces the old manual DC blocker and BTZValidation calls
+    safetyLayer.process(buffer);
 
     // Update metering for GUI
     updateMetering(buffer);
+
+    // Phase 3: Performance monitoring - end timing and update CPU stats
+    performanceGuardrails.endBlock();
 }
 
 void BTZAudioProcessor::updateMetering(const juce::AudioBuffer<float>& buffer)

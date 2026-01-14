@@ -23,6 +23,18 @@
 #include "DSP/ConsoleEmulator.h"
 #include "DSP/Oversampling.h"
 #include "DSP/TPTFilters.h"
+
+// Phase 1-3: Enhanced DSP modules
+#include "DSP/EnhancedSPARK.h"
+#include "DSP/EnhancedSHINE.h"
+#include "DSP/ComponentVariance.h"
+#include "DSP/SafetyLayer.h"
+#include "DSP/LongTermMemory.h"
+#include "DSP/StereoEnhancement.h"
+#include "DSP/PerformanceGuardrails.h"
+#include "DSP/DeterministicProcessing.h"
+#include "DSP/OversamplingManager.h"
+
 #include "Utilities/DSPValidation.h"
 #include "Utilities/DSPConstants.h"
 #include "ProductionSafety.h"
@@ -78,22 +90,34 @@ private:
     // Parameter state
     juce::AudioProcessorValueTreeState apvts;
 
-    // DSP modules
+    // DSP modules (legacy - will be replaced by enhanced versions)
     TransientShaper transientShaper;
     Saturation saturation;
     SubHarmonic subHarmonic;
-    SparkLimiter sparkLimiter;
-    ShineEQ shineEQ;
+    SparkLimiter sparkLimiter;          // Will be replaced by EnhancedSPARK
+    ShineEQ shineEQ;                    // Will be replaced by EnhancedSHINE
     ConsoleEmulator consoleEmulator;
-    OversamplingProcessor<float> oversampler;
+    OversamplingProcessor<float> oversampler;  // Will be replaced by OversamplingManager
+
+    // Phase 1-3: Enhanced DSP modules
+    EnhancedSPARK enhancedSpark;
+    EnhancedSHINE enhancedShine;
+    ComponentVariance componentVariance;
+    CompositeSafetyLayer safetyLayer;
+    LongTermMemory longTermMemory;
+    CompositeStereoEnhancement stereoEnhancement;
+    CompositePerformanceGuardrails performanceGuardrails;
+    CompositeDeterministicProcessing deterministicProcessing;
+    OversamplingManager oversamplingManager;
 
     // I/O gain stages
     juce::dsp::Gain<float> inputGainProcessor;
     juce::dsp::Gain<float> outputGainProcessor;
 
     // DC blocking filters (TPT - removes DC offset after saturation)
-    std::array<TPTDCBlocker, 2> dcBlockerInput;
-    std::array<TPTDCBlocker, 2> dcBlockerOutput;
+    // DEPRECATED: Replaced by SafetyLayer
+    // std::array<TPTDCBlocker, 2> dcBlockerInput;
+    // std::array<TPTDCBlocker, 2> dcBlockerOutput;
 
     // Production safety (prevents crashes from host call order issues)
     HostCallOrderGuard callOrderGuard;
