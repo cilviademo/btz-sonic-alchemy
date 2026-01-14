@@ -32,6 +32,11 @@ target_sources(BTZ
         Source/DSP/ConsoleEmulator.cpp
         Source/DSP/Oversampling.cpp
         Source/DSP/OversamplingManager.cpp
+        # Phase 1 Enhanced Components
+        Source/DSP/EnhancedSPARK.cpp
+        Source/DSP/EnhancedSHINE.cpp
+        Source/DSP/ComponentVariance.cpp
+        Source/DSP/SafetyLayer.cpp
         # Temporarily disabled files with compilation issues:
         # Source/DSP/AdvancedSaturation.cpp
         # Source/DSP/AdvancedTransientShaper.cpp
@@ -48,6 +53,12 @@ target_sources(BTZ
 # - Source/AutoDebugger.h (Crash-safe diagnostics)
 # - Source/ABComparison.h (A/B comparison + Undo/Redo)
 # - Source/LicenseSystem.h (License validation)
+# - Source/DSP/ParameterSmoother.h (Lock-free parameter smoothing)
+# - Source/DSP/OversamplingManager.h (Centralized oversampling)
+# - Source/DSP/EnhancedSPARK.h (Phase 1: True-peak limiter with hysteresis)
+# - Source/DSP/EnhancedSHINE.h (Phase 1: Psychoacoustic air enhancement)
+# - Source/DSP/ComponentVariance.h (Phase 1: Analog component tolerance)
+# - Source/DSP/SafetyLayer.h (Phase 1: DC/denormal/NaN protection)
 
 target_compile_definitions(BTZ
     PUBLIC
