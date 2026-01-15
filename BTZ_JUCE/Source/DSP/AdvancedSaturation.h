@@ -43,6 +43,10 @@ public:
     void setMode(Mode mode);
     void setDrive(float drive);          // Additional gain staging
 
+    // P1.1: Adaptive behavior
+    void applyComponentVariance(const class ComponentVariance& variance);  // Apply curve/harmonic variance
+    void applyAdaptiveDrive(float programLoudness);  // Reduce drive when already hot
+
     template<typename ProcessContext>
     void process(const ProcessContext& context)
     {
@@ -99,6 +103,11 @@ private:
     float warmthIntensity = 0.0f;
     float driveAmount = 1.0f;
     double sampleRate = 44100.0;
+
+    // P1.1: Adaptive state
+    float curveVariance = 1.0f;        // Drive curve variance (0.985 to 1.015)
+    float harmonicVariance = 1.0f;     // Harmonic balance variance
+    float adaptiveDriveScale = 1.0f;   // Loudness-based drive reduction (1.0 = no reduction)
 
     // DC blocker state
     std::array<float, 2> dcBlockerInput = {0.0f, 0.0f};

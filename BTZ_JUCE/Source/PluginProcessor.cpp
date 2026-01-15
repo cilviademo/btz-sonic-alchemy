@@ -372,6 +372,90 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         longTermMemory.update(inputData, buffer.getNumSamples());
     }
 
+    // ===== P1.1: ADAPTIVE INTELLIGENCE WIRING =====
+
+    // 1. PerformanceGuardrails: Quality tier switching based on CPU
+    {
+        auto currentTier = performanceGuardrails.getCurrentTier();
+        EnhancedSPARK::QualityTier sparkTier;
+
+        // Map PerformanceGuardrails tier to EnhancedSPARK tier
+        switch (currentTier)
+        {
+            case QualityTierManager::Tier::Eco:
+                sparkTier = EnhancedSPARK::QualityTier::Eco;
+                break;
+            case QualityTierManager::Tier::Normal:
+                sparkTier = EnhancedSPARK::QualityTier::Normal;
+                break;
+            case QualityTierManager::Tier::High:
+                sparkTier = EnhancedSPARK::QualityTier::High;
+                break;
+            default:
+                sparkTier = EnhancedSPARK::QualityTier::Normal;
+                break;
+        }
+
+        // Apply tier (already done above, but now it's CPU-responsive)
+        enhancedSpark.setQualityTier(sparkTier);
+    }
+
+    // 2. LongTermMemory: Adaptive saturation drive (reduce drive when program is already hot)
+    {
+        float slowEnergy = longTermMemory.getSlowEnergy();  // 2s RMS
+        float programLoudness = longTermMemory.getProgramLoudness();
+
+        // If program is loud (>= -12 dBFS RMS), reduce saturation drive to prevent harshness
+        // Mapping: -12 dBFS RMS → 1.0x drive, -6 dBFS RMS → 0.7x drive
+        float loudnessDb = 20.0f * std::log10(std::max(slowEnergy, 1.0e-6f));
+        float adaptiveDriveScale = juce::jmap(loudnessDb, -12.0f, -6.0f, 1.0f, 0.7f);
+        adaptiveDriveScale = juce::jlimit(0.7f, 1.0f, adaptiveDriveScale);
+
+        // Apply adaptive scaling to warmth parameter
+        float adaptiveWarmth = warmthAmount * adaptiveDriveScale;
+        saturation.setWarmth(adaptiveWarmth);
+    }
+
+    // 3. LongTermMemory: SHINE fatigue reduction (reduce HF when sustained bright content)
+    {
+        float slowEnergy = longTermMemory.getSlowEnergy();
+        float mediumEnergy = longTermMemory.getMediumEnergy();
+
+        // If HF energy is sustained (slow energy high), apply fatigue reduction
+        // This prevents listener fatigue from constant bright EQ
+        float hfFatigueScale = 1.0f;
+        if (slowEnergy > 0.3f)  // If program is moderately loud for 2s+
+        {
+            // Reduce shine amount by up to 30% (1.0 → 0.7)
+            hfFatigueScale = juce::jmap(slowEnergy, 0.3f, 0.7f, 1.0f, 0.7f);
+            hfFatigueScale = juce::jlimit(0.7f, 1.0f, hfFatigueScale);
+        }
+
+        // Apply fatigue reduction to shine amount
+        float adaptiveShineAmount = juce::jmap(shineGainDb, -12.0f, 12.0f, 0.0f, 1.0f);
+        adaptiveShineAmount *= hfFatigueScale;
+        enhancedShine.setShineAmount(adaptiveShineAmount);
+    }
+
+    // 4. DeterministicProcessing: Lock ComponentVariance seed in offline render mode
+    {
+        bool isOfflineRender = deterministicProcessing.isOfflineRender();
+        if (isOfflineRender)
+        {
+            // In offline mode, ensure variance is deterministic (seed locked)
+            // This happens automatically since we randomize seed only in prepareToPlay
+            // No action needed here - just documenting the behavior
+        }
+    }
+
+    // 5. ComponentVariance: Apply per-instance analog character
+    // Note: Variance values are deterministic per instance (seed set in prepareToPlay)
+    // Currently variance is stored but not applied to EnhancedSHINE/Saturation filters
+    // This requires implementing the applyComponentVariance() methods in those modules
+    // For P1.1, we document this as "prepared but not yet applied" - will complete in implementation pass
+
+    // ===== END P1.1 ADAPTIVE WIRING =====
+
     // P1-1 FIX: Include TransientShaper in oversampling for anti-aliasing
     // TransientShaper applies up to 3x gain changes (nonlinear) → needs oversampling
     // NOTE: EnhancedSPARK handles its own oversampling internally via OversamplingManager

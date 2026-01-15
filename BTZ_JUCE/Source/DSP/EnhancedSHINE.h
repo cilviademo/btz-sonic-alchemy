@@ -42,6 +42,10 @@ public:
     void setEnabled(bool enabled);
     void setPsychoacousticMode(bool enabled);   // Enable temporal masking
 
+    // P1.1: Adaptive behavior
+    void applyComponentVariance(const class ComponentVariance& variance);  // Apply analog variance to filters
+    void applyFatigueReduction(float slowEnergy);  // Reduce HF based on long-term energy
+
     // Processing
     void process(juce::AudioBuffer<float>& buffer);
 
@@ -94,6 +98,11 @@ private:
     static constexpr float maskingDepthDb = -6.0f;    // Max HF reduction
     float maskingAttackCoeff = 0.0f;
     float maskingReleaseCoeff = 0.0f;
+
+    // P1.1: Adaptive state
+    float filterFreqVariance[3] = {1.0f, 1.0f, 1.0f};  // Per-band frequency variance
+    float filterQVariance[3] = {1.0f, 1.0f, 1.0f};     // Per-band Q variance
+    float fatigueReduction = 1.0f;  // HF reduction factor (1.0 = none, 0.0 = full reduction)
 
     // Metering
     float hfEnergyDb = -96.0f;
