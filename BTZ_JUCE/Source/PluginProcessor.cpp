@@ -593,7 +593,8 @@ bool BTZAudioProcessor::hasEditor() const
 
 juce::AudioProcessorEditor* BTZAudioProcessor::createEditor()
 {
-    return new juce::GenericAudioProcessorEditor(*this);
+    // P1.2: Return custom GUI (MainView-based editor with all controls + metering)
+    return new BTZAudioProcessorEditor(*this);
 }
 
 void BTZAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
