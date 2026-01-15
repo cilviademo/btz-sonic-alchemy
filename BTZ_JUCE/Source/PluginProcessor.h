@@ -34,6 +34,7 @@
 #include "DSP/PerformanceGuardrails.h"
 #include "DSP/DeterministicProcessing.h"
 #include "DSP/OversamplingManager.h"
+#include "Utility/PresetManager.h"
 
 #include "Utilities/DSPValidation.h"
 #include "Utilities/DSPConstants.h"
@@ -77,6 +78,9 @@ public:
     // Access to parameters
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
 
+    // P1.3: Access to preset manager (for GUI A/B/C buttons)
+    PresetManager& getPresetManager() { return presetManager; }
+
     // Metering (for GUI)
     float getCurrentLUFS() const { return currentLUFS.load(); }
     float getCurrentPeak() const { return currentPeak.load(); }
@@ -109,6 +113,9 @@ private:
     CompositePerformanceGuardrails performanceGuardrails;
     CompositeDeterministicProcessing deterministicProcessing;
     OversamplingManager oversamplingManager;
+
+    // P1.3: Preset management (A/B/C slots + factory presets)
+    PresetManager presetManager;
 
     // I/O gain stages
     juce::dsp::Gain<float> inputGainProcessor;

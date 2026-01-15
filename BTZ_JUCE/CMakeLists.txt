@@ -52,7 +52,9 @@ target_sources(BTZ
         Source/GUI/MeterStrip.cpp
         Source/GUI/BTZKnob.cpp
         Source/GUI/BTZButton.cpp
-        Source/GUI/MainView.cpp)
+        Source/GUI/MainView.cpp
+        # P1.3: Preset Management
+        Source/Utility/PresetManager.cpp)
 
 # Header-only infrastructure files (included for IDE support)
 # - Source/ProductionSafety.h (HostCallOrderGuard, RTSafeLogger)

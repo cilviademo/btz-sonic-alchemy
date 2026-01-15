@@ -7,6 +7,7 @@
 */
 
 #include "MainView.h"
+#include "../PluginProcessor.h"  // P1.3: For PresetManager access
 
 MainView::MainView(juce::AudioProcessorValueTreeState& apvts)
     : audioProcessorValueTreeState(apvts)
@@ -103,6 +104,44 @@ void MainView::createControls()
     presetCButton->setClickingTogglesState(true);
     presetCButton->setToggleColors(BTZTheme::Colors::primary, BTZTheme::Colors::panelBorder);
     addAndMakeVisible(presetCButton.get());
+
+    // P1.3: Wire preset button click handlers
+    // Get processor from APVTS to access PresetManager
+    auto& processor = dynamic_cast<BTZAudioProcessor&>(audioProcessorValueTreeState.processor);
+    auto& presetManager = processor.getPresetManager();
+
+    // Preset A: Save on right-click, load on left-click
+    presetAButton->onClick = [this, &presetManager, &processor]()
+    {
+        // Left click: Load from slot A
+        presetManager.loadFromSlot(PresetManager::Slot::A);
+        // Update button states
+        presetAButton->setToggleState(true, juce::dontSendNotification);
+        presetBButton->setToggleState(false, juce::dontSendNotification);
+        presetCButton->setToggleState(false, juce::dontSendNotification);
+    };
+
+    // Preset B: Save on right-click, load on left-click
+    presetBButton->onClick = [this, &presetManager, &processor]()
+    {
+        // Left click: Load from slot B
+        presetManager.loadFromSlot(PresetManager::Slot::B);
+        // Update button states
+        presetAButton->setToggleState(false, juce::dontSendNotification);
+        presetBButton->setToggleState(true, juce::dontSendNotification);
+        presetCButton->setToggleState(false, juce::dontSendNotification);
+    };
+
+    // Preset C: Save on right-click, load on left-click
+    presetCButton->onClick = [this, &presetManager, &processor]()
+    {
+        // Left click: Load from slot C
+        presetManager.loadFromSlot(PresetManager::Slot::C);
+        // Update button states
+        presetAButton->setToggleState(false, juce::dontSendNotification);
+        presetBButton->setToggleState(false, juce::dontSendNotification);
+        presetCButton->setToggleState(true, juce::dontSendNotification);
+    };
 
     // =========================================================================
     // MASTER CONTROLS

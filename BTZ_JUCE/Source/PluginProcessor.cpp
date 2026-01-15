@@ -17,7 +17,8 @@ BTZAudioProcessor::BTZAudioProcessor()
                      #endif
                        ),
 #endif
-       apvts(*this, nullptr, "Parameters", BTZParams::createParameterLayout())
+       apvts(*this, nullptr, "Parameters", BTZParams::createParameterLayout()),
+       presetManager(apvts)  // P1.3: Initialize preset manager with APVTS reference
 {
 }
 
@@ -196,6 +197,9 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             deterministicProcessing.update(*posInfo);
         }
     }
+
+    // P1.3: Process preset ramping (click-free parameter transitions)
+    presetManager.processRamping(buffer.getNumSamples());
 
     auto totalNumInputChannels  = getTotalNumInputChannels();
     auto totalNumOutputChannels = getTotalNumOutputChannels();
