@@ -43,11 +43,11 @@ target_sources(BTZ
         # Phase 3 Polish & Production
         Source/DSP/PerformanceGuardrails.cpp
         Source/DSP/DeterministicProcessing.cpp
-        # Temporarily disabled files with compilation issues:
-        # Source/DSP/AdvancedSaturation.cpp
-        # Source/DSP/AdvancedTransientShaper.cpp
-        # Source/DSP/WDFSaturation.cpp
-        # Source/DSP/LUFSMeter.cpp
+        # P0.3 RESULT: 2/4 modules compile successfully
+        Source/DSP/AdvancedSaturation.cpp  # ✅ PASS
+        Source/DSP/LUFSMeter.cpp  # ✅ PASS
+        # Source/DSP/AdvancedTransientShaper.cpp  # ❌ FAIL - TPTOnePole API mismatch
+        # Source/DSP/WDFSaturation.cpp  # ❌ FAIL - WDF array initialization errors
         Source/GUI/ThermalKnob.cpp
         Source/GUI/MeterStrip.cpp
         Source/GUI/BTZKnob.cpp

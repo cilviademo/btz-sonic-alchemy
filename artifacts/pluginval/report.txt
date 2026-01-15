@@ -1,0 +1,114 @@
+BTZ - PLUGINVAL VALIDATION REPORT
+==================================
+Date: 2026-01-14
+Sprint: P0.2 - Validation Tools
+Status: NOT RUN (ENVIRONMENT LIMITATION)
+
+REASON:
+-------
+pluginval is not installed in the current build environment (Linux headless CI).
+This is a plugin validation tool that requires GUI capabilities and is typically
+run on developer workstations or dedicated test machines.
+
+PLUGIN UNDER TEST:
+------------------
+Name: BTZ - The Box Tone Zone
+Version: 1.0.0
+Format: VST3
+Binary: BTZ_artefacts/Release/VST3/BTZ - The Box Tone Zone.vst3
+
+MANUAL VALIDATION REQUIRED:
+----------------------------
+To validate this plugin, run the following command on a system with pluginval installed:
+
+```bash
+pluginval --strictness-level 10 --validate-in-process \
+  "BTZ_artefacts/Release/VST3/BTZ - The Box Tone Zone.vst3"
+```
+
+CRITICAL TESTS (pluginval strictness-level 10):
+------------------------------------------------
+1. Parameter thread-safety
+   - Concurrent setParameter() and processBlock() calls
+   - RT-safe parameter changes
+   - No locks in audio thread
+
+2. State save/load determinism
+   - Bit-exact state round-trip
+   - No corruption on repeated save/load cycles
+   - Parameter values preserved exactly
+
+3. Bypass behavior
+   - No clicks/pops when toggling bypass
+   - Latency-compensated bypass
+   - Smooth transitions
+
+4. Latency reporting
+   - Correct latency value reported to host
+   - Latency compensation works correctly
+   - No drift over time
+
+5. Buffer overflow protection
+   - No out-of-bounds memory access
+   - Safe handling of varying buffer sizes
+   - No crashes on extreme conditions
+
+6. Sample rate changes
+   - Correct behavior at 44.1k, 48k, 88.2k, 96k, 192k
+   - No artifacts on SR change
+   - No memory leaks
+
+7. Threading compliance
+   - No data races (TSAN clean)
+   - RT-safe audio thread
+   - GUI updates on message thread only
+
+8. NaN/Inf handling
+   - No NaN propagation
+   - No Inf generation
+   - Graceful handling of invalid input
+
+9. Denormal performance
+   - No CPU spikes from denormals
+   - FTZ/DAZ enabled correctly
+   - Efficient silence detection
+
+10. Parameter automation
+    - Sample-accurate automation
+    - No zipper noise
+    - Smooth parameter changes
+
+EXPECTED RESULT:
+----------------
+PASS - All tests passed at strictness-level 10
+
+KNOWN POTENTIAL ISSUES:
+-----------------------
+1. Parameter smoothing is block-rate, not sample-accurate
+   - May cause minor automation artifacts in some DAWs
+   - Future: Implement sub-block processing
+
+2. ComponentVariance uses randomness
+   - May trigger non-deterministic warnings
+   - Mitigation: Seed is saved in state (deterministic)
+
+3. PerformanceGuardrails monitors CPU
+   - May trigger timing-sensitive warnings
+   - Mitigation: Read-only monitoring, no processing changes
+
+NEXT STEPS:
+-----------
+1. Run pluginval on development machine
+2. Document all failures (if any)
+3. Fix critical issues (P0)
+4. Re-run until all tests pass
+5. Update this artifact with actual results
+
+REFERENCE:
+----------
+- pluginval GitHub: https://github.com/Tracktion/pluginval
+- Installation: Download from releases or build from source
+- Documentation: https://github.com/Tracktion/pluginval/blob/master/README.md
+
+---
+END OF REPORT
