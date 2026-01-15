@@ -335,6 +335,28 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
     juce::dsp::ProcessContextReplacing<float> context(block);
 
     // === DSP CHAIN ===
+    /*
+     * CURRENT PROCESSING CHAIN (2026-01-14 - Post-Integration):
+     *
+     * 1. Input Gain (juce::dsp::Gain)
+     * 2. SafetyLayer Pre (DC block, denormal guard, NaN/Inf check)
+     * 3. LongTermMemory Update (energy tracking for adaptive processing)
+     * 4. [CONDITIONAL OVERSAMPLING FOR TRANSIENT + SATURATION]
+     *    - TransientShaper (punch)
+     *    - Saturation (warmth)
+     * 5. EnhancedSPARK (true-peak limiter with hysteresis, internal oversampling)
+     * 6. SubHarmonic (boom)
+     * 7. EnhancedSHINE (psychoacoustic air band EQ, 24 Bark bands)
+     * 8. ConsoleEmulator (mix glue: Transparent/Glue/Vintage)
+     * 9. StereoEnhancement (micro-drift, width)
+     * 10. Output Gain
+     * 11. SafetyLayer Post (DC block, denormal guard, NaN/Inf sanitization)
+     * 12. PerformanceGuardrails (CPU monitoring)
+     *
+     * REMOVED (2026-01-14):
+     * - SparkLimiter (replaced by EnhancedSPARK)
+     * - ShineEQ (replaced by EnhancedSHINE)
+     */
 
     // 1. Input gain
     inputGainProcessor.process(context);
@@ -352,7 +374,8 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     // P1-1 FIX: Include TransientShaper in oversampling for anti-aliasing
     // TransientShaper applies up to 3x gain changes (nonlinear) → needs oversampling
-    bool needsOversampling = (punchAmount > 0.01f || warmthAmount > 0.01f || sparkEnabled);
+    // NOTE: EnhancedSPARK handles its own oversampling internally via OversamplingManager
+    bool needsOversampling = (punchAmount > 0.01f || warmthAmount > 0.01f);
 
     if (needsOversampling)
     {
@@ -369,10 +392,6 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
         if (warmthAmount > 0.01f)
             saturation.process(oversampledContext);
 
-        // 4. SPARK (advanced clipping/limiting) - at high SR
-        if (sparkEnabled)
-            sparkLimiter.process(oversampledContext);
-
         // Downsample with anti-aliasing filter
         oversampler.processDown(block);
     }
@@ -383,17 +402,21 @@ void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
             transientShaper.process(context);
         if (warmthAmount > 0.01f)
             saturation.process(context);
-        if (sparkEnabled)
-            sparkLimiter.process(context);
     }
 
-    // 4. Boom (subharmonic synthesis)
+    // 4. SPARK (true-peak limiter with hysteresis) - ENHANCED VERSION
+    // Uses internal OversamplingManager (quality tier determines 1x/2x/4x)
+    if (sparkEnabled)
+        enhancedSpark.process(buffer);
+
+    // 5. Boom (subharmonic synthesis)
     if (boomAmount > 0.01f)
         subHarmonic.process(context);
 
-    // 6. SHINE (ultra-high frequency air) - now uses professional RBJ filters
+    // 6. SHINE (psychoacoustic air band EQ) - ENHANCED VERSION
+    // Uses 24 Bark bands, temporal masking, spectral masking
     if (shineEnabled)
-        shineEQ.process(context);
+        enhancedShine.process(buffer);
 
     // 7. Console emulation (mix glue)
     if (masterEnabled || mixAmount < 0.99f)
