@@ -1,73 +1,203 @@
-# Welcome to your Lovable project
+# BTZ – Box Tone Zone Enhancer
 
-## Project info
+**BTZ** is a precision drum tone sculptor built as a **VST3 / AU (AAX-ready)** audio plugin using **JUCE** and **CMake**.
+It is designed to enhance punch, warmth, weight, and texture in drums and rhythmic material while maintaining transient clarity and mix safety.
 
-**URL**: https://lovable.dev/projects/3ff45484-ce89-4a0c-a820-fab6e11c63e3
+---
 
-## How can I edit this code?
+## Overview
 
-There are several ways of editing your application.
+**Primary Use Case**
 
-**Use Lovable**
+* Drum bus enhancement
+* Individual kick / snare sculpting
+* Parallel punch & warmth processing
+* Console-style glue and loudness-safe drive
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/3ff45484-ce89-4a0c-a820-fab6e11c63e3) and start prompting.
+**Core Philosophy**
 
-Changes made via Lovable will be committed automatically to this repo.
+* No transient smear
+* No low-end mud
+* Loudness-safe by design
+* Studio-grade DSP with optional ML augmentation
 
-**Use your preferred IDE**
+---
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## Signal Flow
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+Configurable order (Punch ↔ Warmth):
 
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
+```
+Input
+ → Punch
+   (3-band transient shaping + FET-style comp + gate)
+ → Warmth
+   (even/odd harmonics, asymmetry, tape bump)
+ → Boom
+   (sub synth + dynamic low shelf + anti-mud)
+ → Texture
+   (exciter + micro-IR + subtle modulation)
+ → Drive
+   (3-band limiter → soft clip → true-peak limiter)
+ → Console Glue
+   (light crosstalk + summing coloration)
+ → Parallel Mix
+   (latency compensated)
+ → Output (−1.0 dBTP ceiling)
 ```
 
-**Edit a file directly in GitHub**
+---
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Features
 
-**Use GitHub Codespaces**
+### Controls
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+* **Punch**
+* **Warmth**
+* **Boom**
+* **Drive**
+* **Mix**
+* **Texture** (toggle)
 
-## What technologies are used for this project?
+### Metering
 
-This project is built with:
+* Input / Output Peak + RMS
+* Gain Reduction
+* Integrated LUFS (short reset)
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### DSP / Engineering
 
-## How can I deploy this project?
+* Polyphase oversampling **x4–x8 (HQ mode)**
+* ZDF filters in HQ path
+* Denormal protection
+* Vectorized hot paths
+* Tested at:
 
-Simply open [Lovable](https://lovable.dev/projects/3ff45484-ce89-4a0c-a820-fab6e11c63e3) and click on Share -> Publish.
+  * 44.1 / 48 / 96 kHz
+  * 64 / 128 / 256 buffer sizes
 
-## Can I connect a custom domain to my Lovable project?
+---
 
-Yes, you can!
+## Project Structure
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+```
+BTZ/
+├── Source/
+│   ├── PluginProcessor.*
+│   ├── PluginEditor.*
+│   ├── Models/          # ML models (optional)
+│   ├── IRs/             # Impulse responses
+│   ├── DSP modules      # Punch, Warmth, Boom, etc.
+├── tests/
+├── CMakeLists.txt
+└── README.md
+```
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/tips-tricks/custom-domain#step-by-step-guide)
+> ⚠️ The `src/`, `public/`, and frontend-related folders in this repo are **not part of the JUCE plugin build** unless explicitly integrated via a webview system.
+
+---
+
+## Build Requirements
+
+* **JUCE** 7+
+* **CMake** 3.15+
+* **C++17 compatible compiler**
+* (Optional) ML backends such as Torch
+
+---
+
+## Building the Plugin
+
+### Default Build (No ML)
+
+```sh
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+```
+
+### Build With ML Enabled
+
+```sh
+cmake -B build -S . -DWITH_ML=ON -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release
+```
+
+### Output
+
+```
+build/VST3/BTZ.vst3
+```
+
+---
+
+## Installing the Plugin
+
+### Windows
+
+Copy `BTZ.vst3` to:
+
+```
+C:\Program Files\Common Files\VST3
+```
+
+### macOS
+
+Copy `BTZ.vst3` to:
+
+```
+/Library/Audio/Plug-Ins/VST3
+```
+
+Then rescan plugins or restart your DAW.
+
+---
+
+## Presets (Planned / Included)
+
+* Streaming Safe (−14 LUFS / −1 dBTP)
+* Loud & Clean (−8 LUFS guard)
+* Punchy Kick
+* Silky Snare
+* Room Glue
+* Tape Warmth
+* Boom Sculpt
+
+---
+
+## Build Options
+
+| Flag          | Description                              |
+| ------------- | ---------------------------------------- |
+| `WITH_ML=ON`  | Enables DeepFilterNet / Timbral Transfer |
+| `BTZ_WITH_ML` | Compile-time macro guarding ML code      |
+| Oversampling  | x4 default, x8 HQ                        |
+
+> Model files must be placed in `Source/Models/` when ML is enabled.
+
+---
+
+## Quality & Acceptance Targets
+
+* Aliasing: **< −80 dB** in HQ mode at max Warmth/Drive
+* No overs above **−1.0 dBTP**
+* LUFS targets achievable without pumping
+* Subjective A/B: more punch and weight, no smear or mud
+* Stable automation, preset recall, and DAW reloads
+
+---
+
+## Notes
+
+* DSP modules are scaffolded; production DSP may replace stubs.
+* Ensure proper licensing for all third-party code and models.
+* AAX support requires Avid SDK and is not enabled by default.
+
+---
+
+## License
+
+**Proprietary plugin code.**
+Third-party components retain their original licenses (see respective sources).
+
+---
+
