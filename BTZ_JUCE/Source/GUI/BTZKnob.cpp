@@ -15,7 +15,12 @@ BTZKnob::BTZKnob(const juce::String& labelText)
     setRotaryParameters(rotaryStartAngle, rotaryEndAngle, true);
     setVelocityBasedMode(true);
     setVelocityModeParameters(1.0, 1, 0.0, false);
-    setDoubleClickReturnValue(true, 0.5); // Default to center
+
+    // QUICK WIN 3: Double-click reset enabled
+    // Note: Default value will be set from APVTS parameter after attachment
+    // For now, use 0.0 as the most common default (punch, warmth, boom, drive, gains)
+    setDoubleClickReturnValue(true, 0.0);
+
     juce::Component::setSize(BTZTheme::Layout::knobSize, BTZTheme::Layout::knobSize + 40);
 }
 

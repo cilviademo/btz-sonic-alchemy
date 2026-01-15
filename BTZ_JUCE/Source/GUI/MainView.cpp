@@ -26,26 +26,31 @@ void MainView::createControls()
     punchKnob = std::make_unique<BTZKnob>("PUNCH");
     punchKnob->setRange(0.0, 100.0, 0.1);
     punchKnob->setValue(50.0);
+    punchKnob->setTooltip("Transient shaping: enhance attack and punch on drums and percussive material");
     addAndMakeVisible(punchKnob.get());
 
     warmthKnob = std::make_unique<BTZKnob>("WARMTH");
     warmthKnob->setRange(0.0, 100.0, 0.1);
     warmthKnob->setValue(50.0);
+    warmthKnob->setTooltip("Harmonic saturation: add warmth, analog character, and harmonic richness");
     addAndMakeVisible(warmthKnob.get());
 
     boomKnob = std::make_unique<BTZKnob>("BOOM");
     boomKnob->setRange(0.0, 100.0, 0.1);
     boomKnob->setValue(50.0);
+    boomKnob->setTooltip("Sub-harmonic enhancement: add weight and low-end presence");
     addAndMakeVisible(boomKnob.get());
 
     shineKnob = std::make_unique<BTZKnob>("SHINE");
     shineKnob->setRange(0.0, 100.0, 0.1);
     shineKnob->setValue(50.0);
+    shineKnob->setTooltip("Psychoacoustic air: enhance high-frequency presence and clarity (24 Bark bands)");
     addAndMakeVisible(shineKnob.get());
 
     driveKnob = std::make_unique<BTZKnob>("DRIVE");
     driveKnob->setRange(0.0, 100.0, 0.1);
     driveKnob->setValue(0.0);
+    driveKnob->setTooltip("Adaptive saturation drive: control overall harmonic generation intensity");
     addAndMakeVisible(driveKnob.get());
 
     // =========================================================================
@@ -56,18 +61,21 @@ void MainView::createControls()
     mixKnob->setRange(0.0, 100.0, 0.1);
     mixKnob->setValue(100.0);
     mixKnob->setValueSuffix("%");
+    mixKnob->setTooltip("Wet/dry mix: blend processed signal with dry signal (100% = full wet)");
     addAndMakeVisible(mixKnob.get());
 
     inputGainKnob = std::make_unique<BTZKnob>("INPUT");
     inputGainKnob->setRange(-12.0, 12.0, 0.1);
     inputGainKnob->setValue(0.0);
     inputGainKnob->setValueSuffix(" dB");
+    inputGainKnob->setTooltip("Input gain trim: adjust input level before processing (-12 to +12 dB)");
     addAndMakeVisible(inputGainKnob.get());
 
     outputGainKnob = std::make_unique<BTZKnob>("OUTPUT");
     outputGainKnob->setRange(-12.0, 12.0, 0.1);
     outputGainKnob->setValue(0.0);
     outputGainKnob->setValueSuffix(" dB");
+    outputGainKnob->setTooltip("Output gain trim: adjust final output level (-12 to +12 dB)");
     addAndMakeVisible(outputGainKnob.get());
 
     // =========================================================================
@@ -77,12 +85,14 @@ void MainView::createControls()
     sparkEnabledButton = std::make_unique<BTZButton>("SPARK");
     sparkEnabledButton->setClickingTogglesState(true);
     sparkEnabledButton->setToggleColors(BTZTheme::Colors::secondary, BTZTheme::Colors::buttonDisabled);
+    sparkEnabledButton->setTooltip("SPARK true-peak limiter: Jiles-Atherton hysteresis with ITU BS.1770 compliance");
     addAndMakeVisible(sparkEnabledButton.get());
 
     sparkCeilingKnob = std::make_unique<BTZKnob>("CEILING");
     sparkCeilingKnob->setRange(-12.0, 0.0, 0.1);
     sparkCeilingKnob->setValue(-0.3);
     sparkCeilingKnob->setValueSuffix(" dB");
+    sparkCeilingKnob->setTooltip("True-peak ceiling: maximum output level with intersample peak detection");
     addAndMakeVisible(sparkCeilingKnob.get());
 
     // =========================================================================
@@ -93,16 +103,19 @@ void MainView::createControls()
     presetAButton->setClickingTogglesState(true);
     presetAButton->setToggleColors(BTZTheme::Colors::primary, BTZTheme::Colors::panelBorder);
     presetAButton->setToggleState(true, juce::dontSendNotification);
+    presetAButton->setTooltip("Preset slot A: click to load, right-click to save current settings (20ms click-free ramping)");
     addAndMakeVisible(presetAButton.get());
 
     presetBButton = std::make_unique<BTZButton>("B");
     presetBButton->setClickingTogglesState(true);
     presetBButton->setToggleColors(BTZTheme::Colors::primary, BTZTheme::Colors::panelBorder);
+    presetBButton->setTooltip("Preset slot B: click to load, right-click to save current settings (20ms click-free ramping)");
     addAndMakeVisible(presetBButton.get());
 
     presetCButton = std::make_unique<BTZButton>("C");
     presetCButton->setClickingTogglesState(true);
     presetCButton->setToggleColors(BTZTheme::Colors::primary, BTZTheme::Colors::panelBorder);
+    presetCButton->setTooltip("Preset slot C: click to load, right-click to save current settings (20ms click-free ramping)");
     addAndMakeVisible(presetCButton.get());
 
     // P1.3: Wire preset button click handlers
@@ -151,11 +164,13 @@ void MainView::createControls()
     activeButton->setClickingTogglesState(true);
     activeButton->setToggleColors(BTZTheme::Colors::primary, BTZTheme::Colors::buttonDisabled);
     activeButton->setToggleState(true, juce::dontSendNotification);
+    activeButton->setTooltip("Master active state: enable/disable all processing");
     addAndMakeVisible(activeButton.get());
 
     bypassButton = std::make_unique<BTZButton>("BYPASS");
     bypassButton->setClickingTogglesState(true);
     bypassButton->setToggleColors(BTZTheme::Colors::meterHigh, BTZTheme::Colors::buttonDisabled);
+    bypassButton->setTooltip("Master bypass: pass audio through unprocessed (true bypass)");
     addAndMakeVisible(bypassButton.get());
 }
 
@@ -179,6 +194,7 @@ void MainView::createParameterAttachments()
 
     knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessorValueTreeState, "mix", *mixKnob));
+    mixKnob->setDoubleClickReturnValue(true, 1.0);  // QUICK WIN 3: Mix defaults to 100%
 
     knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessorValueTreeState, "inputGain", *inputGainKnob));
@@ -188,8 +204,18 @@ void MainView::createParameterAttachments()
 
     knobAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
         audioProcessorValueTreeState, "sparkCeiling", *sparkCeilingKnob));
+    sparkCeilingKnob->setDoubleClickReturnValue(true, -0.3);  // QUICK WIN 3: Ceiling defaults to -0.3 dB
 
-    // Note: Button attachments for preset system will be added when preset management is implemented
+    // QUICK WIN 2: Button attachments for proper parameter persistence
+    // These ensure button states are saved/loaded correctly across sessions
+    buttonAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        audioProcessorValueTreeState, "sparkEnabled", *sparkEnabledButton));
+
+    buttonAttachments.push_back(std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        audioProcessorValueTreeState, "active", *activeButton));
+
+    // Note: Bypass button uses built-in AudioProcessor bypass (not a parameter)
+    // Note: Preset A/B/C buttons use custom onClick handlers (see lines 113-143)
 }
 
 void MainView::paint(juce::Graphics& g)
