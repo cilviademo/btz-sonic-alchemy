@@ -2,11 +2,39 @@ cmake_minimum_required(VERSION 3.15)
 
 project(BTZ VERSION 1.0.0)
 
-# Add JUCE (assumes JUCE is in a sibling directory or installed)
-# Adjust the path to your JUCE installation
-add_subdirectory(JUCE)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Define plugin formats to build
+# ============================================================================
+# JUCE Setup - Submodule or FetchContent
+# ============================================================================
+# Try submodule first, fall back to FetchContent if not available
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/CMakeLists.txt")
+    message(STATUS "Using JUCE submodule")
+    add_subdirectory(JUCE)
+else()
+    message(STATUS "JUCE submodule not found, using FetchContent")
+    include(FetchContent)
+    FetchContent_Declare(
+        JUCE
+        GIT_REPOSITORY https://github.com/juce-framework/JUCE.git
+        GIT_TAG 7.0.12
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(JUCE)
+endif()
+
+# ============================================================================
+# Plugin Configuration
+# ============================================================================
+# Determine plugin formats based on platform
+set(PLUGIN_FORMATS VST3 Standalone)
+if(APPLE)
+    list(APPEND PLUGIN_FORMATS AU)
+endif()
+
+# FL Studio scan safety: Must not do heavy work in constructor
+# All DSP allocation happens in prepareToPlay()
 juce_add_plugin(BTZ
     COMPANY_NAME "BTZ Audio"
     IS_SYNTH FALSE
@@ -17,8 +45,11 @@ juce_add_plugin(BTZ
     COPY_PLUGIN_AFTER_BUILD TRUE
     PLUGIN_MANUFACTURER_CODE Btzz
     PLUGIN_CODE Btzp
-    FORMATS VST3 AU Standalone
-    PRODUCT_NAME "BTZ - The Box Tone Zone")
+    FORMATS ${PLUGIN_FORMATS}
+    PRODUCT_NAME "BTZ - The Box Tone Zone"
+    BUNDLE_ID com.btzaudio.btz
+    VST3_CATEGORIES Fx Dynamics EQ
+)
 
 target_sources(BTZ
     PRIVATE
@@ -43,11 +74,11 @@ target_sources(BTZ
         # Phase 3 Polish & Production
         Source/DSP/PerformanceGuardrails.cpp
         Source/DSP/DeterministicProcessing.cpp
-        # P0.3 RESULT: 2/4 modules compile successfully
-        Source/DSP/AdvancedSaturation.cpp  # ✅ PASS
-        Source/DSP/LUFSMeter.cpp  # ✅ PASS
-        # Source/DSP/AdvancedTransientShaper.cpp  # ❌ FAIL - TPTOnePole API mismatch
-        # Source/DSP/WDFSaturation.cpp  # ❌ FAIL - WDF array initialization errors
+        # Advanced DSP Modules (P0.3 validated)
+        Source/DSP/AdvancedSaturation.cpp
+        Source/DSP/LUFSMeter.cpp
+        # Note: AdvancedTransientShaper and WDFSaturation excluded due to compilation issues
+        # Can be re-enabled after fixing TPTOnePole API and WDF array initialization
         Source/GUI/ThermalKnob.cpp
         Source/GUI/MeterStrip.cpp
         Source/GUI/BTZKnob.cpp
