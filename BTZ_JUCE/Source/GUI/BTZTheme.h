@@ -5,11 +5,14 @@
 
   Modern color palette and design system for BTZ UI
 
-  Design System:
+  Design System (Phase 4: Output Thermal/Portal Inspired):
   - Base: Warm beige/tan neutrals
-  - Accents: Sage green (primary), Gold (highlights)
-  - Typography: Clean, professional hierarchy
+  - Accents: Sage green (primary), Natural oak brown (secondary)
+  - Typography: Charcoal black for contrast, clean professional hierarchy
+  - Knobs: 3D beveled with top-left warm lighting and gentle shadows
   - Spacing: 8px grid system
+
+  Color Palette: Beige + Sage Green + Natural Oak + Black (no neon gradients)
 
   ==============================================================================
 */
@@ -21,7 +24,7 @@
 namespace BTZTheme
 {
     // =========================================================================
-    // COLOR PALETTE
+    // COLOR PALETTE - Beige + Sage Green + Natural Oak + Black
     // =========================================================================
 
     namespace Colors
@@ -36,35 +39,38 @@ namespace BTZTheme
         const juce::Colour panelBorder      = juce::Colour(0xFFD4C9B5);  // Border tan
 
         // Primary Accent (Sage Green)
-        const juce::Colour primary          = juce::Colour(0xFF8B9D83);  // Sage green
+        const juce::Colour primary          = juce::Colour(0xFF9CAF88);  // Sage green
         const juce::Colour primaryDark      = juce::Colour(0xFF6D7A67);  // Dark sage
-        const juce::Colour primaryLight     = juce::Colour(0xFFA8B9A0);  // Light sage
+        const juce::Colour primaryLight     = juce::Colour(0xFFB5C9A3);  // Light sage
 
-        // Secondary Accent (Gold)
-        const juce::Colour secondary        = juce::Colour(0xFFD4AF37);  // Gold
-        const juce::Colour secondaryDark    = juce::Colour(0xFFB8941C);  // Dark gold
-        const juce::Colour secondaryLight   = juce::Colour(0xFFE8C96B);  // Light gold
+        // Secondary Accent (Natural Oak Brown)
+        const juce::Colour secondary        = juce::Colour(0xFF8B7355);  // Natural oak
+        const juce::Colour secondaryDark    = juce::Colour(0xFF6B5642);  // Dark oak
+        const juce::Colour secondaryLight   = juce::Colour(0xFFA89279);  // Light oak
 
-        // Text Colors
-        const juce::Colour textPrimary      = juce::Colour(0xFF2C2418);  // Dark brown
+        // Text Colors (with true black option)
+        const juce::Colour textPrimary      = juce::Colour(0xFF1A1A1A);  // Charcoal black
         const juce::Colour textSecondary    = juce::Colour(0xFF6B5D4F);  // Medium brown
         const juce::Colour textDisabled     = juce::Colour(0xFF9B8B7A);  // Light brown
+        const juce::Colour textBlack        = juce::Colour(0xFF000000);  // Pure black
 
-        // Knob/Control Colors
-        const juce::Colour knobFill         = juce::Colour(0xFF8B9D83);  // Sage
+        // Knob/Control Colors (Output Thermal/Portal inspired)
+        const juce::Colour knobFill         = juce::Colour(0xFF9CAF88);  // Sage green
         const juce::Colour knobOutline      = juce::Colour(0xFF6D7A67);  // Dark sage
         const juce::Colour knobBackground   = juce::Colour(0xFFE8E1D3);  // Tan
-        const juce::Colour knobPointer      = juce::Colour(0xFFD4AF37);  // Gold
+        const juce::Colour knobPointer      = juce::Colour(0xFF8B7355);  // Natural oak
+        const juce::Colour knobHighlight    = juce::Colour(0xFFFAF8F3);  // Top-left lighting
+        const juce::Colour knobShadow       = juce::Colour(0xFF6B5642);  // Bottom-right shadow
 
         // Meter Colors
-        const juce::Colour meterLow         = juce::Colour(0xFF8B9D83);  // Sage (safe)
-        const juce::Colour meterMid         = juce::Colour(0xFFD4AF37);  // Gold (caution)
-        const juce::Colour meterHigh        = juce::Colour(0xFFB8941C);  // Dark gold (warn)
+        const juce::Colour meterLow         = juce::Colour(0xFF9CAF88);  // Sage (safe)
+        const juce::Colour meterMid         = juce::Colour(0xFF8B7355);  // Natural oak (caution)
+        const juce::Colour meterHigh        = juce::Colour(0xFF6B5642);  // Dark oak (warn)
         const juce::Colour meterBackground  = juce::Colour(0xFFD4C9B5);  // Border tan
 
         // Button States
-        const juce::Colour buttonNormal     = juce::Colour(0xFF8B9D83);  // Sage
-        const juce::Colour buttonHover      = juce::Colour(0xFFA8B9A0);  // Light sage
+        const juce::Colour buttonNormal     = juce::Colour(0xFF9CAF88);  // Sage
+        const juce::Colour buttonHover      = juce::Colour(0xFFB5C9A3);  // Light sage
         const juce::Colour buttonActive     = juce::Colour(0xFF6D7A67);  // Dark sage
         const juce::Colour buttonDisabled   = juce::Colour(0xFFD4C9B5);  // Border tan
     }
