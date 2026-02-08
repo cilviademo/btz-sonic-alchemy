@@ -11,14 +11,14 @@
 
 This document defines **every parameter** in BTZ with compile-time stability guarantees. **Parameter IDs MUST NOT change** without implementing proper migration logic.
 
-**Parameter Count**: 27 total
+**Parameter Count**: 29 total
 - **Hero Controls**: 5
 - **Texture**: 1
 - **I/O Trim**: 3
 - **SPARK Engine**: 7
 - **SHINE Engine**: 6
 - **Master**: 4
-- **System**: 2
+- **System**: 3 (precisionMode, active, oversampling)
 
 ---
 
