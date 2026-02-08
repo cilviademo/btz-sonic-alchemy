@@ -2,7 +2,8 @@
 
 **Version**: 1.0.0
 **Purpose**: Comprehensive quality assurance checklist before shipping
-**Last Updated**: 2026-01-08
+**Last Updated**: 2026-02-08 (Phase 3: Validation & QA Hardening)
+**PRIMARY TARGET DAW**: FL Studio (Windows) - Must work in ALL DAWs
 
 ---
 
@@ -112,6 +113,46 @@ valgrind --leak-check=full ./BTZ_Standalone
 
 ---
 
+### Gate 5.5: Offline Bounce Determinism 🔄 **CRITICAL - FL STUDIO PRIMARY**
+- [ ] Identical output for identical input (5/5 bounces match)
+- [ ] Binary comparison passes (MD5 hash identical)
+- [ ] No random number generation without fixed seed
+- [ ] No uninitialized memory reads
+- [ ] No system clock dependencies in DSP
+
+**Evidence Required**:
+```bash
+# Test Protocol (FL Studio + any DAW):
+# 1. Import test signal: tests/audio/test_sine_440Hz.wav (1kHz sine, -12dBFS, 10s)
+# 2. Load BTZ with factory preset "Punchy Drums"
+# 3. Offline bounce/export to WAV (48kHz, 24-bit) → reference_bounce.wav
+# 4. Close DAW, reopen project
+# 5. Offline bounce again → test_bounce_1.wav
+# 6. Repeat 3 more times → test_bounce_2.wav, test_bounce_3.wav, test_bounce_4.wav
+
+# Binary comparison (macOS/Linux)
+md5sum reference_bounce.wav test_bounce_*.wav
+
+# Binary comparison (Windows PowerShell)
+Get-FileHash -Algorithm MD5 reference_bounce.wav, test_bounce_*.wav
+
+# PASS CRITERIA: ALL MD5 hashes MUST be identical
+# FAIL: If even one hash differs → investigate RNG, uninitialized memory, non-deterministic algorithms
+```
+
+**FL Studio Specific Test**:
+```
+1. FL Studio → File → Export → Wave file (48kHz, 24-bit)
+2. Export 5 times (close/reopen FL Studio between exports)
+3. All 5 files must have identical MD5 hashes
+```
+
+**Why Critical**: Professional mixing/mastering requires deterministic offline bounces. Non-determinism breaks client workflows and is unacceptable in professional audio plugins.
+
+**Status**: CRITICAL - Must pass before ANY release
+
+---
+
 ### Gate 6: Preset Validation 🔄 **PENDING**
 - [ ] Factory presets load without errors
 - [ ] All presets sound correct (A/B test against reference)
@@ -218,15 +259,63 @@ valgrind --leak-check=full ./BTZ_Standalone
 | **macOS (ARM)** | 🔄 | 🔄 | 🔄 | 🔄 | PENDING |
 | **Windows** | 🔄 | 🔄 | 🔄 | 🔄 | PENDING |
 
+### FL Studio Scan Safety Test (PRIMARY TARGET) 🚨
+
+**Platform**: Windows 10/11
+**FL Studio Version**: 20.9+ or 21.x
+**Why First**: FL Studio has strictest constructor requirements - if it works here, it works everywhere
+
+#### FL Studio Scan Protocol:
+1. **Fresh Scan**:
+   ```
+   - Copy BTZ.vst3 to: C:\Program Files\Common Files\VST3\
+   - Open FL Studio
+   - Options → Manage plugins → Find plugins → Start scan
+   ```
+
+2. **PASS Criteria**:
+   - [ ] Plugin appears in plugin list (no red X)
+   - [ ] No "failed to load" or "crashed during scan" errors
+   - [ ] Plugin info shows: "BTZ - The Box Tone Zone" by "BTZ Audio"
+   - [ ] Instantiation time <2 seconds
+   - [ ] No antivirus/Windows Defender false positives
+
+3. **Constructor Safety Verification**:
+   - [ ] PluginProcessor constructor only does lightweight init (APVTS, PresetManager reference)
+   - [ ] NO DSP allocation in constructor (all in prepareToPlay)
+   - [ ] NO file I/O in constructor
+   - [ ] NO network calls in constructor
+
+4. **Parameter Automation**:
+   - [ ] Right-click parameter → "Create automation clip" works
+   - [ ] Automation responds in real-time
+   - [ ] No clicks/pops when automating Punch, Warmth, Boom, Drive
+
+5. **Preset Switching**:
+   - [ ] Load "Punchy Drums" → no clicks/pops
+   - [ ] Load "Warm Glue" → no clicks/pops
+   - [ ] Switch between A/B/C slots → smooth 20ms transitions
+
+6. **Save/Reload**:
+   - [ ] Save FL project with BTZ instance
+   - [ ] Close FL Studio
+   - [ ] Reopen project → BTZ recalls exact parameter state
+
+**Evidence**: FL Studio scan log + screenshot showing plugin loaded successfully
+
+---
+
 ### DAW Compatibility Tests
 
 | DAW | VST3 | AU | Load | Process | Automation | Save/Load | Status |
 |-----|------|-----|------|---------|------------|-----------|--------|
-| **Reaper** | 🔄 | N/A | 🔄 | 🔄 | 🔄 | 🔄 | PENDING |
+| **FL Studio** ⭐ | 🔄 | N/A | 🔄 | 🔄 | 🔄 | 🔄 | **PRIMARY** |
 | **Ableton Live** | 🔄 | 🔄 | 🔄 | 🔄 | 🔄 | 🔄 | PENDING |
+| **Reaper** | 🔄 | N/A | 🔄 | 🔄 | 🔄 | 🔄 | PENDING |
+| **Studio One** | 🔄 | N/A | 🔄 | 🔄 | 🔄 | 🔄 | PENDING |
+| **Bitwig Studio** | 🔄 | N/A | 🔄 | 🔄 | 🔄 | 🔄 | PENDING |
 | **Logic Pro X** | N/A | 🔄 | 🔄 | 🔄 | 🔄 | 🔄 | PENDING |
 | **Cubase** | 🔄 | N/A | 🔄 | 🔄 | 🔄 | 🔄 | PENDING |
-| **FL Studio** | 🔄 | N/A | 🔄 | 🔄 | 🔄 | 🔄 | PENDING |
 | **Pro Tools** | 🔄 | 🔄 | 🔄 | 🔄 | 🔄 | 🔄 | PENDING |
 
 ---

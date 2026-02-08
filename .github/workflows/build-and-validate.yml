@@ -1,0 +1,288 @@
+name: BTZ Build & Validation
+
+on:
+  push:
+    branches: [ main, 'claude/**' ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  BUILD_TYPE: Release
+  JUCE_VERSION: 7.0.12
+
+jobs:
+  # ===========================================================================
+  # Windows Build (Primary Target - FL Studio)
+  # ===========================================================================
+  build-windows:
+    name: Windows VST3 Build
+    runs-on: windows-2022
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup MSVC
+      uses: microsoft/setup-msbuild@v1.3
+
+    - name: Configure CMake
+      working-directory: BTZ_JUCE
+      run: |
+        mkdir build
+        cd build
+        cmake .. -G "Visual Studio 17 2022" -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+    - name: Build Plugin
+      working-directory: BTZ_JUCE/build
+      run: cmake --build . --config ${{ env.BUILD_TYPE }} --parallel 4
+
+    - name: Verify Build Artifacts
+      working-directory: BTZ_JUCE/build
+      run: |
+        if (!(Test-Path "BTZ_artefacts/${{ env.BUILD_TYPE }}/VST3/BTZ.vst3")) {
+          Write-Error "VST3 binary not found!"
+          exit 1
+        }
+        Write-Host "✅ VST3 binary created successfully"
+
+        # Check binary size (should be 5-15 MB)
+        $vst3Size = (Get-Item "BTZ_artefacts/${{ env.BUILD_TYPE }}/VST3/BTZ.vst3" -Recurse | Measure-Object -Property Length -Sum).Sum / 1MB
+        Write-Host "VST3 size: $([math]::Round($vst3Size, 2)) MB"
+
+    - name: Upload Windows VST3
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-Windows-VST3
+        path: BTZ_JUCE/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/VST3/BTZ.vst3
+        retention-days: 30
+
+    - name: Upload Standalone (Windows)
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-Windows-Standalone
+        path: BTZ_JUCE/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/Standalone/BTZ.exe
+        retention-days: 30
+
+  # ===========================================================================
+  # macOS Build (VST3 + AU)
+  # ===========================================================================
+  build-macos:
+    name: macOS Universal Build (VST3 + AU)
+    runs-on: macos-13  # Intel runner
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Dependencies
+      run: |
+        # No additional dependencies needed for JUCE on macOS
+        echo "✅ macOS build environment ready"
+
+    - name: Configure CMake (Universal Binary)
+      working-directory: BTZ_JUCE
+      run: |
+        mkdir build
+        cd build
+        cmake .. \
+          -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+          -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" \
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=11.0
+
+    - name: Build Plugin
+      working-directory: BTZ_JUCE/build
+      run: cmake --build . --config ${{ env.BUILD_TYPE }} --parallel 4
+
+    - name: Verify Universal Binary
+      working-directory: BTZ_JUCE/build
+      run: |
+        if [ ! -d "BTZ_artefacts/${{ env.BUILD_TYPE }}/VST3/BTZ.vst3" ]; then
+          echo "❌ VST3 binary not found!"
+          exit 1
+        fi
+
+        if [ ! -d "BTZ_artefacts/${{ env.BUILD_TYPE }}/AU/BTZ.component" ]; then
+          echo "❌ AU binary not found!"
+          exit 1
+        fi
+
+        # Check architectures
+        echo "VST3 architectures:"
+        lipo -info BTZ_artefacts/${{ env.BUILD_TYPE }}/VST3/BTZ.vst3/Contents/MacOS/BTZ
+
+        echo "AU architectures:"
+        lipo -info BTZ_artefacts/${{ env.BUILD_TYPE }}/AU/BTZ.component/Contents/MacOS/BTZ
+
+        echo "✅ Universal binaries created successfully"
+
+    - name: Upload macOS VST3
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-macOS-VST3
+        path: BTZ_JUCE/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/VST3/BTZ.vst3
+        retention-days: 30
+
+    - name: Upload macOS AU
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-macOS-AU
+        path: BTZ_JUCE/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/AU/BTZ.component
+        retention-days: 30
+
+    - name: Upload Standalone (macOS)
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-macOS-Standalone
+        path: BTZ_JUCE/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/Standalone/BTZ.app
+        retention-days: 30
+
+  # ===========================================================================
+  # Linux Build (VST3)
+  # ===========================================================================
+  build-linux:
+    name: Linux VST3 Build
+    runs-on: ubuntu-22.04
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install Dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          pkg-config \
+          libasound2-dev \
+          libfreetype6-dev \
+          libx11-dev \
+          libxext-dev \
+          libxrandr-dev \
+          libxinerama-dev \
+          libxcursor-dev \
+          libgl1-mesa-dev \
+          libcurl4-openssl-dev \
+          libwebkit2gtk-4.0-dev
+
+    - name: Configure CMake
+      working-directory: BTZ_JUCE
+      run: |
+        mkdir build
+        cd build
+        cmake .. -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+    - name: Build Plugin
+      working-directory: BTZ_JUCE/build
+      run: cmake --build . --config ${{ env.BUILD_TYPE }} --parallel 4
+
+    - name: Verify Build Artifacts
+      working-directory: BTZ_JUCE/build
+      run: |
+        if [ ! -d "BTZ_artefacts/${{ env.BUILD_TYPE }}/VST3/BTZ.vst3" ]; then
+          echo "❌ VST3 binary not found!"
+          exit 1
+        fi
+        echo "✅ VST3 binary created successfully"
+
+    - name: Upload Linux VST3
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-Linux-VST3
+        path: BTZ_JUCE/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/VST3/BTZ.vst3
+        retention-days: 30
+
+    - name: Upload Standalone (Linux)
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-Linux-Standalone
+        path: BTZ_JUCE/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/Standalone/BTZ
+        retention-days: 30
+
+  # ===========================================================================
+  # pluginval Validation (macOS only - fastest runner with pluginval support)
+  # ===========================================================================
+  validate-pluginval:
+    name: pluginval Validation
+    runs-on: macos-13
+    needs: build-macos
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Download macOS Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        name: BTZ-macOS-VST3
+        path: ~/Library/Audio/Plug-Ins/VST3/
+
+    - name: Download pluginval
+      run: |
+        curl -L -o pluginval.zip https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip
+        unzip pluginval.zip
+        chmod +x pluginval.app/Contents/MacOS/pluginval
+
+    - name: Run pluginval (VST3)
+      run: |
+        echo "Running pluginval on BTZ.vst3..."
+        ./pluginval.app/Contents/MacOS/pluginval \
+          --strictness-level 5 \
+          --validate ~/Library/Audio/Plug-Ins/VST3/BTZ.vst3 \
+          --output-dir validation-results \
+          --verbose
+
+        # Check if validation passed
+        if [ $? -ne 0 ]; then
+          echo "❌ pluginval FAILED"
+          cat validation-results/*.txt
+          exit 1
+        fi
+
+        echo "✅ pluginval PASSED"
+
+    - name: Upload Validation Report
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: pluginval-report
+        path: validation-results/
+        retention-days: 30
+
+  # ===========================================================================
+  # Build Summary
+  # ===========================================================================
+  build-summary:
+    name: Build Summary
+    runs-on: ubuntu-latest
+    needs: [build-windows, build-macos, build-linux, validate-pluginval]
+    if: always()
+
+    steps:
+    - name: Generate Summary
+      run: |
+        echo "# BTZ Build & Validation Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Build Status" >> $GITHUB_STEP_SUMMARY
+        echo "- Windows VST3: ${{ needs.build-windows.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- macOS VST3 + AU: ${{ needs.build-macos.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Linux VST3: ${{ needs.build-linux.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Validation Status" >> $GITHUB_STEP_SUMMARY
+        echo "- pluginval: ${{ needs.validate-pluginval.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Artifacts" >> $GITHUB_STEP_SUMMARY
+        echo "Download plugin binaries from the Actions artifacts above." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Next Steps" >> $GITHUB_STEP_SUMMARY
+        echo "1. Download artifacts for manual testing in FL Studio (Windows primary target)" >> $GITHUB_STEP_SUMMARY
+        echo "2. Verify offline bounce determinism (5/5 bounces must match MD5)" >> $GITHUB_STEP_SUMMARY
+        echo "3. Test in secondary DAWs (Ableton, Reaper, Studio One, Bitwig, Logic)" >> $GITHUB_STEP_SUMMARY
+        echo "4. Complete manual QA checklist (docs/QA_CHECKLIST.md)" >> $GITHUB_STEP_SUMMARY
