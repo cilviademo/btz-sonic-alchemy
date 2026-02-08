@@ -22,3 +22,55 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# C++ / CMake / JUCE build artifacts
+build/
+*/build/
+**/build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+*.cmake
+!CMakeLists.txt
+*.a
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+
+# BTZ-specific generated artifacts
+artifacts/
+**/artifacts/
+*.zip
+*.tar.gz
+BTZ_Support_Bundle_*
+BTZ_DAW_Test_Results_*
+
+# Plugin build outputs (keep source, ignore binaries)
+BTZ_JUCE/build/
+BTZ_JUCE/Builds/
+*.vst3
+*.component
+*.app
+*.aaxplugin
+
+# Test outputs and benchmarks
+benchmark_results.json
+pluginval_output.txt
+**/test_results/
+**/*.log
+
+# Temporary and OS files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+
+# IDE / tooling
+.clangd/
+.cache/
+compile_commands.json

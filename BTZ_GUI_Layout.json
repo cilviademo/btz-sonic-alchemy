@@ -1,0 +1,515 @@
+{
+  "plugin": {
+    "name": "BTZ - The Box Tone Zone",
+    "version": "1.0.0",
+    "type": "Audio Effect Plugin",
+    "formats": ["VST3", "AU", "Standalone"],
+    "completion": "85%",
+    "description": "AI-Enhanced Drum Processing Plugin with adaptive punch, warmth, boom, shine, and SPARK limiting"
+  },
+  "window": {
+    "width": 900,
+    "height": 600,
+    "resizable": false
+  },
+  "theme": {
+    "colors": {
+      "background": "#1a1a1a (dark gray)",
+      "panelBackground": "#2a2a2a (lighter gray)",
+      "panelBorder": "#3a3a3a (border gray)",
+      "primary": "#ff6b35 (orange - active states)",
+      "secondary": "#f7931e (yellow-orange)",
+      "textPrimary": "#ffffff (white)",
+      "textSecondary": "#cccccc (light gray)",
+      "meterHigh": "#ff0000 (red - bypass/warning)",
+      "buttonDisabled": "#666666 (dark gray)"
+    },
+    "fonts": {
+      "title": "24pt bold",
+      "heading": "14pt bold",
+      "body": "12pt regular"
+    }
+  },
+  "sections": [
+    {
+      "name": "Title Bar",
+      "position": {
+        "x": 0,
+        "y": 0,
+        "width": 900,
+        "height": 60
+      },
+      "background": "#2a2a2a",
+      "elements": [
+        {
+          "type": "text",
+          "content": "BTZ",
+          "font": "24pt bold",
+          "color": "#ffffff",
+          "position": "left (0-120px)"
+        },
+        {
+          "type": "text",
+          "content": "The Box Tone Zone",
+          "font": "12pt regular",
+          "color": "#cccccc",
+          "position": "left (120-320px)"
+        }
+      ]
+    },
+    {
+      "name": "Hero Controls Section",
+      "label": "HERO CONTROLS",
+      "position": {
+        "x": "centered",
+        "y": 70,
+        "width": "auto",
+        "height": 220
+      },
+      "controls": [
+        {
+          "type": "knob",
+          "id": "punchKnob",
+          "label": "PUNCH",
+          "parameter": "punch",
+          "range": {
+            "min": 0.0,
+            "max": 100.0,
+            "default": 50.0,
+            "step": 0.1
+          },
+          "tooltip": "Transient shaping: enhance attack and punch on drums and percussive material",
+          "features": [
+            "Double-click resets to 0.0",
+            "Velocity-based dragging",
+            "20ms parameter smoothing"
+          ],
+          "position": "first in row",
+          "size": "knobSize (80x120px)"
+        },
+        {
+          "type": "knob",
+          "id": "warmthKnob",
+          "label": "WARMTH",
+          "parameter": "warmth",
+          "range": {
+            "min": 0.0,
+            "max": 100.0,
+            "default": 50.0,
+            "step": 0.1
+          },
+          "tooltip": "Harmonic saturation: add warmth, analog character, and harmonic richness",
+          "features": [
+            "Double-click resets to 0.0",
+            "Airwindows Spiral/Density/PurestDrive algorithms"
+          ],
+          "position": "second in row"
+        },
+        {
+          "type": "knob",
+          "id": "boomKnob",
+          "label": "BOOM",
+          "parameter": "boom",
+          "range": {
+            "min": 0.0,
+            "max": 100.0,
+            "default": 50.0,
+            "step": 0.1
+          },
+          "tooltip": "Sub-harmonic enhancement: add weight and low-end presence",
+          "features": [
+            "Double-click resets to 0.0"
+          ],
+          "position": "third in row"
+        },
+        {
+          "type": "knob",
+          "id": "shineKnob",
+          "label": "SHINE",
+          "parameter": "shine",
+          "range": {
+            "min": 0.0,
+            "max": 100.0,
+            "default": 50.0,
+            "step": 0.1
+          },
+          "tooltip": "Psychoacoustic air: enhance high-frequency presence and clarity (24 Bark bands)",
+          "features": [
+            "Double-click resets to 0.0",
+            "24 critical bands (Bark scale)",
+            "Fletcher-Munson weighting"
+          ],
+          "position": "fourth in row"
+        },
+        {
+          "type": "knob",
+          "id": "driveKnob",
+          "label": "DRIVE",
+          "parameter": "drive",
+          "range": {
+            "min": 0.0,
+            "max": 100.0,
+            "default": 0.0,
+            "step": 0.1
+          },
+          "tooltip": "Adaptive saturation drive: control overall harmonic generation intensity",
+          "features": [
+            "Double-click resets to 0.0",
+            "Program-dependent adaptive drive"
+          ],
+          "position": "fifth in row"
+        }
+      ],
+      "layout": "5 knobs in horizontal row, centered, 20px spacing"
+    },
+    {
+      "name": "SPARK Limiter Section",
+      "label": "SPARK LIMITER",
+      "position": {
+        "x": 650,
+        "y": 120,
+        "width": 220,
+        "height": 200
+      },
+      "background": "#2a2a2a (rounded 8px)",
+      "border": "#3a3a3a (2px)",
+      "controls": [
+        {
+          "type": "button",
+          "id": "sparkEnabledButton",
+          "label": "SPARK",
+          "parameter": "sparkEnabled",
+          "toggle": true,
+          "colors": {
+            "on": "#f7931e (secondary - yellow-orange)",
+            "off": "#666666 (disabled gray)"
+          },
+          "tooltip": "SPARK true-peak limiter: Jiles-Atherton hysteresis with ITU BS.1770 compliance",
+          "features": [
+            "True-peak detection (4x oversampling)",
+            "Jiles-Atherton hysteresis model",
+            "ITU-R BS.1770-4 compliant",
+            "5ms lookahead"
+          ],
+          "position": "top of section",
+          "size": "120x30px"
+        },
+        {
+          "type": "knob",
+          "id": "sparkCeilingKnob",
+          "label": "CEILING",
+          "parameter": "sparkCeiling",
+          "range": {
+            "min": -12.0,
+            "max": 0.0,
+            "default": -0.3,
+            "step": 0.1,
+            "unit": "dB"
+          },
+          "tooltip": "True-peak ceiling: maximum output level with intersample peak detection",
+          "features": [
+            "Double-click resets to -0.3 dB",
+            "True-peak limiting",
+            "Prevents intersample peaks"
+          ],
+          "position": "center of section"
+        }
+      ]
+    },
+    {
+      "name": "Utility Controls Section",
+      "label": "UTILITY",
+      "position": {
+        "x": "centered",
+        "y": 380,
+        "width": "auto",
+        "height": 220
+      },
+      "controls": [
+        {
+          "type": "knob",
+          "id": "inputGainKnob",
+          "label": "INPUT",
+          "parameter": "inputGain",
+          "range": {
+            "min": -12.0,
+            "max": 12.0,
+            "default": 0.0,
+            "step": 0.1,
+            "unit": "dB"
+          },
+          "tooltip": "Input gain trim: adjust input level before processing (-12 to +12 dB)",
+          "features": [
+            "Double-click resets to 0.0 dB"
+          ],
+          "position": "first in row"
+        },
+        {
+          "type": "knob",
+          "id": "mixKnob",
+          "label": "MIX",
+          "parameter": "mix",
+          "range": {
+            "min": 0.0,
+            "max": 100.0,
+            "default": 100.0,
+            "step": 0.1,
+            "unit": "%"
+          },
+          "tooltip": "Wet/dry mix: blend processed signal with dry signal (100% = full wet)",
+          "features": [
+            "Double-click resets to 100% (full wet)",
+            "Parallel processing capability",
+            "Click-free ramping (20ms)"
+          ],
+          "position": "second in row"
+        },
+        {
+          "type": "knob",
+          "id": "outputGainKnob",
+          "label": "OUTPUT",
+          "parameter": "outputGain",
+          "range": {
+            "min": -12.0,
+            "max": 12.0,
+            "default": 0.0,
+            "step": 0.1,
+            "unit": "dB"
+          },
+          "tooltip": "Output gain trim: adjust final output level (-12 to +12 dB)",
+          "features": [
+            "Double-click resets to 0.0 dB"
+          ],
+          "position": "third in row"
+        }
+      ],
+      "layout": "3 knobs in horizontal row, centered, 20px spacing"
+    },
+    {
+      "name": "Preset Ladder Section",
+      "label": "PRESETS",
+      "position": {
+        "x": 650,
+        "y": 350,
+        "width": 220,
+        "height": 120
+      },
+      "background": "#2a2a2a (rounded 8px)",
+      "border": "#3a3a3a (2px)",
+      "controls": [
+        {
+          "type": "button",
+          "id": "presetAButton",
+          "label": "A",
+          "toggle": true,
+          "default": true,
+          "colors": {
+            "on": "#ff6b35 (primary - orange)",
+            "off": "#3a3a3a (border gray)"
+          },
+          "tooltip": "Preset slot A: click to load, right-click to save current settings (20ms click-free ramping)",
+          "features": [
+            "Left-click: Load from slot A",
+            "Right-click: Save to slot A",
+            "20ms parameter ramping (click-free)"
+          ],
+          "position": "left button"
+        },
+        {
+          "type": "button",
+          "id": "presetBButton",
+          "label": "B",
+          "toggle": true,
+          "colors": {
+            "on": "#ff6b35 (primary - orange)",
+            "off": "#3a3a3a (border gray)"
+          },
+          "tooltip": "Preset slot B: click to load, right-click to save current settings (20ms click-free ramping)",
+          "features": [
+            "Left-click: Load from slot B",
+            "Right-click: Save to slot B",
+            "20ms parameter ramping (click-free)"
+          ],
+          "position": "center button"
+        },
+        {
+          "type": "button",
+          "id": "presetCButton",
+          "label": "C",
+          "toggle": true,
+          "colors": {
+            "on": "#ff6b35 (primary - orange)",
+            "off": "#3a3a3a (border gray)"
+          },
+          "tooltip": "Preset slot C: click to load, right-click to save current settings (20ms click-free ramping)",
+          "features": [
+            "Left-click: Load from slot C",
+            "Right-click: Save to slot C",
+            "20ms parameter ramping (click-free)"
+          ],
+          "position": "right button"
+        }
+      ],
+      "layout": "3 buttons in horizontal row, 50px width each, 15px spacing"
+    },
+    {
+      "name": "Master Controls",
+      "position": {
+        "x": "bottom right",
+        "y": 540,
+        "width": "auto",
+        "height": 40
+      },
+      "controls": [
+        {
+          "type": "button",
+          "id": "activeButton",
+          "label": "ACTIVE",
+          "parameter": "active",
+          "toggle": true,
+          "default": true,
+          "colors": {
+            "on": "#ff6b35 (primary - orange)",
+            "off": "#666666 (disabled gray)"
+          },
+          "tooltip": "Master active state: enable/disable all processing",
+          "features": [
+            "Disables all DSP processing when off",
+            "Persists across sessions"
+          ]
+        },
+        {
+          "type": "button",
+          "id": "bypassButton",
+          "label": "BYPASS",
+          "toggle": true,
+          "default": false,
+          "colors": {
+            "on": "#ff0000 (red - warning)",
+            "off": "#666666 (disabled gray)"
+          },
+          "tooltip": "Master bypass: pass audio through unprocessed (true bypass)",
+          "features": [
+            "True bypass (bit-perfect)",
+            "Uses AudioProcessor bypass system"
+          ]
+        }
+      ]
+    }
+  ],
+  "features": {
+    "quickWins": [
+      "Quick Win 1: MeterStrip timer optimization (conditional repaint)",
+      "Quick Win 2: Button APVTS attachments (state persistence)",
+      "Quick Win 3: Double-click reset with correct defaults",
+      "Quick Win 4: Tooltips on all 13 controls",
+      "Quick Win 5: Timer stops when GUI hidden"
+    ],
+    "parameterSystem": {
+      "smoothing": "20ms linear ramps (click-free automation)",
+      "persistence": "APVTS (AudioProcessorValueTreeState)",
+      "automation": "DAW-compatible automation for all parameters",
+      "presets": "A/B/C quick-switch presets with 20ms ramping"
+    },
+    "dsp": {
+      "saturation": "Airwindows Spiral, Density, PurestDrive algorithms",
+      "limiting": "SPARK true-peak limiter with Jiles-Atherton hysteresis",
+      "shine": "24 Bark bands with psychoacoustic weighting",
+      "metering": "LUFS, True-Peak, Gain Reduction, Stereo Correlation",
+      "rtSafety": "Zero allocations in audio thread, lock-free updates"
+    }
+  },
+  "totalParameters": 13,
+  "parameters": [
+    "punch (0-100)",
+    "warmth (0-100)",
+    "boom (0-100)",
+    "shine (0-100)",
+    "drive (0-100)",
+    "mix (0-100%)",
+    "inputGain (-12 to +12 dB)",
+    "outputGain (-12 to +12 dB)",
+    "sparkEnabled (boolean)",
+    "sparkCeiling (-12 to 0 dBTP)",
+    "active (boolean)",
+    "bypass (boolean - built-in)",
+    "presets A/B/C (custom handlers)"
+  ],
+  "factoryPresets": [
+    {
+      "name": "Gentle Glue",
+      "description": "Subtle cohesion for full mixes",
+      "settings": {
+        "punch": 20,
+        "warmth": 35,
+        "boom": 15,
+        "shine": 25,
+        "drive": 10
+      }
+    },
+    {
+      "name": "Pop Punch",
+      "description": "Aggressive transient enhancement",
+      "settings": {
+        "punch": 75,
+        "warmth": 40,
+        "boom": 30,
+        "shine": 60,
+        "drive": 25
+      }
+    },
+    {
+      "name": "Warm Tape",
+      "description": "Analog tape character",
+      "settings": {
+        "punch": 30,
+        "warmth": 80,
+        "boom": 20,
+        "shine": 15,
+        "drive": 40
+      }
+    },
+    {
+      "name": "Broadcast Master",
+      "description": "ITU-R BS.1770 compliant mastering",
+      "settings": {
+        "punch": 40,
+        "warmth": 50,
+        "boom": 25,
+        "shine": 45,
+        "drive": 20,
+        "sparkEnabled": true,
+        "sparkCeiling": -1.0
+      }
+    },
+    {
+      "name": "Streaming Loud",
+      "description": "Optimized for streaming platforms",
+      "settings": {
+        "punch": 60,
+        "warmth": 55,
+        "boom": 40,
+        "shine": 70,
+        "drive": 35,
+        "sparkEnabled": true,
+        "sparkCeiling": -0.3
+      }
+    }
+  ],
+  "notes": {
+    "buildStatus": "Compiles successfully on Linux",
+    "testingStatus": "48 DSP unit tests created (19 complete, 29 stubs)",
+    "bugsDiscovered": [
+      "testTapeMode produces NaN output (CRITICAL)",
+      "EnhancedSPARK Oversampling buffer mismatch",
+      "testBypassMode DC blocker tolerance issue"
+    ],
+    "nextSteps": [
+      "Fix NaN bug in tape saturation",
+      "Implement remaining 29 stub tests",
+      "Add MeterStrip visualization",
+      "Create Preset Browser UI",
+      "Implement Undo/Redo system"
+    ]
+  }
+}

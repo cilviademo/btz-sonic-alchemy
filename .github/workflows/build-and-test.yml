@@ -1,0 +1,281 @@
+name: BTZ - Build and Validate
+
+on:
+  push:
+    branches: [ main, develop, 'claude/**' ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:
+
+jobs:
+  build-linux:
+    name: Build (Linux)
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          cmake \
+          ninja-build \
+          pkg-config \
+          libasound2-dev \
+          libx11-dev \
+          libxcomposite-dev \
+          libxcursor-dev \
+          libxext-dev \
+          libxinerama-dev \
+          libxrandr-dev \
+          libxrender-dev \
+          libfreetype6-dev \
+          libglu1-mesa-dev \
+          libcurl4-openssl-dev \
+          libwebkit2gtk-4.0-dev
+
+    - name: Clone JUCE 7.0.12
+      working-directory: BTZ_JUCE
+      run: |
+        if [ ! -d "JUCE" ]; then
+          git clone --depth 1 --branch 7.0.12 https://github.com/juce-framework/JUCE.git
+        fi
+
+    - name: Configure CMake
+      working-directory: BTZ_JUCE
+      run: |
+        cmake -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_C_COMPILER=gcc \
+          -DCMAKE_CXX_COMPILER=g++
+
+    - name: Build plugin
+      working-directory: BTZ_JUCE
+      run: cmake --build build --config Release --parallel 4
+
+    - name: Upload Linux VST3
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-Linux-VST3
+        path: BTZ_JUCE/build/BTZ_artefacts/Release/VST3/
+        retention-days: 30
+
+    - name: Upload Linux Standalone
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-Linux-Standalone
+        path: BTZ_JUCE/build/BTZ_artefacts/Release/Standalone/
+        retention-days: 30
+
+  build-macos:
+    name: Build (macOS Universal)
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Clone JUCE 7.0.12
+      working-directory: BTZ_JUCE
+      run: |
+        if [ ! -d "JUCE" ]; then
+          git clone --depth 1 --branch 7.0.12 https://github.com/juce-framework/JUCE.git
+        fi
+
+    - name: Configure CMake (Universal Binary)
+      working-directory: BTZ_JUCE
+      run: |
+        cmake -B build -G Xcode \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"
+
+    - name: Build plugin
+      working-directory: BTZ_JUCE
+      run: cmake --build build --config Release --parallel 4
+
+    - name: Upload macOS VST3
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-macOS-VST3
+        path: BTZ_JUCE/build/BTZ_artefacts/Release/VST3/
+        retention-days: 30
+
+    - name: Upload macOS AU
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-macOS-AU
+        path: BTZ_JUCE/build/BTZ_artefacts/Release/AU/
+        retention-days: 30
+
+    - name: Upload macOS Standalone
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-macOS-Standalone
+        path: BTZ_JUCE/build/BTZ_artefacts/Release/Standalone/
+        retention-days: 30
+
+  build-windows:
+    name: Build (Windows)
+    runs-on: windows-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Clone JUCE 7.0.12
+      working-directory: BTZ_JUCE
+      shell: bash
+      run: |
+        if [ ! -d "JUCE" ]; then
+          git clone --depth 1 --branch 7.0.12 https://github.com/juce-framework/JUCE.git
+        fi
+
+    - name: Configure CMake
+      working-directory: BTZ_JUCE
+      run: |
+        cmake -B build -G "Visual Studio 17 2022" -A x64 `
+          -DCMAKE_BUILD_TYPE=Release
+
+    - name: Build plugin
+      working-directory: BTZ_JUCE
+      run: cmake --build build --config Release --parallel 4
+
+    - name: Upload Windows VST3
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-Windows-VST3
+        path: BTZ_JUCE/build/BTZ_artefacts/Release/VST3/
+        retention-days: 30
+
+    - name: Upload Windows Standalone
+      uses: actions/upload-artifact@v4
+      with:
+        name: BTZ-Windows-Standalone
+        path: BTZ_JUCE/build/BTZ_artefacts/Release/Standalone/
+        retention-days: 30
+
+  pluginval:
+    name: Validate with pluginval
+    needs: [build-linux, build-macos, build-windows]
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact: BTZ-Linux-VST3
+            plugin_path: "BTZ - The Box Tone Zone.vst3"
+            script: BTZ_JUCE/scripts/run_pluginval.sh
+          - os: macos-latest
+            artifact: BTZ-macOS-VST3
+            plugin_path: "BTZ - The Box Tone Zone.vst3"
+            script: BTZ_JUCE/scripts/run_pluginval.sh
+          - os: windows-latest
+            artifact: BTZ-Windows-VST3
+            plugin_path: "BTZ - The Box Tone Zone.vst3"
+            script: BTZ_JUCE/scripts/run_pluginval.ps1
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Download plugin artifact
+      uses: actions/download-artifact@v4
+      with:
+        name: ${{ matrix.artifact }}
+        path: plugin/
+
+    - name: Install pluginval (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        wget -q https://github.com/Tracktion/pluginval/releases/download/v1.0.3/pluginval_Linux.zip
+        unzip -q pluginval_Linux.zip
+        chmod +x pluginval
+        sudo mv pluginval /usr/local/bin/
+
+    - name: Install pluginval (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        wget -q https://github.com/Tracktion/pluginval/releases/download/v1.0.3/pluginval_macOS.zip
+        unzip -q pluginval_macOS.zip
+        chmod +x pluginval.app/Contents/MacOS/pluginval
+        sudo cp pluginval.app/Contents/MacOS/pluginval /usr/local/bin/
+
+    - name: Install pluginval (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: |
+        Invoke-WebRequest -Uri "https://github.com/Tracktion/pluginval/releases/download/v1.0.3/pluginval_Windows.zip" -OutFile "pluginval.zip"
+        Expand-Archive -Path "pluginval.zip" -DestinationPath "."
+        Move-Item -Path "pluginval.exe" -Destination "$env:SystemRoot\System32\" -Force
+
+    - name: Run pluginval (Linux/macOS)
+      if: runner.os != 'Windows'
+      working-directory: plugin
+      run: |
+        pluginval --strictness-level 10 \
+          --validate-in-process \
+          --timeout-ms 30000 \
+          --verbose \
+          "${{ matrix.plugin_path }}" 2>&1 | tee pluginval_output.txt
+
+    - name: Run pluginval (Windows)
+      if: runner.os == 'Windows'
+      working-directory: plugin
+      shell: pwsh
+      run: |
+        pluginval --strictness-level 10 `
+          --validate-in-process `
+          --timeout-ms 30000 `
+          --verbose `
+          "${{ matrix.plugin_path }}" 2>&1 | Tee-Object -FilePath pluginval_output.txt
+
+    - name: Upload pluginval results
+      if: always()
+      uses: actions/upload-artifact@v4
+      with:
+        name: pluginval-results-${{ matrix.os }}
+        path: plugin/pluginval_output.txt
+        retention-days: 30
+
+    - name: Check for failures
+      working-directory: plugin
+      shell: bash
+      run: |
+        if grep -qi "failed" pluginval_output.txt; then
+          echo "❌ pluginval FAILED on ${{ matrix.os }}"
+          echo "Check pluginval-results-${{ matrix.os }} artifact for details"
+          exit 1
+        else
+          echo "✅ pluginval PASSED on ${{ matrix.os }}"
+        fi
+
+  summary:
+    name: Build Summary
+    needs: [build-linux, build-macos, build-windows, pluginval]
+    runs-on: ubuntu-latest
+    if: always()
+
+    steps:
+    - name: Generate summary
+      run: |
+        echo "# BTZ Build & Validation Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Build Results" >> $GITHUB_STEP_SUMMARY
+        echo "- Linux: ${{ needs.build-linux.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- macOS: ${{ needs.build-macos.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "- Windows: ${{ needs.build-windows.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## pluginval Results" >> $GITHUB_STEP_SUMMARY
+        echo "- Validation: ${{ needs.pluginval.result }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "## Artifacts" >> $GITHUB_STEP_SUMMARY
+        echo "Download artifacts from the Actions run to test the plugin." >> $GITHUB_STEP_SUMMARY
