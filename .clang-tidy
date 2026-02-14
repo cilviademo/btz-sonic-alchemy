@@ -1,0 +1,169 @@
+#==============================================================================
+# BTZ Clang-Tidy Configuration
+#
+# Purpose: Static analysis for C++ code quality and bug detection
+# Version: 1.0.0
+# Last Updated: 2026-01-08
+#
+# Usage:
+#   clang-tidy -p build BTZ_JUCE/Source/**/*.cpp
+#   OR
+#   cmake --build build --target clang-tidy (if target configured)
+#
+# JUCE-Safe: This config avoids checks that conflict with JUCE patterns
+#==============================================================================
+
+---
+# Checks to enable (categorized)
+Checks: >
+  -*,
+  bugprone-*,
+  -bugprone-easily-swappable-parameters,
+  -bugprone-exception-escape,
+  cert-*,
+  -cert-dcl21-cpp,
+  -cert-err58-cpp,
+  clang-analyzer-*,
+  -clang-analyzer-optin.core.EnumCastOutOfRange,
+  cppcoreguidelines-*,
+  -cppcoreguidelines-avoid-c-arrays,
+  -cppcoreguidelines-avoid-magic-numbers,
+  -cppcoreguidelines-avoid-non-const-global-variables,
+  -cppcoreguidelines-owning-memory,
+  -cppcoreguidelines-pro-bounds-array-to-pointer-decay,
+  -cppcoreguidelines-pro-bounds-constant-array-index,
+  -cppcoreguidelines-pro-bounds-pointer-arithmetic,
+  -cppcoreguidelines-pro-type-reinterpret-cast,
+  -cppcoreguidelines-pro-type-union-access,
+  -cppcoreguidelines-special-member-functions,
+  modernize-*,
+  -modernize-avoid-c-arrays,
+  -modernize-use-trailing-return-type,
+  -modernize-use-nodiscard,
+  performance-*,
+  readability-*,
+  -readability-avoid-const-params-in-decls,
+  -readability-else-after-return,
+  -readability-function-cognitive-complexity,
+  -readability-identifier-length,
+  -readability-implicit-bool-conversion,
+  -readability-magic-numbers,
+  -readability-named-parameter,
+  -readability-uppercase-literal-suffix
+
+# Enable JUCE-specific suppressions
+CheckOptions:
+  # Naming conventions (JUCE uses camelCase)
+  readability-identifier-naming.ClassCase: CamelCase
+  readability-identifier-naming.FunctionCase: camelBack
+  readability-identifier-naming.VariableCase: camelBack
+  readability-identifier-naming.MemberCase: camelBack
+  readability-identifier-naming.ParameterCase: camelBack
+  readability-identifier-naming.ConstantCase: CamelCase
+  readability-identifier-naming.EnumCase: CamelCase
+  readability-identifier-naming.NamespaceCase: CamelCase
+
+  # Allow JUCE patterns
+  cppcoreguidelines-macro-usage.AllowedRegexp: '^(JUCE_|BTZ_)'
+  readability-function-size.LineThreshold: 200
+  readability-function-size.StatementThreshold: 150
+  readability-function-size.BranchThreshold: 30
+
+  # Performance tuning
+  performance-move-const-arg.CheckTriviallyCopyableMove: false
+  performance-unnecessary-copy-initialization.AllowedTypes: 'juce::String;juce::var'
+
+  # Modernize settings
+  modernize-use-auto.MinTypeNameLength: 8
+  modernize-use-auto.RemoveStars: true
+
+  # Bugprone settings
+  bugprone-argument-comment.StrictMode: false
+  bugprone-suspicious-string-compare.WarnOnLogicalNotComparison: false
+
+# Header filter (only check BTZ code, not JUCE)
+HeaderFilterRegex: 'BTZ_JUCE/Source/.*'
+
+# Treat as errors (CI will fail)
+WarningsAsErrors: ''
+
+# Format fixes automatically (optional, use with caution)
+FormatStyle: file
+
+# Suppress external warnings
+SystemHeaders: false
+
+---
+
+#==============================================================================
+# JUSTIFICATION FOR DISABLED CHECKS
+#==============================================================================
+
+# bugprone-easily-swappable-parameters:
+#   JUCE uses many (float, float) parameter pairs that are intentional.
+#   Enabling this creates noise without value.
+
+# bugprone-exception-escape:
+#   JUCE constructors may throw; this is acceptable in plugin context.
+
+# cert-dcl21-cpp:
+#   Conflicts with JUCE operator overloading patterns.
+
+# cert-err58-cpp:
+#   JUCE uses static initialization; unavoidable in framework.
+
+# cppcoreguidelines-avoid-c-arrays:
+#   JUCE audio buffers use C arrays; this is intentional for performance.
+
+# cppcoreguidelines-avoid-magic-numbers:
+#   Audio DSP has many "magic" constants (0.5, 2.0, etc.) that are clear in context.
+
+# cppcoreguidelines-pro-bounds-*:
+#   JUCE audio processing uses raw pointers and pointer arithmetic for performance.
+#   Bounds checking is manual but validated in tests.
+
+# cppcoreguidelines-pro-type-reinterpret-cast:
+#   Required for low-level audio buffer manipulation.
+
+# cppcoreguidelines-special-member-functions:
+#   JUCE uses rule of zero; not all classes need full rule of five.
+
+# modernize-use-trailing-return-type:
+#   Not JUCE convention; reduces readability for audio code.
+
+# readability-identifier-length:
+#   Single-letter variables (i, j, x, y) are idiomatic in DSP code.
+
+# readability-magic-numbers:
+#   Duplicate of cppcoreguidelines version; same justification.
+
+#==============================================================================
+# USAGE EXAMPLES
+#==============================================================================
+
+# Run on single file:
+#   clang-tidy -p build BTZ_JUCE/Source/PluginProcessor.cpp
+
+# Run on entire source tree:
+#   find BTZ_JUCE/Source -name "*.cpp" | xargs clang-tidy -p build
+
+# Auto-fix issues (use with caution):
+#   clang-tidy -p build --fix BTZ_JUCE/Source/PluginProcessor.cpp
+
+# Generate compile_commands.json (required):
+#   cmake -B build -DCMAKE_EXPORT_COMPILE_COMMANDS=ON
+
+# CI integration (check only, no fix):
+#   clang-tidy -p build BTZ_JUCE/Source/**/*.cpp --warnings-as-errors='*'
+
+#==============================================================================
+# MAINTENANCE
+#==============================================================================
+
+# Review and update quarterly:
+# - Add new checks from clang-tidy releases
+# - Adjust for JUCE API changes
+# - Re-evaluate disabled checks
+
+# Version History:
+# 1.0.0 (2026-01-08): Initial JUCE-safe configuration

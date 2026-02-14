@@ -28,9 +28,16 @@ struct BTZMeterState {
 struct SlewLimiter {
     float prev = 0.0f;
     float maxDelta = 0.02f;
-    void setSampleRate(double sr) { maxDelta = 0.02f * (48000.0f / (float) juce::jmax(1.0, sr)); }
-    void reset() { prev = 0.0f; }
-    float process(float x) {
+
+    void setSampleRate(double sr) noexcept {
+        constexpr float kSlewReferenceRate = 48000.0f;
+        constexpr float kSlewMaxDeltaBase = 0.02f;
+        maxDelta = kSlewMaxDeltaBase * (kSlewReferenceRate / static_cast<float>(juce::jmax(1.0, sr)));
+    }
+
+    void reset() noexcept { prev = 0.0f; }
+
+    float process(float x) noexcept {
         const float delta = x - prev;
         if (std::abs(delta) > maxDelta)
             x = prev + (delta > 0.0f ? maxDelta : -maxDelta);
@@ -43,13 +50,18 @@ struct EnvFollower {
     float env = 0.0f;
     float attackCoeff = 0.0f;
     float releaseCoeff = 0.0f;
-    void setTimes(float attackMs, float releaseMs, double sr) {
-        const float srf = (float) juce::jmax(1.0, sr);
-        attackCoeff = 1.0f - std::exp(-1.0f / (srf * juce::jmax(0.01f, attackMs) * 0.001f));
-        releaseCoeff = 1.0f - std::exp(-1.0f / (srf * juce::jmax(0.01f, releaseMs) * 0.001f));
+
+    void setTimes(float attackMs, float releaseMs, double sr) noexcept {
+        constexpr float kMinAttackMs = 0.01f;
+        constexpr float kMsToSeconds = 0.001f;
+        const float srf = static_cast<float>(juce::jmax(1.0, sr));
+        attackCoeff = 1.0f - std::exp(-1.0f / (srf * juce::jmax(kMinAttackMs, attackMs) * kMsToSeconds));
+        releaseCoeff = 1.0f - std::exp(-1.0f / (srf * juce::jmax(kMinAttackMs, releaseMs) * kMsToSeconds));
     }
-    void reset(float value = 0.0f) { env = value; }
-    float process(float xAbs) {
+
+    void reset(float value = 0.0f) noexcept { env = value; }
+
+    float process(float xAbs) noexcept {
         const float coeff = xAbs > env ? attackCoeff : releaseCoeff;
         env += coeff * (xAbs - env);
         return env;
@@ -60,14 +72,22 @@ struct SafetyLayer {
     float dcL = 0.0f, dcPrevL = 0.0f;
     float dcR = 0.0f, dcPrevR = 0.0f;
     float dcCoeff = 0.9999f;
-    void setSampleRate(double sr) {
-        const float srf = (float) juce::jmax(1.0, sr);
-        dcCoeff = 1.0f - (6.2831853f * 5.0f / srf);
-        dcCoeff = juce::jlimit(0.90f, 0.99999f, dcCoeff);
+
+    void setSampleRate(double sr) noexcept {
+        constexpr float kTwoPi = 6.2831853f;
+        constexpr float kDcBlockerFreq = 5.0f;
+        constexpr float kMinCoeff = 0.90f;
+        constexpr float kMaxCoeff = 0.99999f;
+        const float srf = static_cast<float>(juce::jmax(1.0, sr));
+        dcCoeff = 1.0f - (kTwoPi * kDcBlockerFreq / srf);
+        dcCoeff = juce::jlimit(kMinCoeff, kMaxCoeff, dcCoeff);
     }
-    void reset() { dcL = dcPrevL = dcR = dcPrevR = 0.0f; }
-    float processSample(float x, float& dc, float& dcPrev) {
-        if (! std::isfinite(x) || std::abs(x) < 1.0e-20f)
+
+    void reset() noexcept { dcL = dcPrevL = dcR = dcPrevR = 0.0f; }
+
+    float processSample(float x, float& dc, float& dcPrev) noexcept {
+        constexpr float kDenormalThreshold = 1.0e-20f;
+        if (!std::isfinite(x) || std::abs(x) < kDenormalThreshold)
             x = 0.0f;
         const float y = x - dcPrev + dcCoeff * dc;
         dcPrev = x;
@@ -80,13 +100,17 @@ struct SmoothParam {
     float current = 0.0f;
     float target = 0.0f;
     float coeff = 0.001f;
-    void setTime(float ms, double sr) {
-        const float srf = (float) juce::jmax(1.0, sr);
-        coeff = 1.0f - std::exp(-1.0f / (srf * juce::jmax(0.01f, ms) * 0.001f));
+
+    void setTime(float ms, double sr) noexcept {
+        constexpr float kMinTimeMs = 0.01f;
+        constexpr float kMsToSeconds = 0.001f;
+        const float srf = static_cast<float>(juce::jmax(1.0, sr));
+        coeff = 1.0f - std::exp(-1.0f / (srf * juce::jmax(kMinTimeMs, ms) * kMsToSeconds));
     }
-    void setTarget(float v) { target = v; }
-    float next() { current += coeff * (target - current); return current; }
-    void snapTo(float v) { current = target = v; }
+
+    void setTarget(float v) noexcept { target = v; }
+    float next() noexcept { current += coeff * (target - current); return current; }
+    void snapTo(float v) noexcept { current = target = v; }
 };
 
 class BTZAudioProcessor : public juce::AudioProcessor {
@@ -102,16 +126,16 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "BTZ - The Box Tone Zone Enhancer"; }
+    const juce::String getName() const override { return "Box Tone Zone (BTZ)"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
-    int getNumPrograms() override;
-    int getCurrentProgram() override;
-    void setCurrentProgram(int index) override;
-    const juce::String getProgramName(int index) override;
-    void changeProgramName(int index, const juce::String& newName) override;
+    int getNumPrograms() override { return 1; }
+    int getCurrentProgram() override { return 0; }
+    void setCurrentProgram(int) override {}
+    const juce::String getProgramName(int) override { return {}; }
+    void changeProgramName(int, const juce::String&) override {}
 
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
@@ -138,8 +162,7 @@ private:
 
     SmoothParam sPunch, sWarmth, sBoom, sGlue, sAir, sWidth;
     SmoothParam sDensity, sMotion, sEra, sMix, sDrive;
-    SmoothParam sMaster, sSparkLufsTarget, sSparkCeil, sSparkMix;
-    SmoothParam sShineGain, sShineFreq, sShineQ, sShineMix;
+    SmoothParam sMaster, sSparkCeil, sSparkMix, sShine, sShineMix;
 
     SafetyLayer safetyPre, safetyPost;
     SlewLimiter slewL, slewR;
@@ -149,35 +172,25 @@ private:
     float glueGain = 1.0f;
     float xoverLowL = 0.0f, xoverLowR = 0.0f, xoverCoeff = 0.0f;
     float hpStateL = 0.0f, hpStateR = 0.0f;
-    float shineStateL = 0.0f, shineStateR = 0.0f;
     float sideLowState = 0.0f, sideLowCoeff = 0.0f;
     float sparkGrEnvelope = 0.0f;
     float sparkAttackCoeff = 0.2f, sparkReleaseCoeff = 0.01f;
-    float sparkLoudnessEnv = 0.0f;
-    float sparkLoudnessCoeff = 0.0f;
 
     double currentSampleRate = 44100.0;
     int maxPreparedBlockSize = 0;
     uint32_t noiseSeed = 12345u;
-    bool textureEnabled = true;
 
     juce::AudioBuffer<float> dryBuffer;
     std::unique_ptr<juce::dsp::Oversampling<float>> os2x;
     std::unique_ptr<juce::dsp::Oversampling<float>> os4x;
-    std::unique_ptr<juce::dsp::Oversampling<float>> os8x;
-    std::unique_ptr<juce::dsp::Oversampling<float>> os16x;
-    int activeQualityMode = 4;
-    int currentProgramIndex = 0;
-    juce::StringArray programNames;
+    int activeQualityMode = 1;
 
     void initSmoothers(double sampleRate);
     void updateTargetsFromAPVTS();
     void processCore(float* dataL, float* dataR, int numSamples, float osFactor);
     void updateMeters(const float* inL, const float* inR, const float* outL, const float* outR, int n, float sparkGRDb);
     int getRequestedQualityMode() const;
-    int getAdaptiveQualityMode(int requestedMode, const float* inL, const float* inR, int n) const;
     void updateLatencyFromQuality(int mode);
-    void applyFactoryProgram(int index);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BTZAudioProcessor)
 };

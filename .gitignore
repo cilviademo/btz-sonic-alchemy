@@ -47,3 +47,120 @@ dist-ssr
 
 # Temporary imported snapshots
 .tmp_zip_apply/
+
+# ============================================================================
+# JUCE PLUGIN BUILD ARTIFACTS (CRITICAL - PREVENT ACCIDENTAL COMMITS)
+# ============================================================================
+
+# Archives - Ship packages should be releases, not source
+*.zip
+*.tar.gz
+*.tgz
+!DeepFilterNet2.tar.gz
+!timbral_model.pt
+
+# CMake build directories
+build/
+cmake-build-*/
+Build/
+Builds/
+
+# JUCE-generated artifacts
+*_artefacts/
+*/JuceLibraryCode/
+DerivedData/
+
+# Plugin binaries (NEVER commit these!)
+*.vst3
+*.component
+*.vst
+*.aaxplugin
+*.exe
+*.app
+*.dll
+*.dylib
+*.so
+
+# macOS code signing
+*.xcarchive
+*.ipa
+*.pkg
+
+# Windows installer artifacts
+*.msi
+*.msix
+
+# Temporary validation output
+validation_*.txt
+pluginval_*.log
+
+# Cache directories
+.cache/
+*.dSYM/
+
+# Test coverage reports
+coverage/
+*.gcov
+*.gcda
+*.gcno
+
+# Profiling data
+*.prof
+*.gprof
+callgrind.out.*
+
+# Static analysis artifacts
+cppcheck_*.xml
+clang-tidy_*.log
+
+# C++ / CMake / JUCE build artifacts
+build/
+*/build/
+**/build/
+cmake-build-*/
+CMakeCache.txt
+CMakeFiles/
+*.cmake
+!CMakeLists.txt
+*.a
+*.o
+*.so
+*.dylib
+*.dll
+*.exe
+
+# BTZ-specific generated artifacts
+artifacts/
+**/artifacts/
+*.zip
+*.tar.gz
+BTZ_Support_Bundle_*
+BTZ_DAW_Test_Results_*
+
+# Plugin build outputs (keep source, ignore binaries)
+BTZ_JUCE/build/
+BTZ_JUCE/Builds/
+*.vst3
+*.component
+*.app
+*.aaxplugin
+
+# Test outputs and benchmarks
+benchmark_results.json
+pluginval_output.txt
+**/test_results/
+**/*.log
+
+# Temporary and OS files
+*.tmp
+*.temp
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+
+# IDE / tooling
+.clangd/
+.cache/
+compile_commands.json

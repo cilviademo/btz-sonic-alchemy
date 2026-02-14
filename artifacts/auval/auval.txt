@@ -1,0 +1,110 @@
+BTZ - AUVAL VALIDATION REPORT
+==============================
+Date: 2026-01-14
+Sprint: P0.2 - Validation Tools
+Status: NOT RUN (PLATFORM LIMITATION)
+
+REASON:
+-------
+auval is a macOS-only tool (Audio Units validation) and the current build
+environment is Linux. This validation is platform-specific and can only
+be run on macOS systems.
+
+PLUGIN UNDER TEST:
+------------------
+Name: BTZ - The Box Tone Zone
+Version: 1.0.0
+Format: AU (Audio Unit)
+Manufacturer: BTZ Audio (Btzz)
+Type: aufx (Audio Effect)
+Subtype: BTZ (Btzp)
+
+MANUAL VALIDATION REQUIRED:
+----------------------------
+To validate the AU version on macOS, run:
+
+```bash
+# First, ensure the AU is installed:
+# ~/Library/Audio/Plug-Ins/Components/BTZ - The Box Tone Zone.component
+
+# Run validation:
+auval -v aufx BTZ Btzz
+
+# For verbose output:
+auval -v aufx BTZ Btzz -d
+```
+
+CRITICAL TESTS (auval):
+-----------------------
+1. Component validation
+   - AU component loads correctly
+   - No missing resources
+   - Correct bundle structure
+
+2. Parameter compliance
+   - All parameters accessible via AU API
+   - Parameter ranges correct
+   - Parameter names/labels correct
+
+3. Rendering validation
+   - Correct audio processing
+   - No silence when should be processing
+   - No artifacts/glitches
+
+4. Property compliance
+   - Latency reported correctly
+   - Tail time reported correctly
+   - Channel configurations correct
+
+5. State save/restore
+   - CFPropertyList serialization works
+   - State restores identically
+   - No data loss
+
+6. Sample rate handling
+   - Handles 44.1k, 48k, 88.2k, 96k, 192k
+   - No artifacts on rate change
+
+7. Logic Pro compliance
+   - Works correctly in Logic Pro
+   - Automation works
+   - No crashes on project load
+
+EXPECTED RESULT:
+----------------
+PASS - AU Validation succeeded for aufx BTZ Btzz
+
+KNOWN POTENTIAL ISSUES:
+-----------------------
+1. macOS Universal Binary required
+   - Must build for both arm64 (Apple Silicon) and x86_64 (Intel)
+   - CMakeLists.txt configured for: VST3 AU Standalone
+   - Verify JUCE builds both architectures
+
+2. Codesigning required for distribution
+   - Developer ID certificate needed
+   - Notarization required for macOS 10.15+
+   - May not affect validation but affects distribution
+
+3. HiDPI/Retina display support
+   - Custom GUI needs 2x scaling resources
+   - Generic editor scales automatically
+
+NEXT STEPS:
+-----------
+1. Build AU on macOS (Intel or Apple Silicon)
+2. Install to ~/Library/Audio/Plug-Ins/Components/
+3. Run auval as shown above
+4. Document all failures (if any)
+5. Fix critical issues
+6. Re-run until validation passes
+7. Update this artifact with actual results
+
+REFERENCE:
+----------
+- Apple Audio Unit Programming Guide
+- auval man page: man auval
+- JUCE AU format documentation
+
+---
+END OF REPORT

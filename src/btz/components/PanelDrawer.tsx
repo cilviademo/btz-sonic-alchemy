@@ -21,7 +21,7 @@ export const PanelDrawer: React.FC<{
           'fixed inset-0 bg-black/40 transition-opacity',
           open ? 'opacity-100' : 'pointer-events-none opacity-0'
         )}
-        aria-hidden
+        aria-hidden="true"
         onClick={onClose}
       />
       <aside
@@ -33,15 +33,15 @@ export const PanelDrawer: React.FC<{
           open ? 'translate-x-0' : 'translate-x-full'
         )}
       >
-        <header className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-          <h2 id="btz-panel-title" className="text-sm font-semibold tracking-wide">
+        <header className="btz-drawer-header flex items-center justify-between px-4 py-3">
+          <h2 id="btz-panel-title" className="btz-label-xs">
             {title ?? 'DETAILS'}
           </h2>
-          <button onClick={onClose} aria-label="Close panel" className="text-xs uppercase opacity-80 hover:opacity-100">
-            Close
+          <button onClick={onClose} aria-label="Close panel" className="text-xs uppercase opacity-80 hover:opacity-100 transition-opacity">
+            ✕ Close
           </button>
         </header>
-        <div className="overflow-auto p-4">{children}</div>
+        <div className="btz-scrollbar h-full overflow-auto p-4 pb-20">{children}</div>
       </aside>
     </>
   );
