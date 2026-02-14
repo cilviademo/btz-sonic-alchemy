@@ -1,0 +1,52 @@
+# Cursor Rules: BTZ Repository
+
+## Core Principles
+- Keep changes minimal, explicit, and reversible.
+- Preserve existing architecture unless user explicitly approves redesign.
+- No breaking architecture changes without confirmation.
+
+## Code Style Rules
+- Prefer clear, small functions over large monoliths.
+- Use ASCII by default unless file already requires Unicode.
+- Keep comments sparse and meaningful (explain intent, not obvious syntax).
+
+## Import/Include Style
+- Keep include/import ordering stable and consistent within file.
+- Do not add unused includes/imports.
+- Prefer project-local includes when available.
+
+## File Naming Conventions
+- Follow existing naming patterns in each subsystem.
+- Scripts: descriptive snake_case with platform suffix where useful.
+- Memory files: fixed naming under `.memory/`.
+
+## Component Patterns
+- JUCE plugin source of truth is `BTZ/CMakeLists.txt`.
+- Maintain `juce_add_plugin` flow for VST3 output.
+- Keep `createPluginFilter()` present and aligned with processor class.
+
+## Refactor Safety Rules
+- Before refactor, check:
+  - `.memory/01_ARCHITECTURE.md`
+  - `.memory/02_DECISIONS_LOG.md`
+- Record major refactors in:
+  - `.memory/02_DECISIONS_LOG.md`
+  - `.memory/sessions/session_YYYY_MM_DD.md`
+- Preserve parameter IDs unless migration plan is explicitly approved.
+
+## Build/Install Safety
+- Windows build scripts must enforce x64 toolchain.
+- Avoid mixed toolchain caches; clean build when environment changes.
+- Installer must handle VST3 directory bundles.
+
+## Anti-Drift Rule
+- If requested change conflicts with architecture or decisions log:
+  - stop,
+  - explain conflict,
+  - request confirmation before proceeding.
+
+## Memory Sync Rule
+- After significant edits, run:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\update_memory.ps1 -Message "post-change sync"`
+- For continuous updates during long sessions, run:
+  - `powershell -ExecutionPolicy Bypass -File .\scripts\start_memory_watcher.ps1`

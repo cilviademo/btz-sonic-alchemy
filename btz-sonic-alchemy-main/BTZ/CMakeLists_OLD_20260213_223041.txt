@@ -1,0 +1,74 @@
+cmake_minimum_required(VERSION 3.22)
+project(BTZ VERSION 1.0.0)
+
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# Force 64-bit build (avoids x86 libs when shell is 32-bit developer prompt)
+if(CMAKE_SIZEOF_VOID_P EQUAL 4)
+  message(FATAL_ERROR "BTZ must be built for 64-bit. Use 'x64 Native Tools Command Prompt' or 'Developer PowerShell (x64)', not x86.")
+endif()
+
+add_subdirectory("C:/Users/marcm/OneDrive/Desktop/JUCE-8.0.6" "${CMAKE_BINARY_DIR}/JUCE")
+
+# Options
+option(WITH_ML "Enable ML integrations (Torch, model loaders)" OFF)
+
+if (WITH_ML)
+  find_package(Torch REQUIRED)
+endif()
+
+# JUCE plugin target (VST3); creates proper plugin bundle and entry point
+juce_add_plugin(BTZ
+  FORMATS VST3
+  PRODUCT_NAME "BTZ"
+  PLUGIN_MANUFACTURER_CODE BTZa
+  PLUGIN_CODE Btz0
+  COMPANY_NAME "BTZ Audio"
+  IS_SYNTH FALSE
+  NEEDS_MIDI_INPUT FALSE
+  NEEDS_MIDI_OUTPUT FALSE
+  NEEDS_WEB_BROWSER TRUE
+)
+
+# Generate JuceHeader.h so source files that #include <JuceHeader.h> can find it
+juce_generate_juce_header(BTZ)
+
+target_sources(BTZ PRIVATE
+  Source/PluginProcessor.cpp
+  Source/PluginEditor.cpp
+  Source/WaveShaper.cpp
+  Source/EQ.cpp
+  Source/TransientShaper.cpp
+  Source/MultiFilterDelay.cpp
+  Source/DeepFilterNet.cpp
+  Source/TimbralTransfer.cpp
+  Source/Fuzzed.cpp
+  Source/BassEnhancer.cpp
+  Source/LimiterNo6.cpp
+  Source/TapeEmulator.cpp
+  Source/GranularProcessor.cpp
+  Source/GateProcessor.cpp
+  Source/ConsoleEmulator.cpp
+)
+
+target_include_directories(BTZ PRIVATE
+  ${CMAKE_SOURCE_DIR}/Source
+)
+
+target_compile_definitions(BTZ PRIVATE
+  BTZ_UI_DIST_PATH="${CMAKE_SOURCE_DIR}/../dist"
+)
+
+if (WITH_ML)
+  target_compile_definitions(BTZ PRIVATE BTZ_WITH_ML=1)
+  target_link_libraries(BTZ PRIVATE ${TORCH_LIBRARIES})
+endif()
+
+target_link_libraries(BTZ PRIVATE
+  juce::juce_audio_utils
+  juce::juce_dsp
+  juce::juce_gui_extra
+  juce::juce_recommended_config_flags
+  juce::juce_recommended_warning_flags
+)

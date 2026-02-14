@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="1200" height="700" viewBox="0 0 1200 700" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <style>
+      .outer { fill: none; stroke: #ff4d4d; stroke-width: 2; }
+      .safe  { fill: none; stroke: #ff4d4d; stroke-width: 1.5; stroke-dasharray: 6 6; opacity: 0.9; }
+      .col   { stroke: #00e5ff; stroke-width: 1; opacity: 0.8; }
+      .row   { stroke: #66ff66; stroke-width: 1; opacity: 0.8; }
+      .gut   { fill: #fff000; opacity: 0.25; }
+      .label { fill: #ffffff; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 10px; opacity: .6 }
+    </style>
+  </defs>
+
+  <!-- Outer frame -->
+  <rect class="outer" x="0.5" y="0.5" width="1199" height="699" />
+
+  <!-- Safe inset (30px) -->
+  <rect class="safe" x="30" y="30" width="1140" height="640" />
+
+  <!-- Vertical gutters (11) -->
+  <rect class="gut" x="106.6667" y="30" width="20" height="640" />
+  <rect class="gut" x="203.3334" y="30" width="20" height="640" />
+  <rect class="gut" x="300.0001" y="30" width="20" height="640" />
+  <rect class="gut" x="396.6668" y="30" width="20" height="640" />
+  <rect class="gut" x="493.3335" y="30" width="20" height="640" />
+  <rect class="gut" x="590.0002" y="30" width="20" height="640" />
+  <rect class="gut" x="686.6669" y="30" width="20" height="640" />
+  <rect class="gut" x="783.3336" y="30" width="20" height="640" />
+  <rect class="gut" x="880.0003" y="30" width="20" height="640" />
+  <rect class="gut" x="976.6670" y="30" width="20" height="640" />
+  <rect class="gut" x="1073.3337" y="30" width="20" height="640" />
+
+  <!-- Horizontal gutters (7) -->
+  <rect class="gut" x="30" y="92.5" width="1140" height="20" />
+  <rect class="gut" x="30" y="175" width="1140" height="20" />
+  <rect class="gut" x="30" y="257.5" width="1140" height="20" />
+  <rect class="gut" x="30" y="340" width="1140" height="20" />
+  <rect class="gut" x="30" y="422.5" width="1140" height="20" />
+  <rect class="gut" x="30" y="505" width="1140" height="20" />
+  <rect class="gut" x="30" y="587.5" width="1140" height="20" />
+
+  <!-- Column lines (13 including both edges) -->
+  <line class="col" x1="30" y1="30" x2="30" y2="670" />
+  <line class="col" x1="126.6667" y1="30" x2="126.6667" y2="670" />
+  <line class="col" x1="223.3334" y1="30" x2="223.3334" y2="670" />
+  <line class="col" x1="320.0001" y1="30" x2="320.0001" y2="670" />
+  <line class="col" x1="416.6668" y1="30" x2="416.6668" y2="670" />
+  <line class="col" x1="513.3335" y1="30" x2="513.3335" y2="670" />
+  <line class="col" x1="610.0002" y1="30" x2="610.0002" y2="670" />
+  <line class="col" x1="706.6669" y1="30" x2="706.6669" y2="670" />
+  <line class="col" x1="803.3336" y1="30" x2="803.3336" y2="670" />
+  <line class="col" x1="900.0003" y1="30" x2="900.0003" y2="670" />
+  <line class="col" x1="996.6670" y1="30" x2="996.6670" y2="670" />
+  <line class="col" x1="1093.3337" y1="30" x2="1093.3337" y2="670" />
+  <line class="col" x1="1170" y1="30" x2="1170" y2="670" />
+
+  <!-- Row lines (9 including both edges) -->
+  <line class="row" x1="30" y1="30" x2="1170" y2="30" />
+  <line class="row" x1="30" y1="112.5" x2="1170" y2="112.5" />
+  <line class="row" x1="30" y1="195" x2="1170" y2="195" />
+  <line class="row" x1="30" y1="277.5" x2="1170" y2="277.5" />
+  <line class="row" x1="30" y1="360" x2="1170" y2="360" />
+  <line class="row" x1="30" y1="442.5" x2="1170" y2="442.5" />
+  <line class="row" x1="30" y1="525" x2="1170" y2="525" />
+  <line class="row" x1="30" y1="607.5" x2="1170" y2="607.5" />
+  <line class="row" x1="30" y1="670" x2="1170" y2="670" />
+
+  <!-- Legend (optional) -->
+  <g>
+    <rect x="40" y="640" width="8" height="8" fill="#00e5ff"/>
+    <text class="label" x="52" y="647">Columns</text>
+    <rect x="120" y="640" width="8" height="8" fill="#66ff66"/>
+    <text class="label" x="132" y="647">Rows</text>
+    <rect x="180" y="640" width="8" height="8" fill="#fff000" opacity="0.5"/>
+    <text class="label" x="192" y="647">Gutters</text>
+    <rect x="250" y="640" width="8" height="8" fill="#ff4d4d"/>
+    <text class="label" x="262" y="647">Safe Frame</text>
+  </g>
+</svg>

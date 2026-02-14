@@ -1,0 +1,27 @@
+# Build artifacts
+**/build/
+**/build-debug/
+**/build-*/
+**/BTZ_artefacts/
+**/CMakeFiles/
+**/CMakeCache.txt
+**/cmake_install.cmake
+**/build.ninja
+**/.ninja_log
+**/.ninja_deps
+
+# Binary outputs
+*.pdb
+*.ilk
+*.lib
+*.obj
+*.dll
+*.exe
+*.vst3
+
+# IDE/session artifacts
+.cursor/
+.memory/.state/
+
+# Temporary imported snapshots
+.tmp_zip_apply/
