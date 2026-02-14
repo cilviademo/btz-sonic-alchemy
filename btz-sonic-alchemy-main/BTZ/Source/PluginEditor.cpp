@@ -64,6 +64,7 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
     styleTab(tabAdvanced, 2);
 
     addAndMakeVisible(btnBypass);
+    addAndMakeVisible(btnTexture);
 
     auto initKnob = [&](juce::Slider& s, juce::Label& l) { setupKnob(s, l); };
     initKnob(kPunch, lPunch); initKnob(kWarmth, lWarmth); initKnob(kBoom, lBoom);
@@ -71,8 +72,8 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
     initKnob(kDensity, lDensity); initKnob(kMotion, lMotion); initKnob(kEra, lEra);
     initKnob(kDrive, lDrive); initKnob(kMix, lMix); initKnob(kMaster, lMaster);
 
-    setupSlider(sCeiling); setupSlider(sSparkMix); setupSlider(sShine);
-    setupSlider(sShineMix);
+    setupSlider(sSparkLufs); setupSlider(sCeiling); setupSlider(sSparkMix);
+    setupSlider(sShineGain); setupSlider(sShineFreq); setupSlider(sShineQ); setupSlider(sShineMix);
 
     auto setupChoice = [&](juce::ComboBox& c) {
         addAndMakeVisible(c);
@@ -84,14 +85,19 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
     };
     setupChoice(cQuality);
     setupChoice(cCharacter);
-    cQuality.addItem("Eco", 1);
+    cQuality.addItem("1x", 1);
     cQuality.addItem("2x", 2);
     cQuality.addItem("4x", 3);
+    cQuality.addItem("8x", 4);
+    cQuality.addItem("16x", 5);
     cCharacter.addItem("Character A", 1);
     cCharacter.addItem("Character B", 2);
 
     addAndMakeVisible(btnAutoGain);
+    addAndMakeVisible(btnAdaptiveOs);
     btnAutoGain.setColour(juce::ToggleButton::textColourId, BTZColors::text2);
+    btnAdaptiveOs.setColour(juce::ToggleButton::textColourId, BTZColors::text2);
+    btnTexture.setColour(juce::ToggleButton::textColourId, BTZColors::text2);
 
     auto& apvts = proc.getAPVTS();
     aPunch    = std::make_unique<SliderAttachment>(apvts, "punch", kPunch);
@@ -106,18 +112,32 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
     aMix      = std::make_unique<SliderAttachment>(apvts, "mix", kMix);
     aDrive    = std::make_unique<SliderAttachment>(apvts, "drive", kDrive);
     aMaster   = std::make_unique<SliderAttachment>(apvts, "masterIntensity", kMaster);
+    aSparkLufs = std::make_unique<SliderAttachment>(apvts, "sparkTargetLufs", sSparkLufs);
     aCeiling  = std::make_unique<SliderAttachment>(apvts, "sparkCeiling", sCeiling);
     aSparkMix = std::make_unique<SliderAttachment>(apvts, "sparkMix", sSparkMix);
-    aShine    = std::make_unique<SliderAttachment>(apvts, "shineAmount", sShine);
+    aShineGain = std::make_unique<SliderAttachment>(apvts, "shineAmount", sShineGain);
+    aShineFreq = std::make_unique<SliderAttachment>(apvts, "shineFreq", sShineFreq);
+    aShineQ = std::make_unique<SliderAttachment>(apvts, "shineQ", sShineQ);
     aShineMix = std::make_unique<SliderAttachment>(apvts, "shineMix", sShineMix);
     aQuality = std::make_unique<ComboAttachment>(apvts, "qualityMode", cQuality);
     aCharacter = std::make_unique<ComboAttachment>(apvts, "stabilityMode", cCharacter);
     aBypass = std::make_unique<ButtonAttachment>(apvts, "bypass", btnBypass);
+    aTexture = std::make_unique<ButtonAttachment>(apvts, "texture", btnTexture);
     aAutoGain = std::make_unique<ButtonAttachment>(apvts, "autogain", btnAutoGain);
+    aAdaptiveOs = std::make_unique<ButtonAttachment>(apvts, "adaptiveOversampling", btnAdaptiveOs);
 
-    cQuality.setTooltip("Oversampling quality mode (Eco/2x/4x).");
+    cQuality.setTooltip("Oversampling quality mode (1x to 16x).");
     cCharacter.setTooltip("Character voicing slot.");
+    btnTexture.setTooltip("Texture macro for air, motion and spatial colour.");
     btnAutoGain.setTooltip("Enable output level compensation.");
+    btnAdaptiveOs.setTooltip("Automatically raise oversampling when loudness/transients demand it.");
+    sSparkLufs.setTooltip("SPARK loudness target in LUFS.");
+    sCeiling.setTooltip("SPARK true-peak ceiling.");
+    sSparkMix.setTooltip("SPARK wet/dry clip blend.");
+    sShineGain.setTooltip("SHINE gain in dB.");
+    sShineFreq.setTooltip("SHINE center frequency.");
+    sShineQ.setTooltip("SHINE resonance width.");
+    sShineMix.setTooltip("SHINE wet/dry blend.");
 
     startTimerHz(45);
 }
@@ -191,7 +211,7 @@ void BTZAudioProcessorEditor::paint(juce::Graphics& g) {
     auto header = bounds.removeFromTop(54.0f);
     g.setColour(BTZColors::text);
     g.setFont(juce::Font(14.0f).boldened());
-    g.drawText("BOX TONE ZONE (BTZ)", header.removeFromLeft(250.0f), juce::Justification::centredLeft);
+    g.drawText("BTZ - THE BOX TONE ZONE ENHANCER", header.removeFromLeft(320.0f), juce::Justification::centredLeft);
     g.setFont(juce::Font(8.5f));
     g.setColour(BTZColors::text3);
     g.drawText("BTZ Audio", header.removeFromLeft(120.0f), juce::Justification::centredLeft);
@@ -246,6 +266,7 @@ void BTZAudioProcessorEditor::resized() {
     tabSpark.setBounds(startX + tabW + gap, tabArea.getY(), tabW, tabArea.getHeight());
     tabAdvanced.setBounds(startX + (tabW + gap) * 2, tabArea.getY(), tabW, tabArea.getHeight());
     btnBypass.setBounds(header.getRight() - 120, header.getY() + 14, 100, header.getHeight() - 24);
+    btnTexture.setBounds(header.getRight() - 235, header.getY() + 14, 105, header.getHeight() - 24);
 
     auto styleTab = [&](juce::TextButton& b, int idx) {
         b.setColour(juce::TextButton::buttonColourId, juce::Colours::transparentBlack);
@@ -262,42 +283,64 @@ void BTZAudioProcessorEditor::resized() {
     hideKnob(kGlue, lGlue); hideKnob(kAir, lAir); hideKnob(kWidth, lWidth);
     hideKnob(kDensity, lDensity); hideKnob(kMotion, lMotion); hideKnob(kEra, lEra);
     hideKnob(kDrive, lDrive); hideKnob(kMix, lMix); hideKnob(kMaster, lMaster);
-    sCeiling.setVisible(false); sSparkMix.setVisible(false); sShine.setVisible(false); sShineMix.setVisible(false);
-    cQuality.setVisible(false); cCharacter.setVisible(false); btnAutoGain.setVisible(false);
+    sSparkLufs.setVisible(false);
+    sCeiling.setVisible(false);
+    sSparkMix.setVisible(false);
+    sShineGain.setVisible(false);
+    sShineFreq.setVisible(false);
+    sShineQ.setVisible(false);
+    sShineMix.setVisible(false);
+    cQuality.setVisible(false);
+    cCharacter.setVisible(false);
+    btnAutoGain.setVisible(false);
+    btnAdaptiveOs.setVisible(false);
 
     if (currentPage == 0) {
-        const int knob = 74, label = 16;
-        const int gapX = (content.getWidth() - knob * 6) / 5;
-        const int y1 = content.getY();
-        const int y2 = y1 + knob + label + 12;
+        const int knob = 84;
+        const int label = 16;
+        const int gapX = (content.getWidth() - knob * 5) / 4;
+        const int y1 = content.getY() + 22;
         auto place = [&](juce::Slider& s, juce::Label& l, int i, int y) {
             const int x = content.getX() + i * (knob + gapX);
             s.setBounds(x, y, knob, knob);
             l.setBounds(x, y + knob, knob, label);
             s.setVisible(true); l.setVisible(true);
         };
-        place(kPunch, lPunch, 0, y1); place(kWarmth, lWarmth, 1, y1); place(kBoom, lBoom, 2, y1);
-        place(kGlue, lGlue, 3, y1); place(kAir, lAir, 4, y1); place(kWidth, lWidth, 5, y1);
-        place(kDensity, lDensity, 0, y2); place(kMotion, lMotion, 1, y2); place(kEra, lEra, 2, y2);
-        place(kDrive, lDrive, 3, y2); place(kMix, lMix, 4, y2); place(kMaster, lMaster, 5, y2);
+        place(kPunch, lPunch, 0, y1);
+        place(kWarmth, lWarmth, 1, y1);
+        place(kBoom, lBoom, 2, y1);
+        place(kMix, lMix, 3, y1);
+        place(kDrive, lDrive, 4, y1);
+        btnTexture.setVisible(true);
     } else if (currentPage == 1) {
-        auto left = content.removeFromLeft(content.getWidth() / 2).reduced(20, 24);
-        auto right = content.reduced(20, 24);
-        sCeiling.setBounds(left.removeFromTop(30)); left.removeFromTop(8);
-        sSparkMix.setBounds(left.removeFromTop(30));
-        sShine.setBounds(right.removeFromTop(30)); right.removeFromTop(8);
-        sShineMix.setBounds(right.removeFromTop(30));
-        sCeiling.setVisible(true); sSparkMix.setVisible(true); sShine.setVisible(true); sShineMix.setVisible(true);
+        auto spark = content.reduced(180, 80);
+        sSparkLufs.setBounds(spark.removeFromTop(30)); spark.removeFromTop(10);
+        sCeiling.setBounds(spark.removeFromTop(30)); spark.removeFromTop(10);
+        sSparkMix.setBounds(spark.removeFromTop(30));
+        sSparkLufs.setVisible(true);
+        sCeiling.setVisible(true);
+        sSparkMix.setVisible(true);
     } else if (currentPage == 2) {
-        auto advanced = content.reduced(220, 130);
-        cQuality.setBounds(advanced.removeFromTop(30));
-        advanced.removeFromTop(12);
-        cCharacter.setBounds(advanced.removeFromTop(30));
-        advanced.removeFromTop(18);
-        btnAutoGain.setBounds(advanced.removeFromTop(28));
+        auto shineArea = content.removeFromTop(190).reduced(120, 20);
+        sShineGain.setBounds(shineArea.removeFromTop(30)); shineArea.removeFromTop(8);
+        sShineFreq.setBounds(shineArea.removeFromTop(30)); shineArea.removeFromTop(8);
+        sShineQ.setBounds(shineArea.removeFromTop(30)); shineArea.removeFromTop(8);
+        sShineMix.setBounds(shineArea.removeFromTop(30));
+
+        auto advanced = content.reduced(220, 20);
+        cQuality.setBounds(advanced.removeFromTop(30)); advanced.removeFromTop(10);
+        cCharacter.setBounds(advanced.removeFromTop(30)); advanced.removeFromTop(12);
+        btnAutoGain.setBounds(advanced.removeFromTop(28)); advanced.removeFromTop(8);
+        btnAdaptiveOs.setBounds(advanced.removeFromTop(28));
+
+        sShineGain.setVisible(true);
+        sShineFreq.setVisible(true);
+        sShineQ.setVisible(true);
+        sShineMix.setVisible(true);
         cQuality.setVisible(true);
         cCharacter.setVisible(true);
         btnAutoGain.setVisible(true);
+        btnAdaptiveOs.setVisible(true);
     }
 }
 

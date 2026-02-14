@@ -102,16 +102,16 @@ public:
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override { return true; }
 
-    const juce::String getName() const override { return "Box Tone Zone (BTZ)"; }
+    const juce::String getName() const override { return "BTZ - The Box Tone Zone Enhancer"; }
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram(int) override {}
-    const juce::String getProgramName(int) override { return {}; }
-    void changeProgramName(int, const juce::String&) override {}
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram(int index) override;
+    const juce::String getProgramName(int index) override;
+    void changeProgramName(int index, const juce::String& newName) override;
 
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
@@ -138,7 +138,8 @@ private:
 
     SmoothParam sPunch, sWarmth, sBoom, sGlue, sAir, sWidth;
     SmoothParam sDensity, sMotion, sEra, sMix, sDrive;
-    SmoothParam sMaster, sSparkCeil, sSparkMix, sShine, sShineMix;
+    SmoothParam sMaster, sSparkLufsTarget, sSparkCeil, sSparkMix;
+    SmoothParam sShineGain, sShineFreq, sShineQ, sShineMix;
 
     SafetyLayer safetyPre, safetyPost;
     SlewLimiter slewL, slewR;
@@ -148,25 +149,35 @@ private:
     float glueGain = 1.0f;
     float xoverLowL = 0.0f, xoverLowR = 0.0f, xoverCoeff = 0.0f;
     float hpStateL = 0.0f, hpStateR = 0.0f;
+    float shineStateL = 0.0f, shineStateR = 0.0f;
     float sideLowState = 0.0f, sideLowCoeff = 0.0f;
     float sparkGrEnvelope = 0.0f;
     float sparkAttackCoeff = 0.2f, sparkReleaseCoeff = 0.01f;
+    float sparkLoudnessEnv = 0.0f;
+    float sparkLoudnessCoeff = 0.0f;
 
     double currentSampleRate = 44100.0;
     int maxPreparedBlockSize = 0;
     uint32_t noiseSeed = 12345u;
+    bool textureEnabled = true;
 
     juce::AudioBuffer<float> dryBuffer;
     std::unique_ptr<juce::dsp::Oversampling<float>> os2x;
     std::unique_ptr<juce::dsp::Oversampling<float>> os4x;
-    int activeQualityMode = 1;
+    std::unique_ptr<juce::dsp::Oversampling<float>> os8x;
+    std::unique_ptr<juce::dsp::Oversampling<float>> os16x;
+    int activeQualityMode = 4;
+    int currentProgramIndex = 0;
+    juce::StringArray programNames;
 
     void initSmoothers(double sampleRate);
     void updateTargetsFromAPVTS();
     void processCore(float* dataL, float* dataR, int numSamples, float osFactor);
     void updateMeters(const float* inL, const float* inR, const float* outL, const float* outR, int n, float sparkGRDb);
     int getRequestedQualityMode() const;
+    int getAdaptiveQualityMode(int requestedMode, const float* inL, const float* inR, int n) const;
     void updateLatencyFromQuality(int mode);
+    void applyFactoryProgram(int index);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BTZAudioProcessor)
 };

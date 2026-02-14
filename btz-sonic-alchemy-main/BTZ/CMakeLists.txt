@@ -41,7 +41,7 @@ endif()
 
 juce_add_plugin(BTZ
     FORMATS VST3 Standalone
-    PRODUCT_NAME "Box Tone Zone (BTZ)"
+    PRODUCT_NAME "BTZ - The Box Tone Zone Enhancer"
     PLUGIN_MANUFACTURER_CODE BTZa
     PLUGIN_CODE Btz1
     COMPANY_NAME "BTZ Audio"
