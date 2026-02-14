@@ -9,6 +9,13 @@ static inline float fastTanh(float x) {
     const float x2 = x * x;
     return x * (27.0f + x2) / (27.0f + 9.0f * x2);
 }
+
+// DSP constants
+constexpr float kTwoPi = 6.2831853f;
+constexpr float kMultibandCrossoverFreq = 180.0f;
+constexpr float kSidechainLowpassFreq = 1600.0f;
+constexpr float kSparkAttackMs = 0.25f;
+constexpr float kSparkReleaseMs = 120.0f;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout BTZAudioProcessor::createParameterLayout() {
