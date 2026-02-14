@@ -72,7 +72,26 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
     initKnob(kDrive, lDrive); initKnob(kMix, lMix); initKnob(kMaster, lMaster);
 
     setupSlider(sCeiling); setupSlider(sSparkMix); setupSlider(sShine);
-    setupSlider(sShineMix); setupSlider(sIntensity);
+    setupSlider(sShineMix);
+
+    auto setupChoice = [&](juce::ComboBox& c) {
+        addAndMakeVisible(c);
+        c.setJustificationType(juce::Justification::centred);
+        c.setColour(juce::ComboBox::backgroundColourId, BTZColors::well);
+        c.setColour(juce::ComboBox::outlineColourId, BTZColors::text3);
+        c.setColour(juce::ComboBox::textColourId, BTZColors::text);
+        c.setColour(juce::ComboBox::arrowColourId, BTZColors::text2);
+    };
+    setupChoice(cQuality);
+    setupChoice(cCharacter);
+    cQuality.addItem("Eco", 1);
+    cQuality.addItem("2x", 2);
+    cQuality.addItem("4x", 3);
+    cCharacter.addItem("Character A", 1);
+    cCharacter.addItem("Character B", 2);
+
+    addAndMakeVisible(btnAutoGain);
+    btnAutoGain.setColour(juce::ToggleButton::textColourId, BTZColors::text2);
 
     auto& apvts = proc.getAPVTS();
     aPunch    = std::make_unique<SliderAttachment>(apvts, "punch", kPunch);
@@ -91,8 +110,14 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
     aSparkMix = std::make_unique<SliderAttachment>(apvts, "sparkMix", sSparkMix);
     aShine    = std::make_unique<SliderAttachment>(apvts, "shineAmount", sShine);
     aShineMix = std::make_unique<SliderAttachment>(apvts, "shineMix", sShineMix);
-    aIntensity = std::make_unique<SliderAttachment>(apvts, "masterIntensity", sIntensity);
+    aQuality = std::make_unique<ComboAttachment>(apvts, "qualityMode", cQuality);
+    aCharacter = std::make_unique<ComboAttachment>(apvts, "stabilityMode", cCharacter);
     aBypass = std::make_unique<ButtonAttachment>(apvts, "bypass", btnBypass);
+    aAutoGain = std::make_unique<ButtonAttachment>(apvts, "autogain", btnAutoGain);
+
+    cQuality.setTooltip("Oversampling quality mode (Eco/2x/4x).");
+    cCharacter.setTooltip("Character voicing slot.");
+    btnAutoGain.setTooltip("Enable output level compensation.");
 
     startTimerHz(45);
 }
@@ -237,7 +262,8 @@ void BTZAudioProcessorEditor::resized() {
     hideKnob(kGlue, lGlue); hideKnob(kAir, lAir); hideKnob(kWidth, lWidth);
     hideKnob(kDensity, lDensity); hideKnob(kMotion, lMotion); hideKnob(kEra, lEra);
     hideKnob(kDrive, lDrive); hideKnob(kMix, lMix); hideKnob(kMaster, lMaster);
-    sCeiling.setVisible(false); sSparkMix.setVisible(false); sShine.setVisible(false); sShineMix.setVisible(false); sIntensity.setVisible(false);
+    sCeiling.setVisible(false); sSparkMix.setVisible(false); sShine.setVisible(false); sShineMix.setVisible(false);
+    cQuality.setVisible(false); cCharacter.setVisible(false); btnAutoGain.setVisible(false);
 
     if (currentPage == 0) {
         const int knob = 74, label = 16;
@@ -260,9 +286,18 @@ void BTZAudioProcessorEditor::resized() {
         sCeiling.setBounds(left.removeFromTop(30)); left.removeFromTop(8);
         sSparkMix.setBounds(left.removeFromTop(30));
         sShine.setBounds(right.removeFromTop(30)); right.removeFromTop(8);
-        sShineMix.setBounds(right.removeFromTop(30)); right.removeFromTop(24);
-        sIntensity.setBounds(right.removeFromTop(30));
-        sCeiling.setVisible(true); sSparkMix.setVisible(true); sShine.setVisible(true); sShineMix.setVisible(true); sIntensity.setVisible(true);
+        sShineMix.setBounds(right.removeFromTop(30));
+        sCeiling.setVisible(true); sSparkMix.setVisible(true); sShine.setVisible(true); sShineMix.setVisible(true);
+    } else if (currentPage == 2) {
+        auto advanced = content.reduced(220, 130);
+        cQuality.setBounds(advanced.removeFromTop(30));
+        advanced.removeFromTop(12);
+        cCharacter.setBounds(advanced.removeFromTop(30));
+        advanced.removeFromTop(18);
+        btnAutoGain.setBounds(advanced.removeFromTop(28));
+        cQuality.setVisible(true);
+        cCharacter.setVisible(true);
+        btnAutoGain.setVisible(true);
     }
 }
 

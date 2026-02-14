@@ -171,7 +171,7 @@ void BTZAudioProcessor::releaseResources() {
 
 int BTZAudioProcessor::getRequestedQualityMode() const {
     const float quality = apvts.getRawParameterValue("qualityMode")->load(std::memory_order_relaxed);
-    return (int) juce::jlimit(0.0f, 2.0f, quality);
+    return juce::jlimit(0, 2, (int) std::lround(quality));
 }
 
 void BTZAudioProcessor::updateLatencyFromQuality(int mode) {
@@ -215,7 +215,6 @@ void BTZAudioProcessor::processCore(float* dataL, float* dataR, int numSamples, 
         float density = sDensity.next();
         float motion = sMotion.next();
         float era = sEra.next();
-        float mix = sMix.next();
         float drive = sDrive.next();
         float master = sMaster.next();
         float ceilDb = sSparkCeil.next();
@@ -386,13 +385,6 @@ void BTZAudioProcessor::processCore(float* dataL, float* dataR, int numSamples, 
         L *= neutralComp;
         R *= neutralComp;
 
-        if (n < maxPreparedBlockSize) {
-            const float dryL = dryBuffer.getSample(0, n);
-            const float dryR = dryBuffer.getSample(1, n);
-            L = dryL + (L - dryL) * mix;
-            R = dryR + (R - dryR) * mix;
-        }
-
         dataL[n] = L;
         dataR[n] = R;
     }
@@ -472,9 +464,11 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     if (numSamples <= 0 || buffer.getNumChannels() < 2)
         return;
 
-    const int copyCount = juce::jmin(numSamples, maxPreparedBlockSize);
-    dryBuffer.copyFrom(0, 0, buffer, 0, 0, copyCount);
-    dryBuffer.copyFrom(1, 0, buffer, 1, 0, copyCount);
+    const int drySampleCount = juce::jmin(numSamples, dryBuffer.getNumSamples());
+    if (drySampleCount > 0) {
+        dryBuffer.copyFrom(0, 0, buffer, 0, 0, drySampleCount);
+        dryBuffer.copyFrom(1, 0, buffer, 1, 0, drySampleCount);
+    }
 
     const float* dryReadL = dryBuffer.getReadPointer(0);
     const float* dryReadR = dryBuffer.getReadPointer(1);
@@ -508,18 +502,29 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         } else {
             processCore(dataL, dataR, numSamples, 1.0f);
         }
+
+        // Apply wet/dry at native rate after any oversampling up/down path.
+        for (int n = 0; n < drySampleCount; ++n) {
+            const float mix = sMix.next();
+            dataL[n] = dryReadL[n] + (dataL[n] - dryReadL[n]) * mix;
+            dataR[n] = dryReadR[n] + (dataR[n] - dryReadR[n]) * mix;
+        }
+
+        // Keep smoother state coherent even when host block exceeds prepared scratch size.
+        for (int n = drySampleCount; n < numSamples; ++n)
+            (void) sMix.next();
     }
 
-    if (autoGain > 0.5f && ! bypassed) {
+    if (autoGain > 0.5f && ! bypassed && drySampleCount > 0) {
         float inRmsSq = 0.0f, outRmsSq = 0.0f;
-        for (int n = 0; n < numSamples; ++n) {
+        for (int n = 0; n < drySampleCount; ++n) {
             const float iL = dryReadL[n];
             const float iR = dryReadR[n];
             inRmsSq += iL * iL + iR * iR;
             outRmsSq += dataL[n] * dataL[n] + dataR[n] * dataR[n];
         }
-        const float inRms = std::sqrt(inRmsSq / juce::jmax(1, numSamples * 2) + 1.0e-20f);
-        const float outRms = std::sqrt(outRmsSq / juce::jmax(1, numSamples * 2) + 1.0e-20f);
+        const float inRms = std::sqrt(inRmsSq / juce::jmax(1, drySampleCount * 2) + 1.0e-20f);
+        const float outRms = std::sqrt(outRmsSq / juce::jmax(1, drySampleCount * 2) + 1.0e-20f);
         if (inRms > 1.0e-6f && outRms > 1.0e-6f) {
             const float gainDb = juce::jlimit(-4.0f, 4.0f, juce::Decibels::gainToDecibels(inRms / outRms, 0.0f));
             const float gain = juce::Decibels::decibelsToGain(gainDb);
@@ -535,7 +540,16 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         sparkGrEnvelope *= 0.9f;
     }
 
-    updateMeters(dryReadL, dryReadR, dataL, dataR, numSamples, sparkGrEnvelope);
+    const float* meterInL = dryReadL;
+    const float* meterInR = dryReadR;
+    int meterSamples = drySampleCount;
+    if (meterSamples <= 0) {
+        meterInL = dataL;
+        meterInR = dataR;
+        meterSamples = numSamples;
+    }
+
+    updateMeters(meterInL, meterInR, dataL, dataR, meterSamples, sparkGrEnvelope);
 }
 
 void BTZAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
