@@ -1,4 +1,4 @@
-# Build artifacts
+# C++ Build artifacts
 **/build/
 **/build-debug/
 **/build-*/
@@ -19,9 +19,31 @@
 *.exe
 *.vst3
 
-# IDE/session artifacts
+# JavaScript/Node.js
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+node_modules
+dist
+dist-ssr
+*.local
+
+# IDE/Editor directories and files
 .cursor/
 .memory/.state/
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Temporary imported snapshots
 .tmp_zip_apply/
