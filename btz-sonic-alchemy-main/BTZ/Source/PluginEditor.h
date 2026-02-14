@@ -48,6 +48,7 @@ private:
 
     juce::TextButton tabMain { "MAIN" }, tabSpark { "SPARK" }, tabAdvanced { "ADVANCED" };
     juce::ToggleButton btnBypass { "BYPASS" };
+    juce::ToggleButton btnTexture { "TEXTURE" };
 
     juce::Slider kPunch, kWarmth, kBoom, kGlue, kAir, kWidth, kDensity, kMotion, kEra;
     juce::Slider kDrive, kMix, kMaster;
@@ -56,14 +57,21 @@ private:
     juce::Label lDensity{ "", "Density" }, lMotion{ "", "Motion" }, lEra{ "", "Era" };
     juce::Label lDrive{ "", "Drive" }, lMix{ "", "Mix" }, lMaster{ "", "Master" };
 
-    juce::Slider sCeiling, sSparkMix, sShine, sShineMix, sIntensity;
+    juce::Slider sSparkLufs, sCeiling, sSparkMix;
+    juce::Slider sShineGain, sShineFreq, sShineQ, sShineMix;
+    juce::ComboBox cQuality, cCharacter;
+    juce::ToggleButton btnAutoGain { "AutoGain" };
+    juce::ToggleButton btnAdaptiveOs { "Adaptive Oversampling" };
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
+    using ComboAttachment = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
     std::unique_ptr<SliderAttachment> aPunch, aWarmth, aBoom, aGlue, aAir, aWidth;
     std::unique_ptr<SliderAttachment> aDensity, aMotion, aEra, aMix, aDrive, aMaster;
-    std::unique_ptr<SliderAttachment> aCeiling, aSparkMix, aShine, aShineMix, aIntensity;
-    std::unique_ptr<ButtonAttachment> aBypass;
+    std::unique_ptr<SliderAttachment> aSparkLufs, aCeiling, aSparkMix;
+    std::unique_ptr<SliderAttachment> aShineGain, aShineFreq, aShineQ, aShineMix;
+    std::unique_ptr<ComboAttachment> aQuality, aCharacter;
+    std::unique_ptr<ButtonAttachment> aBypass, aTexture, aAutoGain, aAdaptiveOs;
 
     float inPeakL = -100.0f, inPeakR = -100.0f, inRmsL = -100.0f, inRmsR = -100.0f;
     float outPeakL = -100.0f, outPeakR = -100.0f, outRmsL = -100.0f, outRmsR = -100.0f;
