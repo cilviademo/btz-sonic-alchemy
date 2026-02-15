@@ -71,8 +71,35 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
     initKnob(kDensity, lDensity); initKnob(kMotion, lMotion); initKnob(kEra, lEra);
     initKnob(kDrive, lDrive); initKnob(kMix, lMix); initKnob(kMaster, lMaster);
 
+    // Set tooltips for main controls
+    kPunch.setTooltip("Transient shaping with harmonic enhancement - adds attack and presence to drums");
+    kWarmth.setTooltip("Analog-style preamp saturation with even/odd harmonics");
+    kBoom.setTooltip("Low-frequency enhancement for added weight and power");
+    kGlue.setTooltip("Multiband compression for cohesive mix - adds punch and density");
+    kAir.setTooltip("High-frequency enhancement for clarity and sparkle");
+    kWidth.setTooltip("Stereo width control - widens high frequencies while keeping low-end mono-safe");
+    kDensity.setTooltip("Additional saturation for thickness and cohesion");
+    kMotion.setTooltip("Analog noise emulation for vintage character and life");
+    kEra.setTooltip("Vintage (-1) to Modern (+1) - adjusts saturation character and headroom");
+    kDrive.setTooltip("Input drive (0-12 dB) - adds harmonic saturation before processing");
+    kMix.setTooltip("Dry/wet blend - 0% = bypass, 100% = fully processed");
+    kMaster.setTooltip("Master intensity control - scales all processing parameters together");
+
     setupSlider(sCeiling); setupSlider(sSparkMix); setupSlider(sShine);
     setupSlider(sShineMix); setupSlider(sIntensity);
+    setupSlider(sQualityMode); setupSlider(sCharacter); setupSlider(sAutoGain);
+
+    // Set tooltips for Spark tab
+    sCeiling.setTooltip("True-peak limiter ceiling (-3 to 0 dB) - prevents inter-sample peaks");
+    sSparkMix.setTooltip("SPARK limiter dry/wet mix - blend hard limiting with unprocessed signal");
+    sShine.setTooltip("Psychoacoustic high-frequency enhancement (0-6 dB) - adds air and brilliance");
+    sShineMix.setTooltip("SHINE enhancement dry/wet mix - control intensity of air enhancement");
+    sIntensity.setTooltip("Master intensity (duplicate of main Master knob)");
+
+    // Set tooltips for Advanced tab
+    sQualityMode.setTooltip("Processing quality: 0 = Draft (1x), 1 = Good (2x oversample), 2 = Best (4x oversample)");
+    sCharacter.setTooltip("Character mode: 0 = Smooth, 1 = Aggressive - affects saturation response");
+    sAutoGain.setTooltip("Automatic gain compensation - matches output RMS to input RMS level");
 
     auto& apvts = proc.getAPVTS();
     aPunch    = std::make_unique<SliderAttachment>(apvts, "punch", kPunch);
@@ -92,6 +119,9 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
     aShine    = std::make_unique<SliderAttachment>(apvts, "shineAmount", sShine);
     aShineMix = std::make_unique<SliderAttachment>(apvts, "shineMix", sShineMix);
     aIntensity = std::make_unique<SliderAttachment>(apvts, "masterIntensity", sIntensity);
+    aQualityMode = std::make_unique<SliderAttachment>(apvts, "qualityMode", sQualityMode);
+    aCharacter = std::make_unique<SliderAttachment>(apvts, "stabilityMode", sCharacter);
+    aAutoGain = std::make_unique<SliderAttachment>(apvts, "autogain", sAutoGain);
     aBypass = std::make_unique<ButtonAttachment>(apvts, "bypass", btnBypass);
 
     startTimerHz(45);
@@ -238,6 +268,7 @@ void BTZAudioProcessorEditor::resized() {
     hideKnob(kDensity, lDensity); hideKnob(kMotion, lMotion); hideKnob(kEra, lEra);
     hideKnob(kDrive, lDrive); hideKnob(kMix, lMix); hideKnob(kMaster, lMaster);
     sCeiling.setVisible(false); sSparkMix.setVisible(false); sShine.setVisible(false); sShineMix.setVisible(false); sIntensity.setVisible(false);
+    sQualityMode.setVisible(false); sCharacter.setVisible(false); sAutoGain.setVisible(false);
 
     if (currentPage == 0) {
         const int knob = 74, label = 16;
@@ -263,6 +294,12 @@ void BTZAudioProcessorEditor::resized() {
         sShineMix.setBounds(right.removeFromTop(30)); right.removeFromTop(24);
         sIntensity.setBounds(right.removeFromTop(30));
         sCeiling.setVisible(true); sSparkMix.setVisible(true); sShine.setVisible(true); sShineMix.setVisible(true); sIntensity.setVisible(true);
+    } else if (currentPage == 2) {
+        auto advancedArea = content.reduced(40, 60);
+        sQualityMode.setBounds(advancedArea.removeFromTop(36)); advancedArea.removeFromTop(16);
+        sCharacter.setBounds(advancedArea.removeFromTop(36)); advancedArea.removeFromTop(16);
+        sAutoGain.setBounds(advancedArea.removeFromTop(36));
+        sQualityMode.setVisible(true); sCharacter.setVisible(true); sAutoGain.setVisible(true);
     }
 }
 

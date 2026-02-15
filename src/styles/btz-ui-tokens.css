@@ -1,0 +1,22 @@
+:root{
+  --btz-radius: 16px;
+  --btz-pad: 20px;
+
+  --btz-ink: hsl(0 0% 96%);
+  --btz-ink-muted: hsl(0 0% 72%);
+  --btz-surface: hsl(220 12% 10%);
+  --btz-panel: hsl(220 12% 13%);
+  --btz-panel-2: hsl(220 12% 16%);
+
+  --btz-pink: #ff2fb9;      /* neon pink */
+  --btz-green: #39ff88;     /* neon green */
+  --btz-blue:  #274bff;     /* royal blue */
+  --btz-amber: #ff8c00;
+
+  --gradient-main:
+    radial-gradient(1200px 800px at 20% -10%, rgba(255,47,185,.12), transparent 40%),
+    radial-gradient(1000px 600px at 100% 20%, rgba(57,255,136,.10), transparent 45%),
+    linear-gradient(180deg, hsl(220 12% 10%), hsl(220 12% 7%));
+
+  --shadow-panel: 0 20px 60px rgba(0,0,0,.45);
+}

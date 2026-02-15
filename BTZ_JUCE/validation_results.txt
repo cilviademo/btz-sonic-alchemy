@@ -1,0 +1,7 @@
+========================================
+BTZ Build Validation
+========================================
+
+=== Test 1: Build Artifacts Exist ===
+
+[0;32m✓ PASS:[0m VST3 bundle exists

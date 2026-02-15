@@ -57,12 +57,14 @@ private:
     juce::Label lDrive{ "", "Drive" }, lMix{ "", "Mix" }, lMaster{ "", "Master" };
 
     juce::Slider sCeiling, sSparkMix, sShine, sShineMix, sIntensity;
+    juce::Slider sQualityMode, sCharacter, sAutoGain;
 
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
     std::unique_ptr<SliderAttachment> aPunch, aWarmth, aBoom, aGlue, aAir, aWidth;
     std::unique_ptr<SliderAttachment> aDensity, aMotion, aEra, aMix, aDrive, aMaster;
     std::unique_ptr<SliderAttachment> aCeiling, aSparkMix, aShine, aShineMix, aIntensity;
+    std::unique_ptr<SliderAttachment> aQualityMode, aCharacter, aAutoGain;
     std::unique_ptr<ButtonAttachment> aBypass;
 
     float inPeakL = -100.0f, inPeakR = -100.0f, inRmsL = -100.0f, inRmsR = -100.0f;

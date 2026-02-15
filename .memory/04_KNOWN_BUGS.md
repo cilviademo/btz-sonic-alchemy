@@ -2,12 +2,26 @@
 
 ## Open
 
-### C4244 warnings in DSP headers
-- Files: `BTZ/Source/TapeEmulator.h`, `BTZ/Source/GranularProcessor.h`
-- Symptom: conversion from `double` to `float`, possible loss of data
-- Severity: Low
-- Workaround: None needed for current build/install
-- Planned Fix: explicit `static_cast<float>(...)` where appropriate
+### Advanced tab page not implemented
+- Files: `BTZ/Source/PluginEditor.cpp:266`
+- Symptom: Advanced tab exists but displays empty page
+- Severity: Medium (missing Quality Mode and Character controls in UI)
+- Workaround: Parameters accessible via automation
+- Planned Fix: Implement sliders for qualityMode, stabilityMode, autogain parameters
+
+### Missing parameter tooltips
+- Files: `BTZ/Source/PluginEditor.cpp`
+- Symptom: No tooltips on knobs/sliders to explain parameters
+- Severity: Low (UX improvement)
+- Workaround: Trial and error
+- Planned Fix: Add tooltip text for all 20 parameters
+
+### Magic numbers in DSP code
+- Files: `BTZ/Source/PluginProcessor.cpp`
+- Symptom: Hardcoded numeric constants without named explanations
+- Severity: Low (maintainability)
+- Workaround: None needed
+- Planned Fix: Extract to named constants with comments
 
 ## Recently Resolved
 

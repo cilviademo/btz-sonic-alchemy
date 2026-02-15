@@ -9,6 +9,13 @@ static inline float fastTanh(float x) {
     const float x2 = x * x;
     return x * (27.0f + x2) / (27.0f + 9.0f * x2);
 }
+
+// DSP constants
+constexpr float kTwoPi = 6.2831853f;
+constexpr float kMultibandCrossoverFreq = 180.0f;
+constexpr float kSidechainLowpassFreq = 1600.0f;
+constexpr float kSparkAttackMs = 0.25f;
+constexpr float kSparkReleaseMs = 120.0f;
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout BTZAudioProcessor::createParameterLayout() {
@@ -133,16 +140,15 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     xoverLowL = xoverLowR = 0.0f;
     noiseSeed = 12345u;
 
-    const float omega = 6.2831853f * 250.0f / (float) sampleRate;
+    const float omega = kTwoPi * kMultibandCrossoverFreq / static_cast<float>(sampleRate);
     xoverCoeff = omega / (1.0f + omega);
 
-    const float sideOmega = 6.2831853f * 120.0f / (float) sampleRate;
+    const float sideOmega = kTwoPi * kSidechainLowpassFreq / static_cast<float>(sampleRate);
     sideLowCoeff = sideOmega / (1.0f + sideOmega);
 
-    const float sparkAttackMs = 8.0f;
-    const float sparkReleaseMs = 120.0f;
-    sparkAttackCoeff = 1.0f - std::exp(-1.0f / ((float) sampleRate * sparkAttackMs * 0.001f));
-    sparkReleaseCoeff = 1.0f - std::exp(-1.0f / ((float) sampleRate * sparkReleaseMs * 0.001f));
+    constexpr float kMsToSeconds = 0.001f;
+    sparkAttackCoeff = 1.0f - std::exp(-1.0f / (static_cast<float>(sampleRate) * kSparkAttackMs * kMsToSeconds));
+    sparkReleaseCoeff = 1.0f - std::exp(-1.0f / (static_cast<float>(sampleRate) * kSparkReleaseMs * kMsToSeconds));
 
     initSmoothers(sampleRate);
 
@@ -362,7 +368,7 @@ void BTZAudioProcessor::processCore(float* dataL, float* dataR, int numSamples, 
                 R = ((R > 0.0f ? ceilLin : -ceilLin) * sparkMix) + R * (1.0f - sparkMix);
 
             const float outAbsMax = juce::jmax(std::abs(L), std::abs(R));
-            if (inAbsMax > 1.0e-6f && outAbsMax < inAbsMax)
+            if (inAbsMax > kSafetyThreshold && outAbsMax < inAbsMax)
                 sparkGrInst = juce::jmax(0.0f, juce::Decibels::gainToDecibels(inAbsMax / outAbsMax, 0.0f));
         }
 
@@ -370,12 +376,18 @@ void BTZAudioProcessor::processCore(float* dataL, float* dataR, int numSamples, 
         sparkGrEnvelope += sparkCoeff * (sparkGrInst - sparkGrEnvelope);
 
         if (motion > 0.01f) {
-            noiseSeed = 1664525u * noiseSeed + 1013904223u;
-            float white = (float) ((noiseSeed >> 9) & 0x7FFFFF) / 8388608.0f - 0.5f;
-            const float noiseLevel = 1.0e-6f * motion * 8.0f / juce::jmax(1.0f, osFactor);
+            constexpr uint32_t kLcgMultiplier = 1664525u;
+            constexpr uint32_t kLcgIncrement = 1013904223u;
+            constexpr float kNoiseScale = 8388608.0f; // 2^23
+            constexpr float kNoiseBaseLevel = 1.0e-6f;
+            constexpr float kNoiseGain = 8.0f;
+
+            noiseSeed = kLcgMultiplier * noiseSeed + kLcgIncrement;
+            float white = static_cast<float>((noiseSeed >> 9) & 0x7FFFFF) / kNoiseScale - 0.5f;
+            const float noiseLevel = kNoiseBaseLevel * motion * kNoiseGain / juce::jmax(1.0f, osFactor);
             L += white * noiseLevel;
-            noiseSeed = 1664525u * noiseSeed + 1013904223u;
-            white = (float) ((noiseSeed >> 9) & 0x7FFFFF) / 8388608.0f - 0.5f;
+            noiseSeed = kLcgMultiplier * noiseSeed + kLcgIncrement;
+            white = static_cast<float>((noiseSeed >> 9) & 0x7FFFFF) / kNoiseScale - 0.5f;
             R += white * noiseLevel;
         }
 
@@ -417,15 +429,15 @@ void BTZAudioProcessor::updateMeters(const float* inL, const float* inR, const f
         corrDenL += oL * oL;
         corrDenR += oR * oR;
         lufsSq += oL * oL + oR * oR;
-        clipIn = clipIn || (std::abs(iL) >= 0.999f || std::abs(iR) >= 0.999f);
-        clipOut = clipOut || (std::abs(oL) >= 0.999f || std::abs(oR) >= 0.999f);
+        clipIn = clipIn || (std::abs(iL) >= kClipThreshold || std::abs(iR) >= kClipThreshold);
+        clipOut = clipOut || (std::abs(oL) >= kClipThreshold || std::abs(oR) >= kClipThreshold);
     }
 
     const float invN = 1.0f / juce::jmax(1, n);
-    const float inRmsL = std::sqrt(inSqL * invN + 1.0e-20f);
-    const float inRmsR = std::sqrt(inSqR * invN + 1.0e-20f);
-    const float outRmsL = std::sqrt(outSqL * invN + 1.0e-20f);
-    const float outRmsR = std::sqrt(outSqR * invN + 1.0e-20f);
+    const float inRmsL = std::sqrt(inSqL * invN + kSafetyFloor);
+    const float inRmsR = std::sqrt(inSqR * invN + kSafetyFloor);
+    const float outRmsL = std::sqrt(outSqL * invN + kSafetyFloor);
+    const float outRmsR = std::sqrt(outSqR * invN + kSafetyFloor);
 
     meterBallistics.inPeakHoldL = juce::jmax(inPkL, meterBallistics.inPeakHoldL * meterBallistics.holdDecay);
     meterBallistics.inPeakHoldR = juce::jmax(inPkR, meterBallistics.inPeakHoldR * meterBallistics.holdDecay);

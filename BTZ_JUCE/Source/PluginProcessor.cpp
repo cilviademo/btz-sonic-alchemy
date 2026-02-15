@@ -1,0 +1,721 @@
+/*
+  PluginProcessor.cpp
+  BTZ - The Box Tone Zone Enhancer
+*/
+
+#include "PluginProcessor.h"
+#include "PluginEditor.h"
+
+BTZAudioProcessor::BTZAudioProcessor()
+#ifndef JucePlugin_PreferredChannelConfigurations
+     : AudioProcessor (BusesProperties()
+                     #if ! JucePlugin_IsMidiEffect
+                      #if ! JucePlugin_IsSynth
+                       .withInput  ("Input",  juce::AudioChannelSet::stereo(), true)
+                      #endif
+                       .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
+                     #endif
+                       ),
+#endif
+       apvts(*this, nullptr, "Parameters", BTZParams::createParameterLayout()),
+       presetManager(apvts)  // P1.3: Initialize preset manager with APVTS reference
+{
+}
+
+BTZAudioProcessor::~BTZAudioProcessor()
+{
+}
+
+const juce::String BTZAudioProcessor::getName() const
+{
+    return JucePlugin_Name;
+}
+
+bool BTZAudioProcessor::acceptsMidi() const
+{
+   #if JucePlugin_WantsMidiInput
+    return true;
+   #else
+    return false;
+   #endif
+}
+
+bool BTZAudioProcessor::producesMidi() const
+{
+   #if JucePlugin_ProducesMidiOutput
+    return true;
+   #else
+    return false;
+   #endif
+}
+
+bool BTZAudioProcessor::isMidiEffect() const
+{
+   #if JucePlugin_IsMidiEffect
+    return true;
+   #else
+    return false;
+   #endif
+}
+
+double BTZAudioProcessor::getTailLengthSeconds() const
+{
+    return 0.0;
+}
+
+int BTZAudioProcessor::getNumPrograms()
+{
+    return 1;
+}
+
+int BTZAudioProcessor::getCurrentProgram()
+{
+    return 0;
+}
+
+void BTZAudioProcessor::setCurrentProgram (int index)
+{
+}
+
+const juce::String BTZAudioProcessor::getProgramName (int index)
+{
+    return {};
+}
+
+void BTZAudioProcessor::changeProgramName (int index, const juce::String& newName)
+{
+}
+
+void BTZAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+{
+    // Mark as prepared (prevents crashes if host calls processBlock before prepare)
+    callOrderGuard.markPrepared(sampleRate, samplesPerBlock);
+
+    // FIX #1: CRITICAL - Denormal protection (prevents 10-100x CPU spikes)
+    juce::FloatVectorOperations::disableDenormalisedNumberSupport();
+
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = sampleRate;
+    spec.maximumBlockSize = samplesPerBlock;
+    spec.numChannels = getTotalNumOutputChannels();
+
+    // Prepare all DSP modules (legacy)
+    transientShaper.prepare(spec);
+    saturation.prepare(spec);
+    subHarmonic.prepare(spec);
+    sparkLimiter.prepare(spec);
+    shineEQ.prepare(spec);
+    consoleEmulator.prepare(spec);
+    oversampler.prepare(spec);
+
+    // Phase 1-3: Prepare enhanced modules
+    enhancedSpark.prepare(sampleRate, samplesPerBlock, spec.numChannels);
+    enhancedShine.prepare(sampleRate, samplesPerBlock, spec.numChannels);
+    safetyLayer.prepare(sampleRate, samplesPerBlock);
+    longTermMemory.prepare(sampleRate);
+    stereoEnhancement.prepare(sampleRate, samplesPerBlock);
+    performanceGuardrails.prepare(sampleRate, samplesPerBlock);
+    deterministicProcessing.prepare(sampleRate);
+    oversamplingManager.prepare(sampleRate, samplesPerBlock, spec.numChannels);
+
+    // ComponentVariance: Initialize with per-instance seed
+    componentVariance.randomizeSeed();  // Each instance gets unique character
+    componentVariance.setVarianceAmount(1.0f);  // Full analog variance enabled
+
+    inputGainProcessor.prepare(spec);
+    outputGainProcessor.prepare(spec);
+
+    // P2-3: Initialize parameter smoothing using constants
+    smoothedPunch.reset(sampleRate, BTZConstants::parameterSmoothingTime);
+    smoothedWarmth.reset(sampleRate, BTZConstants::parameterSmoothingTime);
+    smoothedBoom.reset(sampleRate, BTZConstants::parameterSmoothingTime);
+    smoothedMix.reset(sampleRate, BTZConstants::parameterSmoothingTime);
+    smoothedDrive.reset(sampleRate, BTZConstants::parameterSmoothingTime);
+    smoothedInputGain.reset(sampleRate, BTZConstants::gainSmoothingTime);
+    smoothedOutputGain.reset(sampleRate, BTZConstants::gainSmoothingTime);
+
+    // DC blockers now handled by SafetyLayer (Phase 1)
+
+    // P1-5 & P2-3: Report TOTAL latency to DAW (oversampling + lookahead)
+    int sparkOSIndex = apvts.getRawParameterValue(BTZParams::IDs::sparkOS)->load();
+    int oversamplingFactor = 1 << sparkOSIndex;  // 1x, 2x, 4x, 8x, 16x
+    int oversamplingLatency = (oversamplingFactor - 1) * samplesPerBlock / 2;
+
+    int totalLatency = oversamplingLatency + BTZConstants::sparkLimiterLookahead;
+    setLatencySamples(totalLatency);
+}
+
+void BTZAudioProcessor::releaseResources()
+{
+    // Mark as released (prevents stale processing if host re-uses instance)
+    callOrderGuard.markReleased();
+}
+
+#ifndef JucePlugin_PreferredChannelConfigurations
+bool BTZAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
+{
+  #if JucePlugin_IsMidiEffect
+    juce::ignoreUnused (layouts);
+    return true;
+  #else
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono()
+     && layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+
+   #if ! JucePlugin_IsSynth
+    if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
+        return false;
+   #endif
+
+    return true;
+  #endif
+}
+#endif
+
+void BTZAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
+{
+    // Phase 3: Performance monitoring - start timing this block
+    performanceGuardrails.startBlock();
+
+    // P2-6 FIX: Denormal protection at block level (some hosts reset FTZ flags)
+    juce::ScopedNoDenormals noDenormals;
+    juce::FloatVectorOperations::disableDenormalisedNumberSupport();
+
+    // P0 FIX: Host call order guard (some hosts call process before prepare!)
+    if (!callOrderGuard.safeToProcess())
+    {
+        buffer.clear();
+        performanceGuardrails.endBlock();  // End timing even if bypassed
+        return; // Skip processing if not prepared
+    }
+
+    // Phase 3: Deterministic processing - detect render mode (realtime vs offline)
+    if (auto* playHead = getPlayHead())
+    {
+        if (auto posInfo = playHead->getPosition())
+        {
+            deterministicProcessing.update(*posInfo);
+        }
+    }
+
+    // P1.3: Process preset ramping (click-free parameter transitions)
+    presetManager.processRamping(buffer.getNumSamples());
+
+    auto totalNumInputChannels  = getTotalNumInputChannels();
+    auto totalNumOutputChannels = getTotalNumOutputChannels();
+
+    // Clear unused output channels
+    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
+        buffer.clear (i, 0, buffer.getNumSamples());
+
+    // FIX #5: Silence optimization (skip processing if buffer is silent)
+    if (isBufferSilent(buffer))
+    {
+        consecutiveSilentBuffers++;
+        if (consecutiveSilentBuffers > BTZConstants::maxSilentBuffersBeforeSkip)
+        {
+            updateMetering(buffer); // Still update meters
+            performanceGuardrails.endBlock();  // End timing
+            return; // Skip DSP entirely
+        }
+    }
+    else
+    {
+        consecutiveSilentBuffers = 0;
+    }
+
+    // Check if plugin is active
+    bool isActive = apvts.getRawParameterValue(BTZParams::IDs::active)->load() > 0.5f;
+    if (!isActive)
+    {
+        updateMetering(buffer);
+        performanceGuardrails.endBlock();  // End timing
+        return; // Bypass
+    }
+
+    // P0-4 FIX: Set parameter targets once at start of block
+    smoothedPunch.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::punch)->load());
+    smoothedWarmth.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::warmth)->load());
+    smoothedBoom.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::boom)->load());
+    smoothedMix.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::mix)->load());
+    smoothedDrive.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::drive)->load());
+    smoothedInputGain.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::inputGain)->load());
+    smoothedOutputGain.setTargetValue(apvts.getRawParameterValue(BTZParams::IDs::outputGain)->load());
+
+    // P0-4 FIX: Advance smoothers by buffer length and get smoothed values
+    // This provides block-rate smoothing (better than single-sample but not perfect)
+    // Future: Implement sub-block processing for true sample-accurate smoothing
+    const int numSamples = buffer.getNumSamples();
+    smoothedPunch.skip(numSamples);
+    smoothedWarmth.skip(numSamples);
+    smoothedBoom.skip(numSamples);
+    smoothedMix.skip(numSamples);
+    smoothedDrive.skip(numSamples);
+    smoothedInputGain.skip(numSamples);
+    smoothedOutputGain.skip(numSamples);
+
+    float punchAmount = smoothedPunch.getCurrentValue();
+    float warmthAmount = smoothedWarmth.getCurrentValue();
+    float boomAmount = smoothedBoom.getCurrentValue();
+    float mixAmount = smoothedMix.getCurrentValue();
+    float driveAmount = smoothedDrive.getCurrentValue();
+    float inputGainDb = smoothedInputGain.getCurrentValue();
+    float outputGainDb = smoothedOutputGain.getCurrentValue();
+
+    // Read non-smoothed parameters once (these don't cause zipper noise - they're on/off or discrete)
+    bool sparkEnabled = apvts.getRawParameterValue(BTZParams::IDs::sparkEnabled)->load() > 0.5f;
+    float sparkLUFS = apvts.getRawParameterValue(BTZParams::IDs::sparkLUFS)->load();
+    float sparkCeiling = apvts.getRawParameterValue(BTZParams::IDs::sparkCeiling)->load();
+    float sparkMix = apvts.getRawParameterValue(BTZParams::IDs::sparkMix)->load();
+    int sparkOSIndex = apvts.getRawParameterValue(BTZParams::IDs::sparkOS)->load();
+    int sparkModeIndex = apvts.getRawParameterValue(BTZParams::IDs::sparkMode)->load();
+
+    bool shineEnabled = apvts.getRawParameterValue(BTZParams::IDs::shineEnabled)->load() > 0.5f;
+    float shineFreqHz = apvts.getRawParameterValue(BTZParams::IDs::shineFreqHz)->load();
+    float shineGainDb = apvts.getRawParameterValue(BTZParams::IDs::shineGainDb)->load();
+    float shineQ = apvts.getRawParameterValue(BTZParams::IDs::shineQ)->load();
+    float shineMix = apvts.getRawParameterValue(BTZParams::IDs::shineMix)->load();
+
+    int masterBlendIndex = apvts.getRawParameterValue(BTZParams::IDs::masterBlend)->load();
+    bool masterEnabled = apvts.getRawParameterValue(BTZParams::IDs::masterEnabled)->load() > 0.5f;
+
+    // Update DSP parameters
+    transientShaper.setPunch(punchAmount);
+    saturation.setWarmth(warmthAmount);
+    subHarmonic.setBoom(boomAmount);
+
+    // Legacy SparkLimiter (keeping for backward compatibility)
+    sparkLimiter.setTargetLUFS(sparkLUFS);
+    sparkLimiter.setCeiling(sparkCeiling);
+    sparkLimiter.setMix(sparkMix);
+    // P0 FIX: Detect OS factor change and defer to message thread (prevents allocation)
+    int newOSFactor = 1 << sparkOSIndex; // 1x, 2x, 4x, 8x, 16x
+    if (newOSFactor != pendingOSFactor.load(std::memory_order_relaxed))
+    {
+        pendingOSFactor.store(newOSFactor, std::memory_order_relaxed);
+        osFactorNeedsUpdate.store(true, std::memory_order_release);
+        triggerAsyncUpdate(); // Defer to message thread
+    }
+    sparkLimiter.setMode(sparkModeIndex == 0 ? SparkLimiter::Mode::Soft : SparkLimiter::Mode::Hard);
+
+    // Phase 1: EnhancedSPARK (true-peak limiter with hysteresis)
+    enhancedSpark.setCeiling(sparkCeiling);
+    enhancedSpark.setEnabled(sparkEnabled);
+    // Map OS index to quality tier: 0=Eco, 1=Normal, 2+=High
+    EnhancedSPARK::QualityTier tier = (sparkOSIndex == 0) ? EnhancedSPARK::QualityTier::Eco :
+                                       (sparkOSIndex == 1) ? EnhancedSPARK::QualityTier::Normal :
+                                                             EnhancedSPARK::QualityTier::High;
+    enhancedSpark.setQualityTier(tier);
+
+    // Legacy ShineEQ
+    shineEQ.setFrequency(shineFreqHz);
+    shineEQ.setGain(shineGainDb);
+    shineEQ.setQ(shineQ);
+    shineEQ.setMix(shineMix);
+
+    // Phase 1: EnhancedSHINE (psychoacoustic air band EQ)
+    enhancedShine.setFrequencyCenter(shineFreqHz);
+    enhancedShine.setShineAmount(juce::jmap(shineGainDb, -12.0f, 12.0f, 0.0f, 1.0f));
+    enhancedShine.setEnabled(shineEnabled);
+    enhancedShine.setPsychoacousticMode(true);  // Always use psychoacoustic processing
+
+    ConsoleEmulator::Type consoleType;
+    switch (masterBlendIndex)
+    {
+        case 0: consoleType = ConsoleEmulator::Type::Transparent; break;
+        case 1: consoleType = ConsoleEmulator::Type::Glue; break;
+        case 2: consoleType = ConsoleEmulator::Type::Vintage; break;
+        default: consoleType = ConsoleEmulator::Type::Transparent; break;
+    }
+    consoleEmulator.setType(consoleType);
+    consoleEmulator.setMix(mixAmount);
+
+    // Set I/O gains
+    inputGainProcessor.setGainDecibels(inputGainDb);
+    outputGainProcessor.setGainDecibels(outputGainDb);
+
+    // Create audio block
+    juce::dsp::AudioBlock<float> block(buffer);
+    juce::dsp::ProcessContextReplacing<float> context(block);
+
+    // === DSP CHAIN ===
+    /*
+     * CURRENT PROCESSING CHAIN (2026-01-14 - Post-Integration):
+     *
+     * 1. Input Gain (juce::dsp::Gain)
+     * 2. SafetyLayer Pre (DC block, denormal guard, NaN/Inf check)
+     * 3. LongTermMemory Update (energy tracking for adaptive processing)
+     * 4. [CONDITIONAL OVERSAMPLING FOR TRANSIENT + SATURATION]
+     *    - TransientShaper (punch)
+     *    - Saturation (warmth)
+     * 5. EnhancedSPARK (true-peak limiter with hysteresis, internal oversampling)
+     * 6. SubHarmonic (boom)
+     * 7. EnhancedSHINE (psychoacoustic air band EQ, 24 Bark bands)
+     * 8. ConsoleEmulator (mix glue: Transparent/Glue/Vintage)
+     * 9. StereoEnhancement (micro-drift, width)
+     * 10. Output Gain
+     * 11. SafetyLayer Post (DC block, denormal guard, NaN/Inf sanitization)
+     * 12. PerformanceGuardrails (CPU monitoring)
+     *
+     * REMOVED (2026-01-14):
+     * - SparkLimiter (replaced by EnhancedSPARK)
+     * - ShineEQ (replaced by EnhancedSHINE)
+     */
+
+    // 1. Input gain
+    inputGainProcessor.process(context);
+
+    // Phase 1: Safety layer - DC blocking, denormal guard, NaN/Inf protection (pre)
+    safetyLayer.process(buffer);
+
+    // Phase 2: Long-term memory - track energy across multiple time scales
+    // This feeds adaptive processing (harmonic rotation, dynamic saturation)
+    if (buffer.getNumChannels() > 0)
+    {
+        const float* inputData = buffer.getReadPointer(0);
+        longTermMemory.update(inputData, buffer.getNumSamples());
+    }
+
+    // ===== P1.1: ADAPTIVE INTELLIGENCE WIRING =====
+
+    // 1. PerformanceGuardrails: Quality tier switching based on CPU
+    {
+        auto currentTier = performanceGuardrails.getCurrentTier();
+        EnhancedSPARK::QualityTier sparkTier;
+
+        // Map PerformanceGuardrails tier to EnhancedSPARK tier
+        switch (currentTier)
+        {
+            case QualityTierManager::Tier::Eco:
+                sparkTier = EnhancedSPARK::QualityTier::Eco;
+                break;
+            case QualityTierManager::Tier::Normal:
+                sparkTier = EnhancedSPARK::QualityTier::Normal;
+                break;
+            case QualityTierManager::Tier::High:
+                sparkTier = EnhancedSPARK::QualityTier::High;
+                break;
+            default:
+                sparkTier = EnhancedSPARK::QualityTier::Normal;
+                break;
+        }
+
+        // Apply tier (already done above, but now it's CPU-responsive)
+        enhancedSpark.setQualityTier(sparkTier);
+    }
+
+    // 2. LongTermMemory: Adaptive saturation drive (reduce drive when program is already hot)
+    {
+        float slowEnergy = longTermMemory.getSlowEnergy();  // 2s RMS
+        float programLoudness = longTermMemory.getProgramLoudness();
+
+        // If program is loud (>= -12 dBFS RMS), reduce saturation drive to prevent harshness
+        // Mapping: -12 dBFS RMS → 1.0x drive, -6 dBFS RMS → 0.7x drive
+        float loudnessDb = 20.0f * std::log10(std::max(slowEnergy, 1.0e-6f));
+        float adaptiveDriveScale = juce::jmap(loudnessDb, -12.0f, -6.0f, 1.0f, 0.7f);
+        adaptiveDriveScale = juce::jlimit(0.7f, 1.0f, adaptiveDriveScale);
+
+        // Apply adaptive scaling to warmth parameter
+        float adaptiveWarmth = warmthAmount * adaptiveDriveScale;
+        saturation.setWarmth(adaptiveWarmth);
+    }
+
+    // 3. LongTermMemory: SHINE fatigue reduction (reduce HF when sustained bright content)
+    {
+        float slowEnergy = longTermMemory.getSlowEnergy();
+        float mediumEnergy = longTermMemory.getMediumEnergy();
+
+        // If HF energy is sustained (slow energy high), apply fatigue reduction
+        // This prevents listener fatigue from constant bright EQ
+        float hfFatigueScale = 1.0f;
+        if (slowEnergy > 0.3f)  // If program is moderately loud for 2s+
+        {
+            // Reduce shine amount by up to 30% (1.0 → 0.7)
+            hfFatigueScale = juce::jmap(slowEnergy, 0.3f, 0.7f, 1.0f, 0.7f);
+            hfFatigueScale = juce::jlimit(0.7f, 1.0f, hfFatigueScale);
+        }
+
+        // Apply fatigue reduction to shine amount
+        float adaptiveShineAmount = juce::jmap(shineGainDb, -12.0f, 12.0f, 0.0f, 1.0f);
+        adaptiveShineAmount *= hfFatigueScale;
+        enhancedShine.setShineAmount(adaptiveShineAmount);
+    }
+
+    // 4. DeterministicProcessing: Lock ComponentVariance seed in offline render mode
+    {
+        bool isOfflineRender = deterministicProcessing.isOfflineRender();
+        if (isOfflineRender)
+        {
+            // In offline mode, ensure variance is deterministic (seed locked)
+            // This happens automatically since we randomize seed only in prepareToPlay
+            // No action needed here - just documenting the behavior
+        }
+    }
+
+    // 5. ComponentVariance: Apply per-instance analog character
+    // Note: Variance values are deterministic per instance (seed set in prepareToPlay)
+    // Currently variance is stored but not applied to EnhancedSHINE/Saturation filters
+    // This requires implementing the applyComponentVariance() methods in those modules
+    // For P1.1, we document this as "prepared but not yet applied" - will complete in implementation pass
+
+    // ===== END P1.1 ADAPTIVE WIRING =====
+
+    // P1-1 FIX: Include TransientShaper in oversampling for anti-aliasing
+    // TransientShaper applies up to 3x gain changes (nonlinear) → needs oversampling
+    // NOTE: EnhancedSPARK handles its own oversampling internally via OversamplingManager
+    bool needsOversampling = (punchAmount > 0.01f || warmthAmount > 0.01f);
+
+    if (needsOversampling)
+    {
+        // Upsample to 2x/4x/8x/16x sample rate for artifact-free nonlinear processing
+        int oversamplingFactor = 1 << sparkOSIndex;
+        auto oversampledBlock = oversampler.processUp(block);
+        juce::dsp::ProcessContextReplacing<float> oversampledContext(oversampledBlock);
+
+        // 2. Punch (transient shaping) - at high SR, no aliasing!
+        if (punchAmount > 0.01f)
+            transientShaper.process(oversampledContext);
+
+        // 3. Warmth (saturation) - at high sample rate, no aliasing!
+        if (warmthAmount > 0.01f)
+            saturation.process(oversampledContext);
+
+        // Downsample with anti-aliasing filter
+        oversampler.processDown(block);
+    }
+    else
+    {
+        // No oversampling needed, process normally
+        if (punchAmount > 0.01f)
+            transientShaper.process(context);
+        if (warmthAmount > 0.01f)
+            saturation.process(context);
+    }
+
+    // 4. SPARK (true-peak limiter with hysteresis) - ENHANCED VERSION
+    // Uses internal OversamplingManager (quality tier determines 1x/2x/4x)
+    if (sparkEnabled)
+        enhancedSpark.process(buffer);
+
+    // 5. Boom (subharmonic synthesis)
+    if (boomAmount > 0.01f)
+        subHarmonic.process(context);
+
+    // 6. SHINE (psychoacoustic air band EQ) - ENHANCED VERSION
+    // Uses 24 Bark bands, temporal masking, spectral masking
+    if (shineEnabled)
+        enhancedShine.process(buffer);
+
+    // 7. Console emulation (mix glue)
+    if (masterEnabled || mixAmount < 0.99f)
+        consoleEmulator.process(context);
+
+    // Phase 2: Stereo enhancement (micro-drift and width)
+    // Apply subtle analog-style stereo character
+    stereoEnhancement.setDriftAmount(0.3f);   // Subtle drift
+    stereoEnhancement.setDepthAmount(0.2f);   // Subtle depth
+    stereoEnhancement.setWidth(1.0f);         // Normal width (no widening)
+    stereoEnhancement.process(buffer);
+
+    // 8. Output gain
+    outputGainProcessor.process(context);
+
+    // Phase 1: Safety layer - DC blocking, denormal guard, NaN/Inf protection (post)
+    // This replaces the old manual DC blocker and BTZValidation calls
+    safetyLayer.process(buffer);
+
+    // Update metering for GUI
+    updateMetering(buffer);
+
+    // Phase 3: Performance monitoring - end timing and update CPU stats
+    performanceGuardrails.endBlock();
+}
+
+void BTZAudioProcessor::updateMetering(const juce::AudioBuffer<float>& buffer)
+{
+    const int numChannels = buffer.getNumChannels();
+    const int numSamples = buffer.getNumSamples();
+
+    if (numChannels == 0 || numSamples == 0)
+        return;
+
+    // Peak detection
+    float peakLevel = 0.0f;
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        float channelPeak = buffer.getMagnitude(ch, 0, numSamples);
+        peakLevel = std::max(peakLevel, channelPeak);
+    }
+    currentPeak.store(juce::Decibels::gainToDecibels(peakLevel, BTZConstants::minMeteringLevel));
+
+    // Simplified LUFS (RMS-based approximation)
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        float rms = buffer.getRMSLevel(ch, 0, numSamples);
+        lufsAccumulator += rms * rms;
+        lufsSampleCount++;
+    }
+
+    if (lufsSampleCount > BTZConstants::lufsSampleCountThreshold)
+    {
+        float averageRMS = std::sqrt(lufsAccumulator / lufsSampleCount);
+        float lufsEstimate = juce::Decibels::gainToDecibels(averageRMS, BTZConstants::minMeteringLevel) + BTZConstants::lufsKWeightingOffset;
+        currentLUFS.store(lufsEstimate);
+        lufsAccumulator = 0.0f;
+        lufsSampleCount = 0;
+    }
+
+    // Stereo correlation (if stereo)
+    if (numChannels == 2)
+    {
+        const float* left = buffer.getReadPointer(0);
+        const float* right = buffer.getReadPointer(1);
+        float correlation = 0.0f;
+        for (int i = 0; i < numSamples; ++i)
+            correlation += left[i] * right[i];
+        correlation /= numSamples;
+        stereoCorrelation.store(juce::jlimit(-1.0f, 1.0f, correlation));
+    }
+
+    // Gain reduction (if SPARK is active)
+    bool sparkEnabled = apvts.getRawParameterValue(BTZParams::IDs::sparkEnabled)->load() > 0.5f;
+    if (sparkEnabled)
+    {
+        float targetGain = 1.0f - (peakLevel - 0.95f) * 2.0f;
+        gainReduction.store(juce::jlimit(0.7f, 1.0f, targetGain));
+    }
+    else
+    {
+        gainReduction.store(1.0f);
+    }
+}
+
+bool BTZAudioProcessor::hasEditor() const
+{
+    return true;
+}
+
+juce::AudioProcessorEditor* BTZAudioProcessor::createEditor()
+{
+    // P1.2: Return custom GUI (MainView-based editor with all controls + metering)
+    return new BTZAudioProcessorEditor(*this);
+}
+
+void BTZAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
+{
+    // FIX #6: Add version for preset backward compatibility
+    auto state = apvts.copyState();
+    std::unique_ptr<juce::XmlElement> xml (state.createXml());
+
+    // Add version attributes for future migration logic
+    xml->setAttribute("pluginVersion", juce::String(pluginVersionMajor) + "." +
+                                        juce::String(pluginVersionMinor) + "." +
+                                        juce::String(pluginVersionPatch));
+    xml->setAttribute("pluginName", "BTZ");
+
+    copyXmlToBinary (*xml, destData);
+}
+
+void BTZAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
+{
+    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
+
+    if (xmlState.get() != nullptr)
+    {
+        // P1-6 FIX: Version-aware parameter migration
+        juce::String loadedVersion = xmlState->getStringAttribute("pluginVersion", "0.0.0");
+        juce::String currentVersion = juce::String(pluginVersionMajor) + "." +
+                                      juce::String(pluginVersionMinor) + "." +
+                                      juce::String(pluginVersionPatch);
+
+        // Migration logic for future parameter changes
+        // This ensures backward compatibility when parameters are added/removed/renamed
+
+        if (loadedVersion == "0.0.0")
+        {
+            // Legacy state (no version) → v1.0.0 migration
+            // All existing parameters should load with defaults
+            rtLogger.logRT("BTZ: Loading legacy state (no version)");
+        }
+
+        // Example for future v1.0.0 → v1.1.0 migration:
+        // if (loadedVersion == "1.0.0" && currentVersion >= "1.1.0")
+        // {
+        //     // Add new parameters with sensible defaults
+        //     if (!xmlState->getChildByAttribute("PARAM", "id", "newFeature"))
+        //     {
+        //         auto* newParam = xmlState->createNewChildElement("PARAM");
+        //         newParam->setAttribute("id", "newFeature");
+        //         newParam->setAttribute("value", "0.5");
+        //     }
+        // }
+
+        // Apply state (APVTS handles missing parameters gracefully with defaults)
+        if (xmlState->hasTagName (apvts.state.getType()))
+        {
+            apvts.replaceState (juce::ValueTree::fromXml (*xmlState));
+
+            #if JUCE_DEBUG
+            // Verify all critical parameters loaded successfully
+            if (apvts.getParameter("punch") == nullptr)
+                rtLogger.logRT("BTZ: WARNING - Critical parameter 'punch' missing from state");
+            #endif
+        }
+        else
+        {
+            // State XML has wrong tag name - corrupted or incompatible
+            rtLogger.logRT("BTZ: State load failed - incompatible format");
+        }
+    }
+    else
+    {
+        // Failed to parse XML - corrupted data
+        rtLogger.logRT("BTZ: State load failed - corrupted XML");
+    }
+}
+
+// P0 FIX: Async oversampling factor update (message thread only - safe to allocate)
+void BTZAudioProcessor::handleAsyncUpdate()
+{
+    // Check if update is needed (atomic flag prevents race)
+    if (!osFactorNeedsUpdate.exchange(false, std::memory_order_acquire))
+        return;
+
+    int newFactor = pendingOSFactor.load(std::memory_order_relaxed);
+
+    // Update oversampler (allocation happens here, but we're on message thread - SAFE!)
+    oversampler.setOversamplingFactor(newFactor);
+
+    // Update SparkLimiter OS factor
+    sparkLimiter.setOversamplingFactor(newFactor);
+
+    // P1-5 & P2-3: Recalculate TOTAL latency (oversampling + lookahead)
+    int sparkOSIndex = apvts.getRawParameterValue(BTZParams::IDs::sparkOS)->load();
+    int oversamplingFactor = 1 << sparkOSIndex;
+    int samplesPerBlock = getBlockSize();
+    int oversamplingLatency = (oversamplingFactor - 1) * samplesPerBlock / 2;
+
+    int totalLatency = oversamplingLatency + BTZConstants::sparkLimiterLookahead;
+    setLatencySamples(totalLatency);
+
+    DBG("BTZ: Oversampling factor updated to " + juce::String(newFactor) + "x on message thread");
+}
+
+// FIX #5: Silence detection implementation
+bool BTZAudioProcessor::isBufferSilent(const juce::AudioBuffer<float>& buffer)
+{
+    const int numChannels = buffer.getNumChannels();
+    const int numSamples = buffer.getNumSamples();
+
+    for (int ch = 0; ch < numChannels; ++ch)
+    {
+        if (buffer.getMagnitude(ch, 0, numSamples) > BTZConstants::silenceThreshold)
+            return false;
+    }
+    return true;
+}
+
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new BTZAudioProcessor();
+}

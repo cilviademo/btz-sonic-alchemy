@@ -1,0 +1,35 @@
++ set -e
++++ dirname ./scripts/validate_build.sh
+++ cd ./scripts
+++ pwd
++ SCRIPT_DIR=/home/user/btz-sonic-alchemy/BTZ_JUCE/scripts
+++ cd /home/user/btz-sonic-alchemy/BTZ_JUCE/scripts/..
+++ pwd
++ BTZ_ROOT=/home/user/btz-sonic-alchemy/BTZ_JUCE
++ BUILD_DIR=/home/user/btz-sonic-alchemy/BTZ_JUCE/build
++ VST3_PATH='/home/user/btz-sonic-alchemy/BTZ_JUCE/build/BTZ_artefacts/Release/VST3/BTZ - The Box Tone Zone.vst3'
++ STANDALONE_PATH='/home/user/btz-sonic-alchemy/BTZ_JUCE/build/BTZ_artefacts/Release/Standalone/BTZ - The Box Tone Zone'
++ echo ========================================
+========================================
++ echo 'BTZ Build Validation'
+BTZ Build Validation
++ echo ========================================
+========================================
++ echo ''
+
++ GREEN='\033[0;32m'
++ RED='\033[0;31m'
++ YELLOW='\033[1;33m'
++ NC='\033[0m'
++ PASS=0
++ FAIL=0
++ WARN=0
++ echo '=== Test 1: Build Artifacts Exist ==='
+=== Test 1: Build Artifacts Exist ===
++ echo ''
+
++ '[' -d '/home/user/btz-sonic-alchemy/BTZ_JUCE/build/BTZ_artefacts/Release/VST3/BTZ - The Box Tone Zone.vst3' ']'
++ pass 'VST3 bundle exists'
++ echo -e '\033[0;32m✓ PASS:\033[0m VST3 bundle exists'
+[0;32m✓ PASS:[0m VST3 bundle exists
++ (( PASS++ ))

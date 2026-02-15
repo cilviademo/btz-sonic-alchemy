@@ -1,0 +1,199 @@
+/* ===================================
+   BTZ Plugin Theme - Jan 2026
+   Hardware-inspired, minimal cognitive load
+   =================================== */
+
+/* --- Color Semantics (UX improvement #8) --- */
+:root {
+  /* Harmonic/Saturation */
+  --btz-pink-start: #ff2fb9;
+  --btz-pink-end: #ff8a00;
+
+  /* Air/Clarity */
+  --btz-blue-start: #2fd3ff;
+  --btz-blue-end: #8a2be2;
+
+  /* Dynamics/Energy */
+  --btz-green-start: #39ff88;
+  --btz-green-end: #2fd3ff;
+
+  /* Punch/Impact */
+  --btz-orange-start: #ff8a00;
+  --btz-orange-end: #ff2fb9;
+
+  /* Metering */
+  --btz-meter-safe: #39ff88;
+  --btz-meter-warning: #ffaa00;
+  --btz-meter-danger: #ff0000;
+
+  /* Spacing (consistent rhythm) */
+  --btz-space-xs: 0.25rem;   /* 4px */
+  --btz-space-sm: 0.5rem;    /* 8px */
+  --btz-space-md: 1rem;      /* 16px */
+  --btz-space-lg: 1.5rem;    /* 24px */
+  --btz-space-xl: 2rem;      /* 32px */
+
+  /* Typography scale */
+  --btz-text-micro: 9px;
+  --btz-text-xs: 10px;
+  --btz-text-sm: 11px;
+  --btz-text-base: 12px;
+  --btz-text-lg: 14px;
+}
+
+/* --- Core Knob Styles --- */
+.btz-knob {
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.btz-knob:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.4);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Hero knobs (5 main controls) - larger, glowing when active */
+.btz-knob-hero {
+  filter: drop-shadow(0 0 8px rgba(255, 255, 255, 0.1));
+  transition: filter 0.2s ease;
+}
+
+.btz-knob-hero:hover {
+  filter: drop-shadow(0 0 12px rgba(255, 255, 255, 0.2));
+}
+
+.btz-knob-hero:active {
+  filter: drop-shadow(0 0 16px rgba(255, 255, 255, 0.3));
+}
+
+/* Module knobs (smaller, calmer) */
+.btz-knob-module {
+  opacity: 0.9;
+}
+
+.btz-knob-module:hover {
+  opacity: 1;
+}
+
+/* --- Visual Hierarchy --- */
+
+/* Make everything not "equally important" */
+.btz-hero-section {
+  padding: var(--btz-space-lg);
+  background: linear-gradient(135deg, rgba(255,255,255,0.02) 0%, rgba(0,0,0,0.1) 100%);
+  border-radius: 8px;
+}
+
+.btz-module-section {
+  padding: var(--btz-space-md);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* --- Detent Indicators (hardware feel) --- */
+.btz-knob-detent {
+  position: relative;
+}
+
+.btz-knob-detent::after {
+  content: '';
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 2px;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 1px;
+}
+
+/* --- Precision Mode Indicator --- */
+.btz-precision-active {
+  box-shadow: 0 0 0 2px rgba(57, 255, 136, 0.3);
+  background: rgba(57, 255, 136, 0.05) !important;
+}
+
+/* --- Active State Communication (UX #12) --- */
+.btz-module-off {
+  opacity: 0.4;
+  filter: grayscale(0.6);
+}
+
+.btz-module-on {
+  opacity: 1;
+  filter: grayscale(0);
+  transition: all 0.2s ease;
+}
+
+/* --- Meter Zones --- */
+.btz-meter-safe {
+  background: linear-gradient(90deg, var(--btz-meter-safe), var(--btz-blue-start));
+}
+
+.btz-meter-warning {
+  background: linear-gradient(90deg, var(--btz-meter-warning), var(--btz-meter-danger));
+}
+
+.btz-meter-danger {
+  background: var(--btz-meter-danger);
+  box-shadow: 0 0 8px rgba(255, 0, 0, 0.4);
+}
+
+/* --- Drawer Fixed Header --- */
+.btz-drawer-header {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgba(23, 23, 23, 0.95);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* --- Typography Consistency --- */
+.btz-label-micro {
+  font-size: var(--btz-text-micro);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.btz-label-xs {
+  font-size: var(--btz-text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 500;
+}
+
+.btz-value-display {
+  font-family: 'SF Mono', 'Monaco', 'Consolas', monospace;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* --- Smooth Transitions --- */
+* {
+  transition-timing-function: cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+/* --- Scrollbar Styling --- */
+.btz-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.btz-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 3px;
+}
+
+.btz-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.btz-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
