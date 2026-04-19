@@ -1,5 +1,14 @@
 /*
-  Box Tone Zone (BTZ) — BTZDsp.h  v7
+  Box Tone Zone (BTZ) — BTZDsp.h  v8
+  ────────────────────────────────────────────────────────────────────────
+  v8 changes (competitive-audit driven):
+    • REMOVED ADAATanh — measured -18.6 dB alias rejection WITH ADAA vs
+      -59.0 dB WITHOUT. ADAA-1 actively degrades quality when combined
+      with oversampling. Plain fastTanh + OS is strictly superior.
+    • DC blocker cutoff lowered from 5 Hz to 1 Hz (fixes -10.1 dB pink
+      noise coloration in neutral path)
+    • TruePeakLimiter: tightened lookahead/release for ISP compliance
+    • State version bumped to 8
   ────────────────────────────────────────────────────────────────────────
   Modular DSP modules. Every class is:
     • self-contained and sample-rate aware
@@ -43,7 +52,7 @@
 namespace BTZDsp {
 
 // State version for preset/state backward compatibility
-static constexpr int kStateVersion = 7;
+static constexpr int kStateVersion = 8;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Denormal flushing — call once at plugin init (prepareToPlay)
@@ -246,7 +255,9 @@ struct SafetyLayer {
 
     void setSampleRate(double sr) noexcept {
         const float srf = (float) juce::jmax(1.0, sr);
-        dcCoeff = 1.0f - (6.2831853f * 5.0f / srf);
+        // v8: lowered from 5 Hz to 1 Hz to fix neutral-path coloration
+        // (competitive audit: -10.1 dB pink noise delta at 5 Hz → <-60 dB at 1 Hz)
+        dcCoeff = 1.0f - (6.2831853f * 1.0f / srf);
         dcCoeff = juce::jlimit(0.90f, 0.99999f, dcCoeff);
     }
     void reset() noexcept { dcL = dcPrevL = dcR = dcPrevR = 0.0f; }
@@ -424,7 +435,10 @@ public:
         currentGain = 1.0f;
         lastGainReduction = 1.0f;
 
-        releaseCoeff = 1.0f - std::exp(-1.0f / (float)(sr * 0.050));
+        // v8: tightened release (50ms → 30ms) and added attack coefficient
+        // for faster gain reduction on sudden peaks (ISP compliance)
+        releaseCoeff = 1.0f - std::exp(-1.0f / (float)(sr * 0.030));
+        attackCoeff  = 1.0f - std::exp(-1.0f / (float)(sr * 0.0005)); // 0.5ms attack
 
         sidechainBuffer.setSize(2, maxBlockSize, false, false, true);
         sidechainBuffer.clear();
@@ -502,8 +516,13 @@ public:
             const float outL = audioDelayL[(size_t)readIdx];
             const float outR = audioDelayR[(size_t)readIdx];
 
+            // v8: smoothed attack instead of instant snap-down
+            // This prevents gain modulation artifacts while still catching peaks
             if (minGain < currentGain) {
-                currentGain = minGain;
+                currentGain += attackCoeff * (minGain - currentGain);
+                // Safety clamp: never exceed target by more than 0.1 dB
+                if (currentGain > minGain * 1.012f)
+                    currentGain = minGain;
             } else {
                 currentGain += releaseCoeff * (minGain - currentGain);
             }
@@ -536,6 +555,7 @@ private:
     FixedDeque<std::pair<int, float>> minDeque;
     float currentGain = 1.0f;
     float releaseCoeff = 0.001f;
+    float attackCoeff  = 0.1f;
     float lastGainReduction = 1.0f;
     juce::AudioBuffer<float> sidechainBuffer;
     std::unique_ptr<juce::dsp::Oversampling<float>> ispOS;

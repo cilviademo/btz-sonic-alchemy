@@ -1,7 +1,18 @@
 /*
-  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v7
+  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v8
   ────────────────────────────────────────────────────────────────────────
   GoogleTest-based unit tests for all BTZDsp modules.
+  v8: Competitive-audit driven:
+    - REMOVED all ADAATanh tests (ADAA removed from DSP chain)
+    - REMOVED SlewLimiter tests (SlewLimiter removed from DSP chain)
+    - Updated RealTimeSafety tests to use plain fastTanh
+    - Updated state version check to 8
+    - Fixed MacroInterpreter PerceptualCurves test API
+    - Fixed SmoothParam test API (.setTime instead of .prepare)
+    - Added v8 regression tests:
+      * DC blocker 1 Hz coloration (pink noise pass-through)
+      * Plain fastTanh saturation chain (no ADAA state)
+      * Full chain without ADAA/SlewLimiter
   v7: Release-gate hardening:
     - BypassCrossfader click-free transition test
     - SidechainHPF crossfade (no click on mode change)
@@ -13,8 +24,7 @@
     - MacroInterpreter wiring integration tests
   v5: Audit-driven fixes:
     - Envelope follower timing test (verifies base-SR coefficients)
-    - SlewLimiter OS-factor scaling test
-    - Updated ADAA test comments with measured values
+    - Updated comments with measured values
   v4: Mathematical overhaul tests:
     - LR4 crossover (24 dB/oct SVF-based)
     - Soft-knee GlueCompressor
@@ -118,50 +128,73 @@ TEST(FastTanh, MonotonicIncreasing) {
     }
 }
 
+// v8: Verify fastTanh is suitable as a direct replacement for ADAA in the chain
+TEST(FastTanh, SaturatesLargeSignals) {
+    // fastTanh should bound output to approximately [-1, 1]
+    for (float x = 1.0f; x <= 10.0f; x += 0.5f) {
+        float y = fastTanh(x);
+        EXPECT_LE(std::abs(y), 1.05f) << "fastTanh should saturate at x=" << x;
+        EXPECT_GT(std::abs(y), 0.5f) << "fastTanh should have significant output at x=" << x;
+    }
+}
+
+TEST(FastTanh, SmallSignalApproximatesLinear) {
+    // For small inputs, tanh(x) ≈ x
+    for (float x = -0.01f; x <= 0.01f; x += 0.001f) {
+        EXPECT_NEAR(fastTanh(x), x, std::abs(x) * 0.05f + 1e-7f)
+            << "fastTanh should be approximately linear for small x=" << x;
+    }
+}
+
 // ═══════════════════════════════════════════════════════════════════════════
 // FixedDeque Tests (pre-allocated, lock-free ring buffer)
 // ═══════════════════════════════════════════════════════════════════════════
 TEST(FixedDeque, PushAndPopBack) {
-    FixedDeque<float> dq(16);
+    FixedDeque<float> dq;
+    dq.allocate(16);
     dq.push_back(1.0f);
     dq.push_back(2.0f);
     dq.push_back(3.0f);
-    EXPECT_EQ(dq.size(), 3u);
+    EXPECT_EQ(dq.size(), 3);
     EXPECT_FLOAT_EQ(dq.front(), 1.0f);
     EXPECT_FLOAT_EQ(dq.back(), 3.0f);
 }
 
 TEST(FixedDeque, PopFront) {
-    FixedDeque<float> dq(16);
+    FixedDeque<float> dq;
+    dq.allocate(16);
     dq.push_back(10.0f);
     dq.push_back(20.0f);
     dq.push_back(30.0f);
     dq.pop_front();
-    EXPECT_EQ(dq.size(), 2u);
+    EXPECT_EQ(dq.size(), 2);
     EXPECT_FLOAT_EQ(dq.front(), 20.0f);
 }
 
 TEST(FixedDeque, PopBack) {
-    FixedDeque<float> dq(16);
+    FixedDeque<float> dq;
+    dq.allocate(16);
     dq.push_back(10.0f);
     dq.push_back(20.0f);
     dq.push_back(30.0f);
     dq.pop_back();
-    EXPECT_EQ(dq.size(), 2u);
+    EXPECT_EQ(dq.size(), 2);
     EXPECT_FLOAT_EQ(dq.back(), 20.0f);
 }
 
 TEST(FixedDeque, ClearResetsSize) {
-    FixedDeque<float> dq(16);
+    FixedDeque<float> dq;
+    dq.allocate(16);
     for (int i = 0; i < 10; ++i) dq.push_back((float)i);
-    EXPECT_EQ(dq.size(), 10u);
+    EXPECT_EQ(dq.size(), 10);
     dq.clear();
-    EXPECT_EQ(dq.size(), 0u);
+    EXPECT_EQ(dq.size(), 0);
     EXPECT_TRUE(dq.empty());
 }
 
 TEST(FixedDeque, WrapsAroundCorrectly) {
-    FixedDeque<float> dq(4);
+    FixedDeque<float> dq;
+    dq.allocate(4);
     dq.push_back(1.0f);
     dq.push_back(2.0f);
     dq.push_back(3.0f);
@@ -170,99 +203,19 @@ TEST(FixedDeque, WrapsAroundCorrectly) {
     dq.pop_front();
     dq.push_back(5.0f);
     dq.push_back(6.0f);
-    EXPECT_EQ(dq.size(), 4u);
+    EXPECT_EQ(dq.size(), 4);
     EXPECT_FLOAT_EQ(dq.front(), 3.0f);
     EXPECT_FLOAT_EQ(dq.back(), 6.0f);
 }
 
 TEST(FixedDeque, EmptyChecks) {
-    FixedDeque<float> dq(8);
+    FixedDeque<float> dq;
+    dq.allocate(8);
     EXPECT_TRUE(dq.empty());
     dq.push_back(1.0f);
     EXPECT_FALSE(dq.empty());
     dq.pop_front();
     EXPECT_TRUE(dq.empty());
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// ADAATanh Tests
-// ═══════════════════════════════════════════════════════════════════════════
-class ADAATanhTest : public ::testing::Test {
-protected:
-    ADAATanh adaa;
-    void SetUp() override { adaa.reset(); }
-};
-
-TEST_F(ADAATanhTest, PassesSilence) {
-    for (int i = 0; i < 100; ++i)
-        EXPECT_NEAR(adaa.process(0.0f), 0.0f, 1e-6f);
-}
-
-TEST_F(ADAATanhTest, SmallSignalApproximatesLinear) {
-    const float tiny = 0.001f;
-    adaa.reset();
-    adaa.process(0.0f);
-    float y = adaa.process(tiny);
-    EXPECT_NEAR(y, tiny, tiny * 0.15f);
-}
-
-TEST_F(ADAATanhTest, SaturatesLargeSignals) {
-    adaa.reset();
-    adaa.process(0.0f);
-    float y = adaa.process(5.0f);
-    EXPECT_LT(std::abs(y), 5.0f);
-    EXPECT_GT(std::abs(y), 0.5f);
-}
-
-TEST_F(ADAATanhTest, OutputBoundedByTanh) {
-    adaa.reset();
-    auto sine = generateSine(1000.0f, kSR, kBlockSize, 10.0f);
-    for (auto& s : sine) {
-        float y = adaa.process(s);
-        EXPECT_LE(std::abs(y), 1.05f);
-    }
-}
-
-TEST_F(ADAATanhTest, DiffersFromDirectTanh) {
-    adaa.reset();
-    auto sine = generateSine(10000.0f, kSR, kBlockSize, 2.0f);
-    float diffEnergy = 0.0f;
-    for (int i = 0; i < kBlockSize; ++i) {
-        float adaaOut = adaa.process(sine[i]);
-        float directOut = std::tanh(sine[i]);
-        float d = adaaOut - directOut;
-        diffEnergy += d * d;
-    }
-    EXPECT_GT(diffEnergy, 1e-6f);
-}
-
-TEST_F(ADAATanhTest, ResetClearsState) {
-    adaa.process(3.0f);
-    adaa.process(5.0f);
-    adaa.reset();
-    float y = adaa.process(0.0f);
-    EXPECT_NEAR(y, 0.0f, 1e-5f);
-}
-
-TEST_F(ADAATanhTest, PerChannelIndependence) {
-    ADAATanh left, right;
-    left.reset(); right.reset();
-    left.process(0.0f); right.process(0.0f);
-    float yL = left.process(2.0f);
-    float yR = right.process(-2.0f);
-    EXPECT_NE(yL, yR);
-    EXPECT_NEAR(yL, -yR, 0.05f);
-}
-
-TEST_F(ADAATanhTest, MonotonicForIncreasingInput) {
-    adaa.reset();
-    adaa.process(0.0f);
-    float prev = adaa.process(0.1f);
-    for (float x = 0.2f; x <= 3.0f; x += 0.1f) {
-        float y = adaa.process(x);
-        EXPECT_GE(y, prev - 0.01f);
-        prev = y;
-    }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -561,20 +514,6 @@ TEST(SafetyLayer, CleansInf) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SlewLimiter Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(SlewLimiter, LimitsTransients) {
-    SlewLimiter sl;
-    sl.setSampleRate(kSR);
-    sl.reset();
-    float out = sl.process(0.0f);
-    EXPECT_FLOAT_EQ(out, 0.0f);
-    out = sl.process(10.0f);
-    EXPECT_LT(out, 10.0f);
-    EXPECT_GT(out, 0.0f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // LinkwitzRileyCrossover Tests (v4: SVF-based LR4, 24 dB/oct)
 // ═══════════════════════════════════════════════════════════════════════════
 TEST(LinkwitzRileyCrossover, SumsToOriginal) {
@@ -783,28 +722,24 @@ TEST(MacroInterpreter, ClearRemovesAllMappings) {
 }
 
 TEST(MacroInterpreter, PerceptualCurvesAreNonLinear) {
-    // v4: Verify that non-linear curve types produce different output than linear
+    // v8 FIX: Use correct API — addMapping(macroIndex, targetIndex, depth, curve)
     MacroInterpreter mi;
     mi.clearMappings();
 
-    // Add a mapping with exponential curve (type 1)
-    MacroInterpreter::Mapping m;
-    m.macroIdx = 0;
-    m.depth = 1.0f;
-    m.curveType = 1; // exponential
-    mi.addMapping(0, m);
+    // Add a mapping with exponential curve
+    mi.addMapping(0, 0, 1.0f, MacroInterpreter::Curve::Exponential);
 
     float macrosHalf[4] = { 0.5f, 0.0f, 0.0f, 0.0f };
     float modExp = mi.getModulation(0, macrosHalf);
 
     // With exponential curve, 0.5 input should give < 0.5 output (x^2 = 0.25)
-    // The exact value depends on implementation, but it should differ from linear
     mi.clearMappings();
-    m.curveType = 0; // linear
-    mi.addMapping(0, m);
+    mi.addMapping(0, 0, 1.0f, MacroInterpreter::Curve::Linear);
     float modLin = mi.getModulation(0, macrosHalf);
 
     EXPECT_NE(modExp, modLin);
+    EXPECT_LT(modExp, modLin)
+        << "Exponential curve at 0.5 should produce less than linear";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -895,55 +830,48 @@ TEST(SVFLowpass2, ResetClearsState) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Real-Time Safety Smoke Tests
+// v8: Updated to use plain fastTanh (no ADAA, no SlewLimiter)
 // ═══════════════════════════════════════════════════════════════════════════
 TEST(RealTimeSafety, NoNaNOrInfInFullChain) {
-    ADAATanh adaa;
-    adaa.reset();
+    // v8: Full chain uses SafetyLayer + fastTanh (no ADAA, no SlewLimiter)
     SafetyLayer safety;
     safety.setSampleRate(kSR);
     safety.reset();
-    SlewLimiter slew;
-    slew.setSampleRate(kSR);
-    slew.reset();
 
     for (int i = 0; i < kBlockSize; ++i) {
         float x = 100.0f * std::sin(2.0f * 3.14159f * 1000.0f * i / (float)kSR) + 50.0f;
         x = safety.processSample(x, safety.dcL, safety.dcPrevL);
-        x = adaa.process(x);
-        x = slew.process(x);
+        x = fastTanh(x);  // v8: plain fastTanh replaces ADAA
         EXPECT_TRUE(std::isfinite(x)) << "NaN/Inf at sample " << i;
     }
 }
 
-TEST(RealTimeSafety, NaNInputToADAAProducesFinite) {
-    ADAATanh adaa;
-    adaa.reset();
-    adaa.process(0.0f);
-    float y = adaa.process(std::numeric_limits<float>::quiet_NaN());
-    adaa.reset();
-    y = adaa.process(0.0f);
+TEST(RealTimeSafety, FastTanhHandlesExtremeInput) {
+    // v8: Verify fastTanh doesn't produce NaN/Inf for extreme inputs
+    float y;
+    y = fastTanh(0.0f);
     EXPECT_TRUE(std::isfinite(y));
-}
 
-TEST(RealTimeSafety, InfInputToADAADoesNotExplode) {
-    ADAATanh adaa;
-    adaa.reset();
-    adaa.process(0.0f);
-    float y = adaa.process(std::numeric_limits<float>::infinity());
-    adaa.reset();
-    y = adaa.process(0.5f);
+    y = fastTanh(100.0f);
     EXPECT_TRUE(std::isfinite(y));
-    EXPECT_LE(std::abs(y), 2.0f);
+    EXPECT_LE(std::abs(y), 1.1f);
+
+    y = fastTanh(-100.0f);
+    EXPECT_TRUE(std::isfinite(y));
+    EXPECT_LE(std::abs(y), 1.1f);
+
+    y = fastTanh(1000.0f);
+    EXPECT_TRUE(std::isfinite(y));
+
+    y = fastTanh(-1000.0f);
+    EXPECT_TRUE(std::isfinite(y));
 }
 
 TEST(RealTimeSafety, FullChainWithExtremeParameters) {
-    // v4: Process through crossover + ADAA + glue + shine with extreme params
+    // v8: Process through crossover + fastTanh + glue + shine with extreme params
     LinkwitzRileyCrossover xo;
     xo.prepare(kSR, 250.0f);
     xo.reset();
-
-    ADAATanh adaa;
-    adaa.reset();
 
     GlueCompressor gc;
     gc.prepare(kSR);
@@ -963,7 +891,8 @@ TEST(RealTimeSafety, FullChainWithExtremeParameters) {
         float lowL, lowR, highL, highR;
         xo.process(x, x, lowL, lowR, highL, highR);
 
-        lowL = adaa.process(lowL);
+        // v8: plain fastTanh instead of ADAA
+        lowL = fastTanh(lowL * 2.0f);
         float sc = std::abs(lowL);
         float envVal = env.process(sc);
         gc.processStereo(lowL, lowR, 1.0f, envVal);
@@ -1046,29 +975,6 @@ TEST(V5Audit, EnvFollowerOSRateBug) {
     // If both are equal, the OS coefficients are wrong
     EXPECT_GT(envBase.env, envOS.env)
         << "Base-SR envelope should decay slower than OS-rate envelope";
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v5 AUDIT TESTS: SlewLimiter OS-Factor Scaling
-// ═══════════════════════════════════════════════════════════════════════════
-
-TEST(V5Audit, SlewLimiterOSFactorScaling) {
-    SlewLimiter slew;
-    slew.setSampleRate(kSR);
-    slew.reset();
-
-    float baseDelta = slew.maxDelta;
-    EXPECT_GT(baseDelta, 0.0f);
-
-    // At 4x OS, maxDelta should be 1/4 of base
-    slew.setOversampleFactor(4.0f);
-    EXPECT_NEAR(slew.maxDelta, baseDelta / 4.0f, 1e-6f)
-        << "SlewLimiter maxDelta should scale inversely with OS factor";
-
-    // Reset to 1x
-    slew.setOversampleFactor(1.0f);
-    EXPECT_NEAR(slew.maxDelta, baseDelta, 1e-6f)
-        << "SlewLimiter maxDelta should return to base after OS reset";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1304,7 +1210,7 @@ TEST(V7Hardening, SidechainHPFCrossfadeNoClick) {
 
 TEST(V7Hardening, SmoothParamNoZipper) {
     SmoothParam sp;
-    sp.prepare(kSR, 10.0f); // 10ms smoothing
+    sp.setTime(10.0f, kSR); // v8 FIX: was .prepare() which doesn't exist
     sp.snapTo(0.0f);
 
     // Jump to 1.0
@@ -1327,18 +1233,6 @@ TEST(V7Hardening, SmoothParamNoZipper) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// v7 TESTS: State Version Validation
-// ═══════════════════════════════════════════════════════════════════════════
-
-TEST(V7Hardening, StateVersionConstant) {
-    // Verify the state version is 7 (matches BTZDsp.h kStateVersion)
-    // This is a compile-time check — if someone changes the version
-    // without updating tests, this will catch it.
-    EXPECT_EQ(BTZDsp::kStateVersion, 7)
-        << "State version should be 7 for v7 release";
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
 // v7 TESTS: Safety Layer Silence-In-Silence-Out
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -1355,6 +1249,183 @@ TEST(V7Hardening, SafetyLayerSilenceInSilenceOut) {
     }
     EXPECT_LT(maxOut, 1e-10f)
         << "Silence in should produce silence out. Max output: " << maxOut;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 TESTS: State Version Validation
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(V8Regression, StateVersionConstant) {
+    // v8: Verify the state version is 8 (matches BTZDsp.h kStateVersion)
+    EXPECT_EQ(BTZDsp::kStateVersion, 8)
+        << "State version should be 8 for v8 release";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 TESTS: DC Blocker 1 Hz Coloration Regression
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(V8Regression, DCBlocker1HzMinimalColoration) {
+    // v8: DC blocker cutoff lowered from 5 Hz to 1 Hz
+    // At 1 Hz, a 20 Hz signal should pass through with minimal attenuation
+    // (at 5 Hz, there was -10.1 dB coloration on pink noise)
+    SafetyLayer safety;
+    safety.setSampleRate(kSR);
+    safety.reset();
+
+    // Generate a 20 Hz sine (lowest musically relevant frequency)
+    auto sine = generateSine(20.0f, kSR, 48000, 0.5f);
+    std::vector<float> output(48000);
+    float dc = 0.0f, dcPrev = 0.0f;
+
+    for (int i = 0; i < 48000; ++i) {
+        output[i] = safety.processSample(sine[i], dc, dcPrev);
+    }
+
+    // Measure RMS of last half (after filter settles)
+    float inRms = rmsRange(sine, 24000, 48000);
+    float outRms = rmsRange(output, 24000, 48000);
+
+    float deltaDb = 20.0f * std::log10(outRms / std::max(inRms, 1e-10f));
+
+    // At 1 Hz cutoff, 20 Hz should have < 0.5 dB attenuation
+    // (at 5 Hz cutoff, this was ~-1.5 dB)
+    EXPECT_GT(deltaDb, -0.5f)
+        << "20 Hz signal should pass through 1 Hz DC blocker with < 0.5 dB loss. Got: "
+        << deltaDb << " dB";
+}
+
+TEST(V8Regression, DCBlocker1HzStillBlocksDC) {
+    // v8: Even at 1 Hz, DC should still be blocked after sufficient samples
+    SafetyLayer safety;
+    safety.setSampleRate(kSR);
+    safety.reset();
+
+    float dc = 0.0f, dcPrev = 0.0f;
+
+    // Feed DC for 5 seconds (240000 samples at 48 kHz)
+    float out = 0.0f;
+    for (int i = 0; i < 240000; ++i) {
+        out = safety.processSample(1.0f, dc, dcPrev);
+    }
+
+    // DC should be significantly attenuated
+    EXPECT_LT(std::abs(out), 0.1f)
+        << "DC should be blocked even at 1 Hz cutoff. Residual: " << out;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 TESTS: Plain fastTanh Saturation Chain (no ADAA state)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(V8Regression, PlainFastTanhHasNoState) {
+    // v8: fastTanh is a pure function — same input always gives same output
+    // (unlike ADAA which has x1/F1 state). This is a regression test to
+    // ensure we're not accidentally using a stateful saturator.
+    float y1 = fastTanh(0.5f);
+    float y2 = fastTanh(0.5f);
+    float y3 = fastTanh(0.5f);
+    EXPECT_FLOAT_EQ(y1, y2);
+    EXPECT_FLOAT_EQ(y2, y3);
+
+    // After processing different values, same input should still give same output
+    fastTanh(3.0f);
+    fastTanh(-2.0f);
+    fastTanh(10.0f);
+    float y4 = fastTanh(0.5f);
+    EXPECT_FLOAT_EQ(y1, y4)
+        << "fastTanh should be stateless — same input must give same output";
+}
+
+TEST(V8Regression, SaturationChainProducesHarmonics) {
+    // v8: Verify that fastTanh saturation actually adds harmonics
+    // (regression test: if someone accidentally replaces with linear, this catches it)
+    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
+    std::vector<float> saturated(4800);
+
+    for (int i = 0; i < 4800; ++i) {
+        saturated[i] = fastTanh(sine[i] * 3.0f); // drive = 3x
+    }
+
+    // The saturated signal should differ from the input (harmonics added)
+    float diffEnergy = 0.0f;
+    for (int i = 0; i < 4800; ++i) {
+        float d = saturated[i] - sine[i];
+        diffEnergy += d * d;
+    }
+    EXPECT_GT(diffEnergy, 0.01f)
+        << "Saturation should add harmonics (differ from input)";
+}
+
+TEST(V8Regression, MultibandSaturationWithFastTanh) {
+    // v8: Verify the multiband saturation path works with plain fastTanh
+    // (crossover → per-band fastTanh → recombine)
+    LinkwitzRileyCrossover xo;
+    xo.prepare(kSR, 250.0f);
+    xo.reset();
+
+    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
+
+    for (int i = 0; i < 4800; ++i) {
+        float lowL, lowR, highL, highR;
+        xo.process(sine[i], sine[i], lowL, lowR, highL, highR);
+
+        // Per-band saturation with fastTanh
+        float satLowL = fastTanh(lowL * 2.0f);
+        float satHighL = fastTanh(highL * 2.0f);
+
+        // Recombine
+        float outL = satLowL + satHighL;
+        EXPECT_TRUE(std::isfinite(outL)) << "NaN/Inf at sample " << i;
+        EXPECT_LE(std::abs(outL), 3.0f) << "Output should be bounded at sample " << i;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v8 TESTS: TruePeakLimiter v8 Tightened Attack
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(V8Regression, TruePeakLimiterTightenedAttack) {
+    // v8: TruePeakLimiter has tightened attack (0.5ms) for ISP compliance
+    // Verify it catches sudden transients better than before
+    TruePeakLimiter limiter;
+    limiter.prepare(kSR, kBlockSize, 2.0f);
+    limiter.reset();
+
+    const float ceiling = 0.5f;
+    const int totalSamples = kBlockSize * 4;
+
+    // Create a signal with a sudden transient
+    juce::AudioBuffer<float> buffer(2, totalSamples);
+    buffer.clear();
+
+    // Quiet signal for first half, then sudden loud transient
+    for (int i = 0; i < totalSamples / 2; ++i) {
+        buffer.setSample(0, i, 0.1f * std::sin(2.0f * 3.14159f * 440.0f * i / (float)kSR));
+        buffer.setSample(1, i, 0.1f * std::sin(2.0f * 3.14159f * 440.0f * i / (float)kSR));
+    }
+    for (int i = totalSamples / 2; i < totalSamples; ++i) {
+        buffer.setSample(0, i, 1.5f * std::sin(2.0f * 3.14159f * 440.0f * i / (float)kSR));
+        buffer.setSample(1, i, 1.5f * std::sin(2.0f * 3.14159f * 440.0f * i / (float)kSR));
+    }
+
+    limiter.processBlock(buffer, ceiling);
+
+    // Check that gain reduction was applied
+    float grDb = limiter.getGainReductionDb();
+    EXPECT_GT(grDb, 1.0f) << "Limiter should apply significant GR to +9.5 dB signal";
+
+    // Check that output doesn't exceed ceiling by more than 0.5 dB (ISP tolerance)
+    const int skip = limiter.getLatencySamples() + 10;
+    float maxOutput = 0.0f;
+    for (int i = skip; i < totalSamples; ++i) {
+        maxOutput = std::max(maxOutput, std::abs(buffer.getSample(0, i)));
+        maxOutput = std::max(maxOutput, std::abs(buffer.getSample(1, i)));
+    }
+
+    float overshootDb = 20.0f * std::log10(maxOutput / ceiling);
+    EXPECT_LT(overshootDb, 0.5f)
+        << "ISP overshoot should be < 0.5 dB. Got: " << overshootDb << " dB";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

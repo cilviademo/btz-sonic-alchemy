@@ -1,242 +1,223 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.cpp  v7
+  Box Tone Zone (BTZ) — PluginProcessor.cpp  v8
+  ────────────────────────────────────────────────────────────────────────
+  v8 (competitive-audit driven):
+    • REMOVED all 12 ADAATanh instances — plain fastTanh + OS is strictly
+      superior (-59 dB alias rejection vs -18.6 dB with ADAA at 4x OS)
+    • REMOVED SlewLimiter — was only a safety net for ADAA
+    • DC blocker cutoff lowered from 5 Hz to 1 Hz (SafetyLayer v8)
+    • TruePeakLimiter: tightened release + added attack coeff for ISP
+    • State version bumped to 8
   ────────────────────────────────────────────────────────────────────────
   v7 (release-gate hardening):
     • Click-free bypass via BypassCrossfader (64-sample cosine ramp)
     • Full resetAll() method — transport stop/start safe
-    • releaseResources() guarded — dryBuffer kept, just cleared
-    • OS objects reused across prepareToPlay calls (same SR/blockSize)
-    • State migration with version validation (v4→v7 compat)
-    • Silence-in-silence-out: skip DSP when input is silent
-    • glueScHpf crossfade on mode change (SidechainHPF v7)
-    • processBlock guarded by `prepared` flag
-
-  v6: Macros wired, Glue sidechain HPF
+    • releaseResources() guarded — no deallocation of dryBuffer
+    • OS objects created once, not recreated on every prepareToPlay
+    • State migration with version validation (v4→v8 compat)
+    • Silence-in-silence-out detection
+    • glueScHpf crossfade on mode change (via SidechainHPF v7)
+  ────────────────────────────────────────────────────────────────────────
+  v6: Macro wiring, glue sidechain HPF
   v5: Envelope followers at base SR, SlewLimiter OS factor
   v4: SVF LR4 crossover, soft-knee glue, Padé [5/5] fastTanh
 */
+
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
-
-using namespace BTZDsp;
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Parameter Layout — grouped for DAW organization
-// ═══════════════════════════════════════════════════════════════════════════
-juce::AudioProcessorValueTreeState::ParameterLayout BTZAudioProcessor::createParameterLayout() {
-    auto pct = [](const juce::String& id, const juce::String& name, float def) {
-        return std::make_unique<juce::AudioParameterFloat>(
-            juce::ParameterID(id, 1), name,
-            juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), def);
-    };
-
-    // ── Core group ──
-    auto core = std::make_unique<juce::AudioProcessorParameterGroup>("core", "Core", "|");
-    core->addChild(pct("punch",   "Punch",   0.18f));
-    core->addChild(pct("warmth",  "Warmth",  0.22f));
-    core->addChild(pct("boom",    "Boom",    0.10f));
-    core->addChild(pct("glue",    "Glue",    0.25f));
-    core->addChild(pct("air",     "Air",     0.12f));
-    core->addChild(pct("width",   "Width",   0.50f));
-    core->addChild(pct("density", "Density", 0.16f));
-    core->addChild(pct("motion",  "Motion",  0.04f));
-    core->addChild(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("vintageModern", 1), "Era",
-        juce::NormalisableRange<float>(-1.0f, 1.0f, 0.01f), 0.0f));
-    core->addChild(pct("mix",  "Mix",  1.0f));
-    core->addChild(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("drive", 1), "Drive",
-        juce::NormalisableRange<float>(0.0f, 12.0f, 0.1f), 0.0f));
-
-    // ── SPARK group ──
-    auto spark = std::make_unique<juce::AudioProcessorParameterGroup>("spark", "SPARK", "|");
-    spark->addChild(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("glueScHpf", 1), "SC HPF",
-        juce::NormalisableRange<float>(0.0f, 3.0f, 1.0f), 1.0f));
-    spark->addChild(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("sparkCeiling", 1), "Ceiling",
-        juce::NormalisableRange<float>(-3.0f, 0.0f, 0.1f), -0.3f));
-    spark->addChild(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("qualityMode", 1), "Quality",
-        juce::NormalisableRange<float>(0.0f, 2.0f, 1.0f), 1.0f));
-
-    // ── SHINE group ──
-    auto shine = std::make_unique<juce::AudioProcessorParameterGroup>("shine", "SHINE", "|");
-    shine->addChild(pct("shineAmount", "Shine Amount", 0.0f));
-    shine->addChild(pct("shineMix",    "Shine Mix",    0.5f));
-    shine->addChild(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("shineFreq", 1), "Shine Freq",
-        juce::NormalisableRange<float>(2000.0f, 18000.0f, 1.0f, 0.3f), 12000.0f));
-    shine->addChild(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("shineQ", 1), "Shine Q",
-        juce::NormalisableRange<float>(0.1f, 2.0f, 0.01f), 0.7f));
-
-    // ── Macro group ──
-    auto macros = std::make_unique<juce::AudioProcessorParameterGroup>("macros", "Macros", "|");
-    macros->addChild(pct("macro0", "Macro 1", 0.0f));
-    macros->addChild(pct("macro1", "Macro 2", 0.0f));
-    macros->addChild(pct("macro2", "Macro 3", 0.0f));
-    macros->addChild(pct("macro3", "Macro 4", 0.0f));
-
-    // ── Global group ──
-    auto global = std::make_unique<juce::AudioProcessorParameterGroup>("global", "Global", "|");
-    global->addChild(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("masterIntensity", 1), "Master",
-        juce::NormalisableRange<float>(0.0f, 1.0f, 0.01f), 0.75f));
-    global->addChild(std::make_unique<juce::AudioParameterBool>(
-        juce::ParameterID("bypass", 1), "Bypass", false));
-    global->addChild(std::make_unique<juce::AudioParameterFloat>(
-        juce::ParameterID("autogain", 1), "Auto Gain",
-        juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f));
-
-    juce::AudioProcessorValueTreeState::ParameterLayout layout;
-    layout.add(std::move(core), std::move(spark), std::move(shine),
-               std::move(macros), std::move(global));
-    return layout;
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Constructor
 // ═══════════════════════════════════════════════════════════════════════════
 BTZAudioProcessor::BTZAudioProcessor()
     : AudioProcessor(BusesProperties()
-        .withInput("Input", juce::AudioChannelSet::stereo(), true)
+        .withInput("Input",  juce::AudioChannelSet::stereo(), true)
         .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts(*this, nullptr, "BTZ_STATE", createParameterLayout())
+      apvts(*this, nullptr, "BTZ_PARAMS", createParameterLayout())
 {
     macroInterpreter.setupDefaults();
 }
 
-bool BTZAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
-    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
-        return false;
-    return layouts.getMainInputChannelSet() == layouts.getMainOutputChannelSet();
+// ═══════════════════════════════════════════════════════════════════════════
+// Parameter layout
+// ═══════════════════════════════════════════════════════════════════════════
+juce::AudioProcessorValueTreeState::ParameterLayout BTZAudioProcessor::createParameterLayout() {
+    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
+
+    // ── Core group ──
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "punch", "Punch", 0.0f, 1.0f, 0.35f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "warmth", "Warmth", 0.0f, 1.0f, 0.3f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "boom", "Boom", 0.0f, 1.0f, 0.2f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "glue", "Glue", 0.0f, 1.0f, 0.25f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "air", "Air", 0.0f, 1.0f, 0.2f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "width", "Width", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "density", "Density", 0.0f, 1.0f, 0.15f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "motion", "Motion", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "vintageModern", "Era", 0.0f, 1.0f, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "mix", "Mix", 0.0f, 1.0f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "drive", "Drive", 0.0f, 12.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "masterIntensity", "Master Intensity", 0.0f, 1.0f, 0.7f));
+
+    // ── SPARK group ──
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "sparkCeiling", "SPARK Ceiling", -12.0f, 0.0f, -0.3f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        "bypass", "Bypass", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>(
+        "autogain", "Auto Gain", true));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "qualityMode", "Quality Mode", 0.0f, 2.0f, 1.0f));
+
+    // ── SHINE group ──
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "shineAmount", "SHINE Amount", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "shineMix", "SHINE Mix", 0.0f, 1.0f, 1.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "shineFreq", "SHINE Frequency",
+        juce::NormalisableRange<float>(1000.0f, 16000.0f, 1.0f, 0.3f), 8000.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "shineQ", "SHINE Q",
+        juce::NormalisableRange<float>(0.3f, 4.0f, 0.01f, 0.5f), 0.707f));
+
+    // ── Macros group ──
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "macro0", "Macro A", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "macro1", "Macro B", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "macro2", "Macro C", 0.0f, 1.0f, 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "macro3", "Macro D", 0.0f, 1.0f, 0.0f));
+
+    // ── Global group ──
+    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+        "glueScHpf", "Glue SC HPF", 0.0f, 3.0f, 1.0f));
+
+    return { params.begin(), params.end() };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ADAA reset helper
+// initSmoothers
 // ═══════════════════════════════════════════════════════════════════════════
-void BTZAudioProcessor::resetAllADAA() {
-    adaaPreampL.reset();   adaaPreampR.reset();
-    adaaBandLowL.reset();  adaaBandLowR.reset();
-    adaaBandHighL.reset(); adaaBandHighR.reset();
-    adaaPunchOddL.reset(); adaaPunchOddR.reset();
-    adaaPunchEvenL.reset();adaaPunchEvenR.reset();
-    adaaDensityL.reset();  adaaDensityR.reset();
+void BTZAudioProcessor::initSmoothers(double sampleRate) {
+    const float ms5  = 5.0f;
+    const float ms10 = 10.0f;
+    const float ms20 = 20.0f;
+    const float ms50 = 50.0f;
+
+    sPunch.setTime(ms10, sampleRate);
+    sWarmth.setTime(ms10, sampleRate);
+    sBoom.setTime(ms20, sampleRate);
+    sGlue.setTime(ms10, sampleRate);
+    sAir.setTime(ms10, sampleRate);
+    sWidth.setTime(ms20, sampleRate);
+    sDensity.setTime(ms10, sampleRate);
+    sMotion.setTime(ms50, sampleRate);
+    sEra.setTime(ms20, sampleRate);
+    sMix.setTime(ms5, sampleRate);
+    sDrive.setTime(ms10, sampleRate);
+    sMaster.setTime(ms20, sampleRate);
+    sShine.setTime(ms10, sampleRate);
+    sShineMix.setTime(ms10, sampleRate);
+    sShineFreq.setTime(ms50, sampleRate);
+    sShineQ.setTime(ms50, sampleRate);
+    sMacro0.setTime(ms10, sampleRate);
+    sMacro1.setTime(ms10, sampleRate);
+    sMacro2.setTime(ms10, sampleRate);
+    sMacro3.setTime(ms10, sampleRate);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// v7: Full DSP state reset — safe for transport stop/start
-// Resets all stateful DSP modules without reallocating memory.
+// resetAll — v7: full DSP state reset (transport-safe, zero allocation)
+// v8: removed ADAA and SlewLimiter reset calls
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::resetAll() {
     safetyPre.reset();
     safetyPost.reset();
-    slewL.reset();
-    slewR.reset();
-    peakEnvL.reset();  peakEnvR.reset();
-    rmsEnvL.reset();   rmsEnvR.reset();
+    peakEnvL.reset();
+    peakEnvR.reset();
+    rmsEnvL.reset();
+    rmsEnvR.reset();
     glueEnv.reset();
-    glueScHpf.reset();
     glueComp.reset();
     crossover.reset();
     truePeakLimiter.reset();
     shineProcessor.reset();
     autoGainSmoother.reset();
     bypassCrossfader.reset();
-    resetAllADAA();
+    meterBallistics.reset();
+
+    // v8: no ADAA or SlewLimiter to reset
 
     // Reset analog state
     hpStateL = hpStateR = 0.0f;
     sideLowState = 0.0f;
     lastCrestRatio = 3.0f;
-    silentFrameCount = 0;
     noiseSeed = 12345u;
-
-    // Clear meter ballistics
-    meterBallistics.reset();
+    silentFrameCount = 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Smoother initialization
+// isBusesLayoutSupported
 // ═══════════════════════════════════════════════════════════════════════════
-void BTZAudioProcessor::initSmoothers(double sampleRate) {
-    auto init = [sampleRate](SmoothParam& s, float ms) { s.setTime(ms, sampleRate); };
-    init(sPunch, 5.0f);      init(sWarmth, 6.0f);
-    init(sBoom, 8.0f);       init(sGlue, 20.0f);
-    init(sAir, 6.0f);        init(sWidth, 20.0f);
-    init(sDensity, 6.0f);    init(sMotion, 40.0f);
-    init(sEra, 25.0f);       init(sMix, 12.0f);
-    init(sDrive, 10.0f);     init(sMaster, 25.0f);
-    init(sShine, 5.0f);      init(sShineMix, 5.0f);
-    init(sShineFreq, 8.0f);   init(sShineQ, 8.0f);
-    init(sMacro0, 15.0f);    init(sMacro1, 15.0f);
-    init(sMacro2, 15.0f);    init(sMacro3, 15.0f);
-
-    sPunch.snapTo(*apvts.getRawParameterValue("punch"));
-    sWarmth.snapTo(*apvts.getRawParameterValue("warmth"));
-    sBoom.snapTo(*apvts.getRawParameterValue("boom"));
-    sGlue.snapTo(*apvts.getRawParameterValue("glue"));
-    sAir.snapTo(*apvts.getRawParameterValue("air"));
-    sWidth.snapTo(*apvts.getRawParameterValue("width"));
-    sDensity.snapTo(*apvts.getRawParameterValue("density"));
-    sMotion.snapTo(*apvts.getRawParameterValue("motion"));
-    sEra.snapTo(*apvts.getRawParameterValue("vintageModern"));
-    sMix.snapTo(*apvts.getRawParameterValue("mix"));
-    sDrive.snapTo(*apvts.getRawParameterValue("drive"));
-    sMaster.snapTo(*apvts.getRawParameterValue("masterIntensity"));
-    sShine.snapTo(*apvts.getRawParameterValue("shineAmount"));
-    sShineMix.snapTo(*apvts.getRawParameterValue("shineMix"));
-    sShineFreq.snapTo(*apvts.getRawParameterValue("shineFreq"));
-    sShineQ.snapTo(*apvts.getRawParameterValue("shineQ"));
-    sMacro0.snapTo(*apvts.getRawParameterValue("macro0"));
-    sMacro1.snapTo(*apvts.getRawParameterValue("macro1"));
-    sMacro2.snapTo(*apvts.getRawParameterValue("macro2"));
-    sMacro3.snapTo(*apvts.getRawParameterValue("macro3"));
+bool BTZAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
+    if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+    if (layouts.getMainInputChannelSet() != juce::AudioChannelSet::stereo())
+        return false;
+    return true;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// prepareToPlay — initialize all DSP modules
-// v7: OS objects reused if SR and blockSize haven't changed
+// prepareToPlay
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
-    currentSampleRate = sampleRate;
-    currentBlockSize  = samplesPerBlock;
-    maxPreparedBlockSize = juce::jmax(samplesPerBlock, 32768);
-
-    // FTZ/DAZ — v4
+    // v4: FTZ/DAZ at init
     BTZDsp::enableFlushToZero();
 
-    // Safety layers
+    // Call base class
+    juce::AudioProcessor::prepareToPlay(sampleRate, samplesPerBlock);
+
+    currentSampleRate = sampleRate;
+    maxPreparedBlockSize = samplesPerBlock;
+    currentBlockSize = samplesPerBlock;
+
+    // Safety layers (v8: 1 Hz DC blocker)
     safetyPre.setSampleRate(sampleRate);
     safetyPost.setSampleRate(sampleRate);
 
-    // Slew limiters
-    slewL.setSampleRate(sampleRate);
-    slewR.setSampleRate(sampleRate);
-
     // Envelope followers
-    peakEnvL.setTimes(0.2f, 220.0f, sampleRate);
-    peakEnvR.setTimes(0.2f, 220.0f, sampleRate);
-    rmsEnvL.setTimes(25.0f, 300.0f, sampleRate);
-    rmsEnvR.setTimes(25.0f, 300.0f, sampleRate);
-    glueEnv.setTimes(5.0f, 80.0f, sampleRate);
+    peakEnvL.setTimes(0.1f, 50.0f, sampleRate);
+    peakEnvR.setTimes(0.1f, 50.0f, sampleRate);
+    rmsEnvL.setTimes(5.0f, 100.0f, sampleRate);
+    rmsEnvR.setTimes(5.0f, 100.0f, sampleRate);
+    glueEnv.setTimes(0.5f, 80.0f, sampleRate);
 
-    // Glue compressor
+    // Glue compressor and sidechain HPF
     glueComp.prepare(sampleRate);
-
-    // v6: Glue sidechain HPF (default 60 Hz)
-    glueScHpf.prepareImmediate(sampleRate, 60.0f);
-    lastGlueScHpfFreq = 60.0f;
     glueScHpfSampleRate = sampleRate;
+    glueScHpf.prepare(sampleRate, lastGlueScHpfFreq);
 
-    // Crossover (v4: TRUE LR4 at 250 Hz)
+    // Crossover (v4: LR4 at 250 Hz)
     crossover.prepare(sampleRate, 250.0f);
 
-    // TruePeakLimiter
-    truePeakLimiter.prepare(sampleRate, samplesPerBlock, 2.0f);
+    // TruePeakLimiter (v8: tightened attack/release for ISP compliance)
+    truePeakLimiter.prepare(sampleRate, samplesPerBlock);
 
-    // SHINE processor
+    // SHINE (v4: SVF high-shelf)
     shineProcessor.prepare(sampleRate);
 
     // Auto-gain smoother
@@ -487,10 +468,10 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
 
 // ═══════════════════════════════════════════════════════════════════════════
 // processNonlinear — runs at OVERSAMPLED rate (or 1x in Eco mode)
+// v8: uses plain fastTanh instead of ADAA. No SlewLimiter.
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamples, float osFactor) {
-    slewL.setOversampleFactor(osFactor);
-    slewR.setOversampleFactor(osFactor);
+    (void) osFactor;  // v8: no longer needed (SlewLimiter removed)
 
     for (int n = 0; n < numSamples; ++n) {
         const float warmth  = sWarmth.current;
@@ -502,38 +483,38 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
         float L = dataL[n];
         float R = dataR[n];
 
-        // ── Preamp / Color (warmth-driven ADAA tanh saturation) ──
+        // ── Preamp / Color (warmth-driven tanh saturation) ──
+        // v8: plain fastTanh — measured -59 dB alias rejection at 4x OS
+        //     vs -18.6 dB with ADAA. ADAA actively degrades quality.
         if (warmth > 0.001f) {
             const float drv = 1.0f + warmth * 2.8f;
             const float bias = warmth * 0.05f;
             const float eraScale = juce::jmax(0.55f, 1.0f + era * 0.30f);
 
             const float biasComp = std::tanh(bias * drv / eraScale);
-            float yL = adaaPreampL.process((L + bias) * drv / eraScale) - biasComp;
-            float yR = adaaPreampR.process((R + bias) * drv / eraScale) - biasComp;
+            float yL = BTZDsp::fastTanh((L + bias) * drv / eraScale) - biasComp;
+            float yR = BTZDsp::fastTanh((R + bias) * drv / eraScale) - biasComp;
             L = L + (yL - L) * warmth;
             R = R + (yR - R) * warmth;
         }
 
-        // ── Slew limiter (safety net — v5: OS-factor-aware) ──
-        L = slewL.process(L);
-        R = slewR.process(R);
+        // v8: SlewLimiter REMOVED — was only a safety net for ADAA
 
         // ── Band split (v4: TRUE LR4 crossover at 250 Hz — 24 dB/oct) ──
         float lowL, lowR, highL, highR;
         crossover.process(L, R, lowL, lowR, highL, highR);
 
-        // ── Band saturation (ADAA tanh per band per channel) ──
+        // ── Band saturation (plain fastTanh per band per channel) ──
         {
             const float lowDrv  = 1.0f + boom * 1.25f;
             const float highDrv = 1.0f + warmth * 1.75f;
             const float satAmt  = juce::jlimit(0.0f, 1.0f, warmth * 0.65f + density * 0.35f);
 
             if (satAmt > 0.001f) {
-                const float satLowL = adaaBandLowL.process(lowL * lowDrv) / lowDrv;
-                const float satLowR = adaaBandLowR.process(lowR * lowDrv) / lowDrv;
-                const float satHiL  = adaaBandHighL.process(highL * highDrv) / highDrv;
-                const float satHiR  = adaaBandHighR.process(highR * highDrv) / highDrv;
+                const float satLowL = BTZDsp::fastTanh(lowL * lowDrv) / lowDrv;
+                const float satLowR = BTZDsp::fastTanh(lowR * lowDrv) / lowDrv;
+                const float satHiL  = BTZDsp::fastTanh(highL * highDrv) / highDrv;
+                const float satHiR  = BTZDsp::fastTanh(highR * highDrv) / highDrv;
 
                 L = lowL + (satLowL - lowL) * satAmt + highL + (satHiL - highL) * satAmt;
                 R = lowR + (satLowR - lowR) * satAmt + highR + (satHiR - highR) * satAmt;
@@ -543,17 +524,17 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
             }
         }
 
-        // ── Punch (crest-aware harmonic injection via ADAA) ──
+        // ── Punch (crest-aware harmonic injection via fastTanh) ──
         if (punch > 0.002f) {
             const float crest = lastCrestRatio;
             const float harmonicBias = juce::jlimit(0.8f, 1.3f, 1.0f + (crest - 3.0f) * 0.06f);
             const float amount = punch * 0.25f;
             const float drv = 1.0f + punch * 2.0f;
 
-            const float oddL  = adaaPunchOddL.process(drv * L);
-            const float evenL = adaaPunchEvenL.process(drv * L + 0.25f) - kTanhBias025;
-            const float oddR  = adaaPunchOddR.process(drv * R);
-            const float evenR = adaaPunchEvenR.process(drv * R + 0.25f) - kTanhBias025;
+            const float oddL  = BTZDsp::fastTanh(drv * L);
+            const float evenL = BTZDsp::fastTanh(drv * L + 0.25f) - BTZDsp::kTanhBias025;
+            const float oddR  = BTZDsp::fastTanh(drv * R);
+            const float evenR = BTZDsp::fastTanh(drv * R + 0.25f) - BTZDsp::kTanhBias025;
             L = L + ((oddL * harmonicBias + evenL * (2.0f - harmonicBias)) - L) * amount;
             R = R + ((oddR * harmonicBias + evenR * (2.0f - harmonicBias)) - R) * amount;
         }
@@ -564,19 +545,16 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
             R += lowR * boom * 0.28f;
         }
 
-        // ── Density (additional ADAA tanh saturation) ──
+        // ── Density (additional fastTanh saturation) ──
         if (density > 0.001f) {
             const float drv = 1.0f + density * 3.0f;
-            L = adaaDensityL.process(L * drv) / drv;
-            R = adaaDensityR.process(R * drv) / drv;
+            L = BTZDsp::fastTanh(L * drv) / drv;
+            R = BTZDsp::fastTanh(R * drv) / drv;
         }
 
         dataL[n] = L;
         dataR[n] = R;
     }
-
-    slewL.setOversampleFactor(1.0f);
-    slewR.setOversampleFactor(1.0f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -706,6 +684,7 @@ void BTZAudioProcessor::updateMeters(const float* inL, const float* inR,
 // ═══════════════════════════════════════════════════════════════════════════
 // processBlock — main entry point
 // v7: click-free bypass, silence detection, prepared guard
+// v8: ADAA removed, plain fastTanh in processNonlinear
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
     juce::ScopedNoDenormals noDenormals;
@@ -752,9 +731,6 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     float sparkGRDb = 0.0f;
 
     // ── v7: Silence-in-silence-out detection ──
-    // If input is silent for kSilentFrameThreshold consecutive samples,
-    // skip DSP processing and output silence. This saves CPU when the
-    // track is muted or between regions.
     {
         float blockPeak = 0.0f;
         for (int i = 0; i < numSamples; ++i) {
@@ -770,7 +746,6 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const bool inputIsSilent = (silentFrameCount > kSilentFrameThreshold);
 
     // ── v7: Click-free bypass via BypassCrossfader ──
-    // The crossfader manages a 64-sample cosine ramp between wet and dry.
     bypassCrossfader.setBypassState(bypassed);
 
     if (!inputIsSilent) {
@@ -779,6 +754,7 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         processLinearPre(dataL, dataR, numSamples);
 
         // ── Phase 2: Nonlinear processing (oversampled) ──
+        // v8: plain fastTanh in processNonlinear (no ADAA)
         if (activeQualityMode == 1 && os2x != nullptr) {
             juce::dsp::AudioBlock<float> block(buffer);
             auto stereoBlock = block.getSubsetChannelBlock(0, 2).getSubBlock(0, (size_t) numSamples);
@@ -810,8 +786,6 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         }
 
         // ── v7: Apply bypass crossfade ──
-        // During transition: wet signal is in dataL/dataR, dry is in dryBuffer.
-        // BypassCrossfader blends between them sample-by-sample.
         for (int i = 0; i < numSamples; ++i) {
             bypassCrossfader.processStereo(dryReadL[i], dryReadR[i], dataL[i], dataR[i]);
         }
@@ -837,7 +811,7 @@ void BTZAudioProcessor::migrateState(juce::ValueTree& state, int fromVersion) {
     }
 
     // v6→v7: no new parameters, just behavioral fixes
-    // Future migrations go here.
+    // v7→v8: no new parameters, removed ADAA (internal DSP change only)
 
     (void)state;  // State tree is already handled by APVTS replaceState
 }

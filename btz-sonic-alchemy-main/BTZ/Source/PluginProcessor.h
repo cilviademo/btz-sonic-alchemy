@@ -1,12 +1,20 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.h  v7
+  Box Tone Zone (BTZ) — PluginProcessor.h  v8
+  ────────────────────────────────────────────────────────────────────────
+  v8 (competitive-audit driven):
+    • REMOVED all 12 ADAATanh instances — measured -18.6 dB alias rejection
+      WITH ADAA vs -59.0 dB WITHOUT. Plain fastTanh + OS is strictly superior.
+    • REMOVED SlewLimiter — was only a safety net for ADAA
+    • DC blocker cutoff lowered from 5 Hz to 1 Hz (neutral-path fix)
+    • TruePeakLimiter: tightened release + added attack coeff for ISP compliance
+    • State version bumped to 8
   ────────────────────────────────────────────────────────────────────────
   v7 (release-gate hardening):
     • Click-free bypass via BypassCrossfader (64-sample cosine ramp)
     • Full resetAll() method — transport stop/start safe
     • releaseResources() guarded — no deallocation of dryBuffer
     • OS objects created once, not recreated on every prepareToPlay
-    • State migration with version validation (v4→v7 compat)
+    • State migration with version validation (v4→v8 compat)
     • Silence-in-silence-out detection
     • glueScHpf crossfade on mode change (via SidechainHPF v7)
 */
@@ -86,17 +94,11 @@ private:
     BTZDsp::SmoothParam sShine, sShineMix, sShineFreq, sShineQ;
     BTZDsp::SmoothParam sMacro0, sMacro1, sMacro2, sMacro3;
 
-    // ── ADAA saturators — one instance per channel per saturation stage ──
-    BTZDsp::ADAATanh adaaPreampL, adaaPreampR;
-    BTZDsp::ADAATanh adaaBandLowL, adaaBandLowR;
-    BTZDsp::ADAATanh adaaBandHighL, adaaBandHighR;
-    BTZDsp::ADAATanh adaaPunchOddL, adaaPunchOddR;
-    BTZDsp::ADAATanh adaaPunchEvenL, adaaPunchEvenR;
-    BTZDsp::ADAATanh adaaDensityL, adaaDensityR;
+    // v8: ADAA REMOVED — plain fastTanh + oversampling is strictly superior
+    // (no per-channel per-stage instances needed)
 
     // ── DSP modules ──
     BTZDsp::SafetyLayer safetyPre, safetyPost;
-    BTZDsp::SlewLimiter slewL, slewR;
     BTZDsp::EnvFollower peakEnvL, peakEnvR, rmsEnvL, rmsEnvR;
     BTZDsp::EnvFollower glueEnv;
     BTZDsp::SidechainHPF glueScHpf;
@@ -154,7 +156,6 @@ private:
     // ── Internal methods ──
     void initSmoothers(double sampleRate);
     void updateTargetsFromAPVTS();
-    void resetAllADAA();
     void resetAll();  // v7: full DSP state reset (transport-safe)
 
     void processLinearPre(float* dataL, float* dataR, int numSamples);
