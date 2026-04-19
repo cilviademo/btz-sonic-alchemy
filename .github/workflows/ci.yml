@@ -1,0 +1,64 @@
+name: BTZ CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+        build_type: [Release]
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libjack-jackd2-dev \
+            libfreetype6-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxinerama-dev \
+            libxcursor-dev \
+            libgl1-mesa-dev \
+            libwebkit2gtk-4.0-dev \
+            libcurl4-openssl-dev
+
+      - name: Configure CMake (plugin only)
+        working-directory: btz-sonic-alchemy-main/BTZ
+        run: cmake -B build -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+
+      - name: Build plugin
+        working-directory: btz-sonic-alchemy-main/BTZ
+        run: cmake --build build --config ${{ matrix.build_type }} --parallel
+
+      - name: Configure CMake (with tests)
+        working-directory: btz-sonic-alchemy-main/BTZ
+        run: cmake -B build-test -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} -DBTZ_BUILD_TESTS=ON
+
+      - name: Build tests
+        working-directory: btz-sonic-alchemy-main/BTZ
+        run: cmake --build build-test --config ${{ matrix.build_type }} --parallel
+
+      - name: Run tests
+        working-directory: btz-sonic-alchemy-main/BTZ/build-test
+        run: ctest --output-on-failure -C ${{ matrix.build_type }}
+
+      - name: Upload VST3 artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTZ-VST3-${{ matrix.os }}
+          path: btz-sonic-alchemy-main/BTZ/build/**/BTZ.vst3
+          if-no-files-found: warn
