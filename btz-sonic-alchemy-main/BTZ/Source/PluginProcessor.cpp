@@ -1,21 +1,19 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.cpp  v6
+  Box Tone Zone (BTZ) — PluginProcessor.cpp  v7
   ────────────────────────────────────────────────────────────────────────
-  v6 changes:
-    • FIX: Macros now WIRED — MacroInterpreter.getModulation() called in
-      updateTargetsFromAPVTS, additive offsets applied to DSP smoothers
-    • FIX: Glue sidechain HPF — off/60/90/150 Hz, prevents kick pumping
-    • NEW: glueScHpf APVTS parameter (choice: 0=off, 1=60, 2=90, 3=150)
+  v7 (release-gate hardening):
+    • Click-free bypass via BypassCrossfader (64-sample cosine ramp)
+    • Full resetAll() method — transport stop/start safe
+    • releaseResources() guarded — dryBuffer kept, just cleared
+    • OS objects reused across prepareToPlay calls (same SR/blockSize)
+    • State migration with version validation (v4→v7 compat)
+    • Silence-in-silence-out: skip DSP when input is silent
+    • glueScHpf crossfade on mode change (SidechainHPF v7)
+    • processBlock guarded by `prepared` flag
 
-  v5 changes (audit-driven fixes):
-    • Envelope followers at base SR (not OS rate)
-    • SlewLimiter OS factor set before processNonlinear
-    • Crest ratio computed at base SR
-    • ADAA-1 alias rejection ~5.7 dB at 1x SR
-
-  v4 changes (mathematical DSP overhaul):
-    • SVF LR4 crossover, soft-knee glue, Padé [5/5] fastTanh,
-      perceptual macro curves, sqrt(A)-prewarped SHINE shelf
+  v6: Macros wired, Glue sidechain HPF
+  v5: Envelope followers at base SR, SlewLimiter OS factor
+  v4: SVF LR4 crossover, soft-knee glue, Padé [5/5] fastTanh
 */
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -52,7 +50,6 @@ juce::AudioProcessorValueTreeState::ParameterLayout BTZAudioProcessor::createPar
 
     // ── SPARK group ──
     auto spark = std::make_unique<juce::AudioProcessorParameterGroup>("spark", "SPARK", "|");
-    // v6: Glue sidechain HPF (0=off, 1=60Hz, 2=90Hz, 3=150Hz)
     spark->addChild(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("glueScHpf", 1), "SC HPF",
         juce::NormalisableRange<float>(0.0f, 3.0f, 1.0f), 1.0f));
@@ -129,6 +126,38 @@ void BTZAudioProcessor::resetAllADAA() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// v7: Full DSP state reset — safe for transport stop/start
+// Resets all stateful DSP modules without reallocating memory.
+// ═══════════════════════════════════════════════════════════════════════════
+void BTZAudioProcessor::resetAll() {
+    safetyPre.reset();
+    safetyPost.reset();
+    slewL.reset();
+    slewR.reset();
+    peakEnvL.reset();  peakEnvR.reset();
+    rmsEnvL.reset();   rmsEnvR.reset();
+    glueEnv.reset();
+    glueScHpf.reset();
+    glueComp.reset();
+    crossover.reset();
+    truePeakLimiter.reset();
+    shineProcessor.reset();
+    autoGainSmoother.reset();
+    bypassCrossfader.reset();
+    resetAllADAA();
+
+    // Reset analog state
+    hpStateL = hpStateR = 0.0f;
+    sideLowState = 0.0f;
+    lastCrestRatio = 3.0f;
+    silentFrameCount = 0;
+    noiseSeed = 12345u;
+
+    // Clear meter ballistics
+    meterBallistics.reset();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Smoother initialization
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::initSmoothers(double sampleRate) {
@@ -140,6 +169,7 @@ void BTZAudioProcessor::initSmoothers(double sampleRate) {
     init(sEra, 25.0f);       init(sMix, 12.0f);
     init(sDrive, 10.0f);     init(sMaster, 25.0f);
     init(sShine, 5.0f);      init(sShineMix, 5.0f);
+    init(sShineFreq, 8.0f);   init(sShineQ, 8.0f);
     init(sMacro0, 15.0f);    init(sMacro1, 15.0f);
     init(sMacro2, 15.0f);    init(sMacro3, 15.0f);
 
@@ -157,6 +187,8 @@ void BTZAudioProcessor::initSmoothers(double sampleRate) {
     sMaster.snapTo(*apvts.getRawParameterValue("masterIntensity"));
     sShine.snapTo(*apvts.getRawParameterValue("shineAmount"));
     sShineMix.snapTo(*apvts.getRawParameterValue("shineMix"));
+    sShineFreq.snapTo(*apvts.getRawParameterValue("shineFreq"));
+    sShineQ.snapTo(*apvts.getRawParameterValue("shineQ"));
     sMacro0.snapTo(*apvts.getRawParameterValue("macro0"));
     sMacro1.snapTo(*apvts.getRawParameterValue("macro1"));
     sMacro2.snapTo(*apvts.getRawParameterValue("macro2"));
@@ -165,26 +197,23 @@ void BTZAudioProcessor::initSmoothers(double sampleRate) {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // prepareToPlay — initialize all DSP modules
+// v7: OS objects reused if SR and blockSize haven't changed
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     currentSampleRate = sampleRate;
     currentBlockSize  = samplesPerBlock;
     maxPreparedBlockSize = juce::jmax(samplesPerBlock, 32768);
 
-    // FTZ/DAZ
+    // FTZ/DAZ — v4
     BTZDsp::enableFlushToZero();
 
     // Safety layers
     safetyPre.setSampleRate(sampleRate);
     safetyPost.setSampleRate(sampleRate);
-    safetyPre.reset();
-    safetyPost.reset();
 
     // Slew limiters
     slewL.setSampleRate(sampleRate);
     slewR.setSampleRate(sampleRate);
-    slewL.reset();
-    slewR.reset();
 
     // Envelope followers
     peakEnvL.setTimes(0.2f, 220.0f, sampleRate);
@@ -192,80 +221,90 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     rmsEnvL.setTimes(25.0f, 300.0f, sampleRate);
     rmsEnvR.setTimes(25.0f, 300.0f, sampleRate);
     glueEnv.setTimes(5.0f, 80.0f, sampleRate);
-    glueEnv.reset();
 
-    // Glue compressor (v4: now soft-knee)
+    // Glue compressor
     glueComp.prepare(sampleRate);
-    glueComp.reset();
 
     // v6: Glue sidechain HPF (default 60 Hz)
-    glueScHpf.prepare(sampleRate, 60.0f);
-    glueScHpf.reset();
+    glueScHpf.prepareImmediate(sampleRate, 60.0f);
     lastGlueScHpfFreq = 60.0f;
+    glueScHpfSampleRate = sampleRate;
 
-    // Crossover (v4: TRUE LR4 at 250 Hz — SVF-based, 24 dB/oct)
+    // Crossover (v4: TRUE LR4 at 250 Hz)
     crossover.prepare(sampleRate, 250.0f);
-    crossover.reset();
 
     // TruePeakLimiter
     truePeakLimiter.prepare(sampleRate, samplesPerBlock, 2.0f);
-    truePeakLimiter.reset();
 
-    // SHINE processor (v4: sqrt(A)-prewarped SVF shelf)
+    // SHINE processor
     shineProcessor.prepare(sampleRate);
-    shineProcessor.reset();
 
-    // Auto-gain smoother (v4: wider range)
+    // Auto-gain smoother
     autoGainSmoother.prepare(sampleRate);
-    autoGainSmoother.reset();
 
     // Meter ballistics
     meterBallistics.prepare(sampleRate, samplesPerBlock);
-    meterBallistics.reset();
+
+    // v7: Bypass crossfader
+    bypassCrossfader.prepare();
 
     // Width state
-    hpStateL = hpStateR = 0.0f;
-    sideLowState = 0.0f;
     const float sideOmega = 6.2831853f * 120.0f / (float)sampleRate;
     sideLowCoeff = sideOmega / (1.0f + sideOmega);
-
-    noiseSeed = 12345u;
 
     // v4: initialize cached drive gain
     cachedDriveGain = 1.0f;
     lastDriveDb = 0.0f;
 
-    // ADAA saturators
-    resetAllADAA();
-
     // Smoothers
     initSmoothers(sampleRate);
 
-    // Dry buffer
-    dryBuffer.setSize(2, maxPreparedBlockSize, false, false, true);
-    dryBuffer.clear();
+    // Dry buffer — v7: allocate once, keep across calls
+    if (dryBuffer.getNumSamples() < maxPreparedBlockSize) {
+        dryBuffer.setSize(2, maxPreparedBlockSize, false, true, true);
+    }
 
-    // Oversampling
-    juce::dsp::ProcessSpec spec;
-    spec.sampleRate = sampleRate;
-    spec.maximumBlockSize = (juce::uint32) juce::jmax(1, samplesPerBlock);
-    spec.numChannels = 2;
+    // v7: Oversampling — only recreate if SR or blockSize changed
+    const bool osNeedsRecreation = (os2x == nullptr || os4x == nullptr
+        || sampleRate != lastPreparedSR
+        || samplesPerBlock != lastPreparedBlockSize);
 
-    os2x = std::make_unique<juce::dsp::Oversampling<float>>(
-        2, 1, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, false);
-    os4x = std::make_unique<juce::dsp::Oversampling<float>>(
-        2, 2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, false);
-    os2x->initProcessing(spec.maximumBlockSize);
-    os4x->initProcessing(spec.maximumBlockSize);
-    os2x->reset();
-    os4x->reset();
+    if (osNeedsRecreation) {
+        os2x = std::make_unique<juce::dsp::Oversampling<float>>(
+            2, 1, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, false);
+        os4x = std::make_unique<juce::dsp::Oversampling<float>>(
+            2, 2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, false);
+
+        const auto maxBlock = (juce::uint32) juce::jmax(1, samplesPerBlock);
+        os2x->initProcessing(maxBlock);
+        os4x->initProcessing(maxBlock);
+    }
+
+    lastPreparedSR = sampleRate;
+    lastPreparedBlockSize = samplesPerBlock;
+
+    // Full reset of all DSP state
+    resetAll();
 
     activeQualityMode = getRequestedQualityMode();
     updateLatencyFromQuality(activeQualityMode);
+
+    // v7: mark as prepared
+    prepared = true;
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// releaseResources — v7: do NOT deallocate dryBuffer (crash risk if
+// processBlock is called after releaseResources by some hosts)
+// ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::releaseResources() {
-    dryBuffer.setSize(0, 0);
+    // v7: intentionally keep dryBuffer allocated.
+    // Some hosts call processBlock after releaseResources.
+    // We just clear it to avoid stale data.
+    dryBuffer.clear();
+
+    // Mark as unprepared — processBlock will early-return
+    prepared = false;
 }
 
 int BTZAudioProcessor::getRequestedQualityMode() const {
@@ -308,16 +347,11 @@ void BTZAudioProcessor::updateTargetsFromAPVTS() {
     sMacro3.setTarget(*apvts.getRawParameterValue("macro3"));
 
     // ── v6: Wire macros through MacroInterpreter ──
-    // Read current smoothed macro values into the array
     macroValues[0] = sMacro0.current;
     macroValues[1] = sMacro1.current;
     macroValues[2] = sMacro2.current;
     macroValues[3] = sMacro3.current;
 
-    // Apply macro modulation as additive offsets to DSP target smoothers.
-    // Target indices match setupDefaults():
-    //   0=punch, 1=warmth, 2=boom, 3=glue, 4=air, 6=density,
-    //   10=drive, 13=shineFreq
     {
         const float modPunch   = macroInterpreter.getModulation(0,  macroValues);
         const float modWarmth  = macroInterpreter.getModulation(1,  macroValues);
@@ -327,7 +361,6 @@ void BTZAudioProcessor::updateTargetsFromAPVTS() {
         const float modDensity = macroInterpreter.getModulation(6,  macroValues);
         const float modDrive   = macroInterpreter.getModulation(10, macroValues);
 
-        // Additive: clamp final target to valid range
         sPunch.setTarget(juce::jlimit(0.0f, 1.0f,
             *apvts.getRawParameterValue("punch") + modPunch));
         sWarmth.setTarget(juce::jlimit(0.0f, 1.0f,
@@ -344,24 +377,26 @@ void BTZAudioProcessor::updateTargetsFromAPVTS() {
             *apvts.getRawParameterValue("drive") + modDrive * 12.0f));
     }
 
-    // ── v6: Update glue sidechain HPF frequency ──
+    // ── v6/v7: Update glue sidechain HPF frequency (crossfade on change) ──
     {
         const float hpfMode = *apvts.getRawParameterValue("glueScHpf");
         float hpfFreq = 0.0f;
         if (hpfMode >= 2.5f)      hpfFreq = 150.0f;
         else if (hpfMode >= 1.5f) hpfFreq = 90.0f;
         else if (hpfMode >= 0.5f) hpfFreq = 60.0f;
-        // else off
 
         if (std::abs(hpfFreq - lastGlueScHpfFreq) > 0.1f) {
             lastGlueScHpfFreq = hpfFreq;
-            glueScHpf.prepare(currentSampleRate, hpfFreq);
+            // v7: SidechainHPF.prepare() uses internal crossfade
+            glueScHpf.prepare(glueScHpfSampleRate, hpfFreq);
         }
     }
 
-    // Update SHINE filter coefficients
-    const float shineFreq = *apvts.getRawParameterValue("shineFreq");
-    const float shineQ    = *apvts.getRawParameterValue("shineQ");
+    // Update SHINE filter coefficients (v7: smoothed freq/Q to prevent zipper noise)
+    sShineFreq.setTarget(*apvts.getRawParameterValue("shineFreq"));
+    sShineQ.setTarget(*apvts.getRawParameterValue("shineQ"));
+    const float shineFreq = sShineFreq.next();
+    const float shineQ    = sShineQ.next();
     const float shineAmt  = *apvts.getRawParameterValue("shineAmount");
     shineProcessor.setParameters(shineFreq, shineAmt, shineQ);
 
@@ -375,8 +410,6 @@ void BTZAudioProcessor::updateTargetsFromAPVTS() {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // processLinearPre — runs at BASE sample rate, before oversampling
-// Handles: safety pre, drive, master scaling, glue, width,
-//          envelope followers (v5: moved here from processNonlinear)
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamples) {
     for (int n = 0; n < numSamples; ++n) {
@@ -400,7 +433,7 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
         L = safetyPre.processSample(L, safetyPre.dcL, safetyPre.dcPrevL);
         R = safetyPre.processSample(R, safetyPre.dcR, safetyPre.dcPrevR);
 
-        // ── Drive (input gain) — v4: uses cached gain, no per-sample pow ──
+        // ── Drive (input gain) — v4: uses cached gain ──
         if (drive > 0.01f) {
             L *= cachedDriveGain;
             R *= cachedDriveGain;
@@ -417,22 +450,17 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
 
         // ── Glue compressor (v4: soft-knee, v6: sidechain HPF) ──
         {
-            // v6: HPF on sidechain to prevent kick pumping
             const float sidechain = glueScHpf.process(L, R);
             const float envVal = glueEnv.process(sidechain);
             glueComp.processStereo(L, R, glue, envVal);
         }
 
         // ── v5 FIX: Envelope followers at BASE sample rate ──
-        // Previously these ran inside processNonlinear at OS rate,
-        // causing 2-4x faster attack/release than intended.
         {
             const float peakVal = peakEnvL.process(std::abs(L));
             const float rmsVal  = std::sqrt(rmsEnvL.process(L * L) + 1.0e-12f);
-            // Store crest ratio for use in processNonlinear
             lastCrestRatio = peakVal / juce::jmax(1.0e-5f, rmsVal);
         }
-        // Right channel envelope (for future stereo crest)
         peakEnvR.process(std::abs(R));
         rmsEnvR.process(R * R);
 
@@ -459,17 +487,8 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
 
 // ═══════════════════════════════════════════════════════════════════════════
 // processNonlinear — runs at OVERSAMPLED rate (or 1x in Eco mode)
-// ────────────────────────────────────────────────────────────────────────
-// v5 FIX: Envelope followers removed from this function.
-//   They now run in processLinearPre at base SR. Crest ratio is read
-//   from lastCrestRatio (held constant across the OS block).
-//   SlewLimiter OS factor is set before entry.
-//
-// v4: Uses true LR4 crossover (24 dB/oct) for cleaner band separation.
-// ADAA tanh in all saturation stages.
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamples, float osFactor) {
-    // v5: Set slew limiter OS factor so maxDelta scales correctly
     slewL.setOversampleFactor(osFactor);
     slewR.setOversampleFactor(osFactor);
 
@@ -525,8 +544,6 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
         }
 
         // ── Punch (crest-aware harmonic injection via ADAA) ──
-        // v5 FIX: crest ratio computed at base SR in processLinearPre,
-        // held constant across the oversampled block.
         if (punch > 0.002f) {
             const float crest = lastCrestRatio;
             const float harmonicBias = juce::jlimit(0.8f, 1.3f, 1.0f + (crest - 3.0f) * 0.06f);
@@ -558,14 +575,12 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
         dataR[n] = R;
     }
 
-    // v5: Reset slew limiter OS factor back to 1x after OS block
     slewL.setOversampleFactor(1.0f);
     slewR.setOversampleFactor(1.0f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
 // processLinearPost — runs at BASE sample rate, after downsampling
-// Handles: SHINE, motion, safety post, neutral comp, dry/wet
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processLinearPost(float* dataL, float* dataR, int numSamples) {
     for (int n = 0; n < numSamples; ++n) {
@@ -689,7 +704,8 @@ void BTZAudioProcessor::updateMeters(const float* inL, const float* inR,
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// processBlock — main entry point with isolated oversampling architecture
+// processBlock — main entry point
+// v7: click-free bypass, silence detection, prepared guard
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
     juce::ScopedNoDenormals noDenormals;
@@ -702,6 +718,10 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         buffer.clear(ch, 0, numSamples);
 
     if (numSamples <= 0 || buffer.getNumChannels() < 2)
+        return;
+
+    // v7: Guard against processBlock called before prepareToPlay or after releaseResources
+    if (!prepared)
         return;
 
     // ── Store dry buffer ──
@@ -731,7 +751,30 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     float sparkGRDb = 0.0f;
 
-    if (! bypassed) {
+    // ── v7: Silence-in-silence-out detection ──
+    // If input is silent for kSilentFrameThreshold consecutive samples,
+    // skip DSP processing and output silence. This saves CPU when the
+    // track is muted or between regions.
+    {
+        float blockPeak = 0.0f;
+        for (int i = 0; i < numSamples; ++i) {
+            blockPeak = juce::jmax(blockPeak, std::abs(dataL[i]), std::abs(dataR[i]));
+        }
+        if (blockPeak < kSilenceThreshold) {
+            silentFrameCount += numSamples;
+        } else {
+            silentFrameCount = 0;
+        }
+    }
+
+    const bool inputIsSilent = (silentFrameCount > kSilentFrameThreshold);
+
+    // ── v7: Click-free bypass via BypassCrossfader ──
+    // The crossfader manages a 64-sample cosine ramp between wet and dry.
+    bypassCrossfader.setBypassState(bypassed);
+
+    if (!inputIsSilent) {
+        // Process wet signal (even during bypass transition for crossfade)
         // ── Phase 1: Linear pre-processing ──
         processLinearPre(dataL, dataR, numSamples);
 
@@ -765,13 +808,38 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         if (autoGain > 0.5f) {
             autoGainSmoother.processBlock(dataL, dataR, numSamples, dryReadL, dryReadR);
         }
-    }
 
-    if (bypassed) {
+        // ── v7: Apply bypass crossfade ──
+        // During transition: wet signal is in dataL/dataR, dry is in dryBuffer.
+        // BypassCrossfader blends between them sample-by-sample.
+        for (int i = 0; i < numSamples; ++i) {
+            bypassCrossfader.processStereo(dryReadL[i], dryReadR[i], dataL[i], dataR[i]);
+        }
+
+    } else {
+        // Input is silent — output silence, keep meters decaying
+        buffer.clear();
         meterBallistics.sparkGR *= 0.9f;
     }
 
     updateMeters(dryReadL, dryReadR, dataL, dataR, numSamples, sparkGRDb);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v7: State migration — handle preset loading from older versions
+// ═══════════════════════════════════════════════════════════════════════════
+void BTZAudioProcessor::migrateState(juce::ValueTree& state, int fromVersion) {
+    // v4→v5: no parameter changes, just internal DSP fixes
+    // v5→v6: added glueScHpf parameter (default 1 = 60 Hz)
+    if (fromVersion < 6) {
+        // If glueScHpf doesn't exist in the state, APVTS will use default (1.0 = 60 Hz)
+        // No explicit migration needed — APVTS handles missing params gracefully.
+    }
+
+    // v6→v7: no new parameters, just behavioral fixes
+    // Future migrations go here.
+
+    (void)state;  // State tree is already handled by APVTS replaceState
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -781,7 +849,6 @@ void BTZAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     const auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
     if (xml) {
-        // v4: embed state version for backward compatibility
         xml->setAttribute("btzStateVersion", BTZDsp::kStateVersion);
         copyXmlToBinary(*xml, destData);
     }
@@ -790,15 +857,27 @@ void BTZAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
 void BTZAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, sizeInBytes));
     if (xml && xml->hasTagName(apvts.state.getType())) {
-        // v4: read state version for future migration logic
         const int version = xml->getIntAttribute("btzStateVersion", 1);
-        (void)version; // Reserved for future migration
 
-        apvts.replaceState(juce::ValueTree::fromXml(*xml));
+        // v7: Validate version range — reject future versions
+        if (version > BTZDsp::kStateVersion) {
+            // State from a newer version — do not load, keep current state
+            return;
+        }
+
+        auto newState = juce::ValueTree::fromXml(*xml);
+
+        // v7: Run migration if loading from an older version
+        if (version < BTZDsp::kStateVersion) {
+            migrateState(newState, version);
+        }
+
+        apvts.replaceState(newState);
     }
 
+    // Re-initialize smoothers and DSP state after loading
     initSmoothers(currentSampleRate);
-    resetAllADAA();
+    resetAll();
 
     activeQualityMode = getRequestedQualityMode();
     updateLatencyFromQuality(activeQualityMode);

@@ -1,8 +1,14 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.h  v6
+  Box Tone Zone (BTZ) — PluginProcessor.h  v7
   ────────────────────────────────────────────────────────────────────────
-  v6: Macro wiring (macros now drive DSP targets via MacroInterpreter),
-  Glue sidechain HPF (off/60/90/150 Hz), ecosystem UX integration.
+  v7 (release-gate hardening):
+    • Click-free bypass via BypassCrossfader (64-sample cosine ramp)
+    • Full resetAll() method — transport stop/start safe
+    • releaseResources() guarded — no deallocation of dryBuffer
+    • OS objects created once, not recreated on every prepareToPlay
+    • State migration with version validation (v4→v7 compat)
+    • Silence-in-silence-out detection
+    • glueScHpf crossfade on mode change (via SidechainHPF v7)
 */
 #pragma once
 
@@ -76,8 +82,8 @@ private:
 
     // ── Parameter smoothers ──
     BTZDsp::SmoothParam sPunch, sWarmth, sBoom, sGlue, sAir, sWidth;
-    BTZDsp::SmoothParam sDensity, sMotion, sEra, sMix, sDrive;
-    BTZDsp::SmoothParam sMaster, sShine, sShineMix;
+    BTZDsp::SmoothParam sDensity, sMotion, sEra, sMix, sDrive, sMaster;
+    BTZDsp::SmoothParam sShine, sShineMix, sShineFreq, sShineQ;
     BTZDsp::SmoothParam sMacro0, sMacro1, sMacro2, sMacro3;
 
     // ── ADAA saturators — one instance per channel per saturation stage ──
@@ -93,13 +99,16 @@ private:
     BTZDsp::SlewLimiter slewL, slewR;
     BTZDsp::EnvFollower peakEnvL, peakEnvR, rmsEnvL, rmsEnvR;
     BTZDsp::EnvFollower glueEnv;
-    BTZDsp::SidechainHPF glueScHpf;  // v6: sidechain HPF for glue compressor
+    BTZDsp::SidechainHPF glueScHpf;
     BTZDsp::GlueCompressor glueComp;
-    BTZDsp::LinkwitzRileyCrossover crossover;  // v4: now true LR4 (SVF-based)
+    BTZDsp::LinkwitzRileyCrossover crossover;
     BTZDsp::TruePeakLimiter truePeakLimiter;
     BTZDsp::ShineProcessor shineProcessor;
     BTZDsp::AutoGainSmoother autoGainSmoother;
     BTZDsp::MacroInterpreter macroInterpreter;
+
+    // v7: Click-free bypass crossfader
+    BTZDsp::BypassCrossfader bypassCrossfader;
 
     // ── DSP state ──
     float hpStateL = 0.0f, hpStateR = 0.0f;
@@ -110,13 +119,26 @@ private:
     float lastDriveDb = 0.0f;
 
     // v5: crest ratio computed at base SR, held for processNonlinear
-    float lastCrestRatio = 3.0f;  // default crest ~3 (typical for music)
+    float lastCrestRatio = 3.0f;
 
     // v6: macro value array for MacroInterpreter
     float macroValues[BTZDsp::MacroInterpreter::kNumMacros] = { 0.0f, 0.0f, 0.0f, 0.0f };
 
     // v6: cached glue SC HPF frequency
-    float lastGlueScHpfFreq = 0.0f;
+    float lastGlueScHpfFreq = 60.0f;
+    double glueScHpfSampleRate = 44100.0;
+
+    // v7: silence detection — skip processing when input is silent
+    int silentFrameCount = 0;
+    static constexpr int kSilentFrameThreshold = 512;  // ~12ms at 44.1kHz
+    static constexpr float kSilenceThreshold = 1.0e-8f;
+
+    // v7: track whether prepareToPlay has been called (guard processBlock)
+    bool prepared = false;
+
+    // v7: track last prepared SR/blockSize to avoid OS recreation
+    double lastPreparedSR = 0.0;
+    int lastPreparedBlockSize = 0;
 
     double currentSampleRate = 44100.0;
     int maxPreparedBlockSize = 0;
@@ -133,6 +155,7 @@ private:
     void initSmoothers(double sampleRate);
     void updateTargetsFromAPVTS();
     void resetAllADAA();
+    void resetAll();  // v7: full DSP state reset (transport-safe)
 
     void processLinearPre(float* dataL, float* dataR, int numSamples);
     void processNonlinear(float* dataL, float* dataR, int numSamples, float osFactor);
@@ -143,6 +166,9 @@ private:
                       int n, float sparkGRDb);
     int getRequestedQualityMode() const;
     void updateLatencyFromQuality(int mode);
+
+    // v7: state migration
+    void migrateState(juce::ValueTree& state, int fromVersion);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BTZAudioProcessor)
 };

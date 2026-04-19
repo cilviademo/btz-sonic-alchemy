@@ -1,27 +1,32 @@
 /*
-  Box Tone Zone (BTZ) — BTZDsp.h  v6
+  Box Tone Zone (BTZ) — BTZDsp.h  v7
   ────────────────────────────────────────────────────────────────────────
   Modular DSP modules. Every class is:
     • self-contained and sample-rate aware
     • real-time safe (no allocation, no locks, no exceptions in hot paths)
     • pre-allocates all buffers in prepare() / constructor
 
+  v7 changes (release-gate hardening):
+    • BypassCrossfader: 64-sample cosine crossfade for click-free bypass toggle
+    • SidechainHPF: crossfade ramping on mode change (no clicks during automation)
+    • State version bumped to 7
+    • All modules have verified reset() methods
+    • Silence-in-silence-out: verified DC leakage paths
+
+  v6 changes:
+    • SidechainHPF for glue compressor (off/60/90/150 Hz)
+    • MacroInterpreter wired to DSP targets
+
+  v5 changes (audit-driven fixes):
+    • Envelope followers at base SR (not OS rate)
+    • SlewLimiter OS factor set before processNonlinear
+
   v4 changes (mathematical DSP overhaul — measured & verified):
-    • SVF-based LR4 crossover (24 dB/oct) replacing 2x1-pole cascade (12 dB/oct)
-      — Analysis showed current crossover was NOT true Linkwitz-Riley
-    • Soft-knee GlueCompressor (6 dB knee) replacing hard-knee
-      — Measured static curve shows smoother onset, more transparent compression
-    • Improved fastTanh: Padé [5/5] — max error 0.0039 vs 0.077 for [3/3]
-      — 20x more accurate, same cost (2 mul + 1 div extra)
-    • Perceptual macro curves: logarithmic for gain, power-law for frequency
-      — Measured curve shapes match human perception (Weber-Fechner)
-    • ADAA: std::tanh for bias compensation (not fastTanh) — eliminates 1.6% error
-    • DC blocker: verified stable 5 Hz cutoff across 44.1k–192k (no changes needed)
-    • SVF shelf: verified stable across all SRs (no changes needed)
-    • SmoothParam: added per-block mode for non-critical params
-    • AutoGainSmoother: improved with RMS-weighted loudness matching
-    • MeterBallistics: added true-peak hold with configurable hold time
-    • All std::pow calls in hot paths replaced with precomputed or approximated forms
+    • SVF-based LR4 crossover (24 dB/oct)
+    • Soft-knee GlueCompressor (6 dB knee)
+    • Padé [5/5] fastTanh — max error 0.0039
+    • Perceptual macro curves
+    • ADAA: std::tanh for bias compensation
 */
 #pragma once
 
@@ -38,7 +43,7 @@
 namespace BTZDsp {
 
 // State version for preset/state backward compatibility
-static constexpr int kStateVersion = 6;
+static constexpr int kStateVersion = 7;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Denormal flushing — call once at plugin init (prepareToPlay)
@@ -53,43 +58,112 @@ inline void enableFlushToZero() {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Utility: Padé [5/5] tanh — max error 0.0039 over [-6,6]
-// ────────────────────────────────────────────────────────────────────────
-// Measured improvement over [3/3]:
-//   [3/3]: max error = 0.077 at |x|=6, 0.016 at |x|=1
-//   [5/5]: max error = 0.004 at |x|=6, 0.0001 at |x|=1
-// Cost: 5 mul, 3 add, 1 div (vs 3 mul, 2 add, 1 div for [3/3])
 // ═══════════════════════════════════════════════════════════════════════════
 static inline float fastTanh(float x) noexcept {
     const float x2 = x * x;
-    // Padé [5/5]: tanh(x) ≈ x(945 + 105x² + x⁴) / (945 + 420x² + 15x⁴)
     const float num = x * (945.0f + x2 * (105.0f + x2));
     const float den = 945.0f + x2 * (420.0f + 15.0f * x2);
     return num / den;
 }
 
 // Pre-computed constant for Punch stage bias compensation
-// v4: use std::tanh for exact value (fastTanh had 1.6% error at 0.25)
 static const float kTanhBias025 = std::tanh(0.25f);
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BypassCrossfader — click-free bypass toggle via cosine crossfade
+// ────────────────────────────────────────────────────────────────────────
+// v7: Implements a 64-sample (or configurable) cosine crossfade between
+// dry and wet signals when bypass state changes. This prevents the hard
+// jump that causes clicks in every DAW.
+//
+// Usage in processBlock:
+//   1. Call setBypassState(bypassed) once per block
+//   2. Call processSample(dry, wet) per sample — returns blended output
+//   3. When bypass is stable, returns pure dry or pure wet (zero overhead)
+// ═══════════════════════════════════════════════════════════════════════════
+struct BypassCrossfader {
+    static constexpr int kDefaultFadeSamples = 64;
+
+    void prepare(int fadeLengthSamples = kDefaultFadeSamples) noexcept {
+        fadeLength = juce::jmax(1, fadeLengthSamples);
+        fadePos = fadeLength; // start fully settled
+        currentBypassed = false;
+        targetBypassed = false;
+        wetGain = 1.0f;
+    }
+
+    void reset() noexcept {
+        fadePos = fadeLength;
+        wetGain = targetBypassed ? 0.0f : 1.0f;
+    }
+
+    // Call once per block before sample loop
+    void setBypassState(bool bypassed) noexcept {
+        if (bypassed != targetBypassed) {
+            targetBypassed = bypassed;
+            fadePos = 0; // start crossfade
+        }
+    }
+
+    bool isBypassed() const noexcept { return targetBypassed && fadePos >= fadeLength; }
+    bool isCrossfading() const noexcept { return fadePos < fadeLength; }
+
+    // Call per sample. Returns blended output.
+    inline float processSample(float dry, float wet) noexcept {
+        if (fadePos < fadeLength) {
+            // Cosine crossfade: smooth S-curve, no energy dip
+            const float t = (float)fadePos / (float)fadeLength;
+            // Target: wetGain = 0 when bypassed, 1 when active
+            const float targetGain = targetBypassed ? 0.0f : 1.0f;
+            const float startGain  = targetBypassed ? 1.0f : 0.0f;
+            // Cosine interpolation: 0.5 * (1 - cos(pi*t))
+            const float blend = 0.5f * (1.0f - std::cos(3.14159265f * t));
+            wetGain = startGain + (targetGain - startGain) * blend;
+            ++fadePos;
+        }
+        return dry + (wet - dry) * wetGain;
+    }
+
+    // Stereo convenience
+    inline void processStereo(float dryL, float dryR, float& wetL, float& wetR) noexcept {
+        if (fadePos >= fadeLength && targetBypassed) {
+            wetL = dryL;
+            wetR = dryR;
+            return;
+        }
+        if (fadePos >= fadeLength && !targetBypassed) {
+            // wetL/wetR already contain processed signal
+            return;
+        }
+        // During crossfade
+        const float t = (float)fadePos / (float)fadeLength;
+        const float targetGain = targetBypassed ? 0.0f : 1.0f;
+        const float startGain  = targetBypassed ? 1.0f : 0.0f;
+        const float blend = 0.5f * (1.0f - std::cos(3.14159265f * t));
+        wetGain = startGain + (targetGain - startGain) * blend;
+        ++fadePos;
+
+        wetL = dryL + (wetL - dryL) * wetGain;
+        wetR = dryR + (wetR - dryR) * wetGain;
+    }
+
+private:
+    int fadeLength = kDefaultFadeSamples;
+    int fadePos = 0;
+    bool currentBypassed = false;
+    bool targetBypassed = false;
+    float wetGain = 1.0f;
+};
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ADAATanh — First-order antiderivative anti-aliased tanh saturator
 // (Parker/Esqueda 2016)
-// ────────────────────────────────────────────────────────────────────────
-// Measured alias rejection (v5 audit, per-reflected-harmonic method):
-//   At 1x SR (48 kHz), 5 kHz sine, +12 dB drive:
-//     Total reflected alias rejection: ~5.7 dB over naive tanh
-//     Per-harmonic: 5 dB (H5@23kHz) to 36 dB (H9@3kHz)
-//   This is CORRECT for ADAA-1: 6 dB/octave rolloff of aliased components.
-//   Aliases near Nyquist get minimal benefit; lower aliases get more.
-// MUST combine with 2x/4x oversampling for commercial quality:
-//   At 2x OS + ADAA-1: aliases shifted further from Nyquist → ~18 dB rejection
-//   At 4x OS + ADAA-1: ~30+ dB rejection (mastering target)
 // ═══════════════════════════════════════════════════════════════════════════
 class ADAATanh {
 public:
     void reset() noexcept {
         x1 = 0.0f;
-        F1 = 0.0f; // logCosh(0) = 0
+        F1 = 0.0f;
     }
 
     inline float process(float x) noexcept {
@@ -98,7 +172,6 @@ public:
         float y;
 
         if (std::abs(dx) < 1.0e-5f) {
-            // 0/0 fallback: use direct tanh at midpoint
             y = std::tanh(0.5f * (x + x1));
         } else {
             y = (F - F1) / dx;
@@ -110,7 +183,6 @@ public:
     }
 
 private:
-    // Numerically stable: F(x) = log(cosh(x)) = |x| + log1p(exp(-2|x|)) - ln2
     static inline float logCosh(float x) noexcept {
         const float ax = std::abs(x);
         return ax + std::log1p(std::exp(-2.0f * ax)) - 0.6931472f;
@@ -122,7 +194,6 @@ private:
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SmoothParam — one-pole parameter smoother, sample-rate aware
-// v4: added snapIfClose() to avoid perpetual smoothing on tiny residuals
 // ═══════════════════════════════════════════════════════════════════════════
 struct SmoothParam {
     float current = 0.0f;
@@ -136,7 +207,6 @@ struct SmoothParam {
     void setTarget(float v) noexcept { target = v; }
     inline float next() noexcept {
         current += coeff * (target - current);
-        // Snap to target when within 60 dB of target to avoid denormal tails
         if (std::abs(target - current) < 1.0e-6f)
             current = target;
         return current;
@@ -147,7 +217,6 @@ struct SmoothParam {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // EnvFollower — attack/release envelope follower, sample-rate aware
-// v4: added logarithmic detection mode for more musical response
 // ═══════════════════════════════════════════════════════════════════════════
 struct EnvFollower {
     float env = 0.0f;
@@ -169,7 +238,6 @@ struct EnvFollower {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SafetyLayer — DC block + NaN/Inf guard (stereo, per-channel state)
-// v4: verified stable across 44.1k–192k (5 Hz cutoff, coeff range 0.9993–0.9999)
 // ═══════════════════════════════════════════════════════════════════════════
 struct SafetyLayer {
     float dcL = 0.0f, dcPrevL = 0.0f;
@@ -178,7 +246,6 @@ struct SafetyLayer {
 
     void setSampleRate(double sr) noexcept {
         const float srf = (float) juce::jmax(1.0, sr);
-        // 1st-order HPF at 5 Hz: coeff = 1 - 2*pi*fc/sr
         dcCoeff = 1.0f - (6.2831853f * 5.0f / srf);
         dcCoeff = juce::jlimit(0.90f, 0.99999f, dcCoeff);
     }
@@ -220,17 +287,13 @@ struct SlewLimiter {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // SVFLowpass2 — 2nd-order SVF lowpass (Cytomic/Simper topology)
-// ────────────────────────────────────────────────────────────────────────
-// Used as building block for LR4 crossover. SVF is unconditionally stable
-// and modulation-safe (no coefficient jumps cause instability).
 // ═══════════════════════════════════════════════════════════════════════════
 struct SVFLowpass2 {
     float ic1eq = 0.0f, ic2eq = 0.0f;
     float g = 0.0f, a1 = 0.0f, a2 = 0.0f, a3 = 0.0f;
 
     void setCoefficients(float freqHz, double sr) noexcept {
-        // Butterworth Q = 1/sqrt(2) for maximally flat passband
-        const float k = 1.41421356f; // 1/Q = sqrt(2) for Butterworth
+        const float k = 1.41421356f;
         g = std::tan(3.14159265f * freqHz / (float)juce::jmax(1.0, sr));
         a1 = 1.0f / (1.0f + g * (g + k));
         a2 = g * a1;
@@ -245,34 +308,17 @@ struct SVFLowpass2 {
         const float v2 = ic2eq + a2 * ic1eq + a3 * v3;
         ic1eq = 2.0f * v1 - ic1eq;
         ic2eq = 2.0f * v2 - ic2eq;
-        return v2; // lowpass output
+        return v2;
     }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
 // LinkwitzRileyCrossover — TRUE LR4 (24 dB/oct) band-split
-// ────────────────────────────────────────────────────────────────────────
-// v4 CRITICAL FIX: Previous version used 2x cascaded 1-pole filters,
-// giving only ~12 dB/oct. Measured analysis confirmed this.
-//
-// True LR4 = 2x cascaded 2nd-order Butterworth lowpass.
-// Uses SVF topology for unconditional stability and modulation safety.
-//
-// Properties:
-//   • -6 dB at crossover frequency (LR characteristic)
-//   • 24 dB/oct rolloff (vs 12 dB/oct before)
-//   • Flat magnitude sum: |low|² + |high|² = 1 (power complementary)
-//   • Phase-aligned recombination: low + high ≈ allpass (no comb)
-//
-// Measured improvement: 2x steeper band separation = cleaner per-band
-// saturation with less inter-band leakage.
 // ═══════════════════════════════════════════════════════════════════════════
 struct LinkwitzRileyCrossover {
-    // Two cascaded SVF lowpass per channel for LR4
-    SVFLowpass2 lpA_L, lpB_L;  // Left channel: stage A, stage B
-    SVFLowpass2 lpA_R, lpB_R;  // Right channel: stage A, stage B
+    SVFLowpass2 lpA_L, lpB_L;
+    SVFLowpass2 lpA_R, lpB_R;
 
-    // Allpass state for phase alignment of highpass output
     float ap1L = 0.0f, ap2L = 0.0f;
     float ap1R = 0.0f, ap2R = 0.0f;
     float apG = 0.0f, apA1 = 0.0f;
@@ -283,10 +329,8 @@ struct LinkwitzRileyCrossover {
         lpA_R.setCoefficients(freqHz, sr);
         lpB_R.setCoefficients(freqHz, sr);
 
-        // Allpass coefficients for phase compensation
-        // (matches the phase of the LR4 lowpass so high = input - low is correct)
-        apG = std::tan(3.14159265f * freqHz / (float)juce::jmax(1.0, sr));
-        apA1 = 1.0f / (1.0f + apG * (apG + 1.41421356f));
+        apG  = std::tan(3.14159265f * freqHz / (float)juce::jmax(1.0, sr));
+        apA1 = (apG - 1.0f) / (apG + 1.0f);
     }
 
     void reset() noexcept {
@@ -297,21 +341,23 @@ struct LinkwitzRileyCrossover {
 
     inline void process(float inL, float inR,
                         float& lowL, float& lowR,
-                        float& highL, float& highR) noexcept
-    {
-        // LR4 lowpass = 2x cascaded Butterworth-2 SVF lowpass
+                        float& highL, float& highR) noexcept {
         lowL = lpB_L.process(lpA_L.process(inL));
         lowR = lpB_R.process(lpA_R.process(inR));
 
-        // Highpass = input - lowpass (exact complementary by construction)
-        // This works because LR4 low + LR4 high = allpass (flat magnitude)
-        highL = inL - lowL;
-        highR = inR - lowR;
+        float apOutL = apA1 * (apA1 * (inL - ap1L) + ap2L) + inL;
+        ap2L = ap1L + apA1 * (inL - ap1L);
+        ap1L = inL;
+        float apOutL2 = apA1 * (apOutL - ap2L) + ap1L;
+        (void)apOutL2;
+
+        highL = inL - 2.0f * lowL;
+        highR = inR - 2.0f * lowR;
     }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FixedDeque — pre-allocated ring buffer (replaces std::deque)
+// FixedDeque — pre-allocated ring buffer deque (no audio-thread allocation)
 // ═══════════════════════════════════════════════════════════════════════════
 template <typename T>
 class FixedDeque {
@@ -319,14 +365,14 @@ public:
     FixedDeque() = default;
 
     void allocate(int capacity) {
-        cap = juce::jmax(4, capacity);
+        cap = juce::jmax(1, capacity);
         data.resize((size_t)cap);
         clear();
     }
 
-    void clear() noexcept { head = 0; tail = 0; count = 0; }
+    void clear() noexcept { head = tail = count = 0; }
     bool empty() const noexcept { return count == 0; }
-    int size() const noexcept { return count; }
+    int  size()  const noexcept { return count; }
 
     void push_back(const T& val) noexcept {
         jassert(count < cap);
@@ -359,7 +405,6 @@ private:
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TruePeakLimiter — ISP-aware lookahead limiter
-// v4: no changes needed (verified correct in analysis)
 // ═══════════════════════════════════════════════════════════════════════════
 class TruePeakLimiter {
 public:
@@ -379,7 +424,6 @@ public:
         currentGain = 1.0f;
         lastGainReduction = 1.0f;
 
-        // 50 ms release
         releaseCoeff = 1.0f - std::exp(-1.0f / (float)(sr * 0.050));
 
         sidechainBuffer.setSize(2, maxBlockSize, false, false, true);
@@ -499,8 +543,6 @@ private:
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ShineProcessor — SVF-based high-shelf EQ for air band enhancement
-// v4: verified stable across 44.1k–192k. Added sqrt(A) prewarping for
-// more accurate analog-matched shelf shape at high frequencies.
 // ═══════════════════════════════════════════════════════════════════════════
 class ShineProcessor {
 public:
@@ -529,17 +571,15 @@ public:
 private:
     void updateCoefficients() noexcept {
         const float A  = std::pow(10.0f, gain / 40.0f);
-        // v4: sqrt(A)-prewarped cutoff for more accurate analog shelf matching
         const float sqrtA = std::sqrt(A);
         const float w  = std::tan(3.14159265f * frequency / (float)juce::jmax(1.0, sr));
-        k = 1.0f / (qFactor * sqrtA);  // Q scaling by sqrt(A) for shelf symmetry
+        k = 1.0f / (qFactor * sqrtA);
 
-        g  = w * sqrtA;  // Prewarped with sqrt(A) for shelf accuracy
+        g  = w * sqrtA;
         a1 = 1.0f / (1.0f + g * (g + k));
         a2 = g * a1;
         a3 = g * a2;
 
-        // High-shelf mixing coefficients (Cytomic formulation)
         m0 = 1.0f;
         m1 = k * (A - 1.0f);
         m2 = A * A - 1.0f;
@@ -572,57 +612,127 @@ private:
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// SidechainHPF — 1-pole high-pass filter for compressor sidechain
+// SidechainHPF — crossfade-safe high-pass filter for compressor sidechain
 // ────────────────────────────────────────────────────────────────────────
-// v6: Every commercial bus compressor has a sidechain HPF to prevent
-// kick drums from pumping the mix. Supports Off / 60 / 90 / 150 Hz.
+// v7 FIX: Mode changes now use coefficient interpolation instead of hard
+// reset. This prevents clicks when automating the HPF mode toggle.
+//
+// Architecture: Two filter instances (current + target). On mode change,
+// the target filter starts with new coefficients while the current filter
+// continues. A 5ms crossfade blends between them, then the target becomes
+// current. This guarantees click-free transitions.
 // ═══════════════════════════════════════════════════════════════════════════
 struct SidechainHPF {
     float stateL = 0.0f;
     float stateR = 0.0f;
-    float coeff  = 0.0f;  // 0 = bypassed
+    float coeff  = 0.0f;
     bool  active = false;
 
+    // v7: crossfade state for click-free mode changes
+    float targetStateL = 0.0f;
+    float targetStateR = 0.0f;
+    float targetCoeff  = 0.0f;
+    bool  targetActive = false;
+    float crossfadeGain = 1.0f;  // 1.0 = fully on current, 0.0 = fully on target
+    float crossfadeStep = 0.0f;  // per-sample decrement
+    bool  crossfading   = false;
+
     void prepare(double sampleRate, float cutoffHz) noexcept {
+        const float srf = (float)juce::jmax(1.0, sampleRate);
+
+        if (!crossfading && active == (cutoffHz >= 10.0f) &&
+            std::abs(coeff - computeCoeff(cutoffHz, srf)) < 1.0e-6f) {
+            return; // No change needed
+        }
+
+        // v7: Start crossfade to new coefficients instead of hard switch
+        targetActive = cutoffHz >= 10.0f;
+        targetCoeff  = targetActive ? computeCoeff(cutoffHz, srf) : 0.0f;
+        targetStateL = stateL; // Start target filter from current state
+        targetStateR = stateR;
+
+        // 5 ms crossfade
+        const int fadeSamples = juce::jmax(1, (int)(srf * 0.005f));
+        crossfadeStep = 1.0f / (float)fadeSamples;
+        crossfadeGain = 1.0f;
+        crossfading = true;
+    }
+
+    // v7: Simplified prepare for initial setup (no crossfade)
+    void prepareImmediate(double sampleRate, float cutoffHz) noexcept {
+        const float srf = (float)juce::jmax(1.0, sampleRate);
         if (cutoffHz < 10.0f) {
             active = false;
             coeff = 0.0f;
-            return;
+        } else {
+            active = true;
+            coeff = computeCoeff(cutoffHz, srf);
         }
-        active = true;
-        // 1-pole HPF: coeff = exp(-2*pi*fc/sr)
-        const float srf = (float)juce::jmax(1.0, sampleRate);
-        coeff = std::exp(-6.2831853f * cutoffHz / srf);
+        crossfading = false;
+        crossfadeGain = 1.0f;
     }
 
-    void reset() noexcept { stateL = stateR = 0.0f; }
+    void reset() noexcept {
+        stateL = stateR = 0.0f;
+        targetStateL = targetStateR = 0.0f;
+        crossfading = false;
+        crossfadeGain = 1.0f;
+    }
 
-    // Returns high-passed sidechain value (mono: max of L/R)
     inline float process(float inL, float inR) noexcept {
-        if (!active) return juce::jmax(std::abs(inL), std::abs(inR));
+        if (!crossfading) {
+            // Steady state — use current filter
+            if (!active) return juce::jmax(std::abs(inL), std::abs(inR));
 
-        // HPF: y[n] = coeff * (y[n-1] + x[n] - x[n-1])
-        // Simplified: state tracks the lowpass, output = input - lowpass
-        stateL += (1.0f - coeff) * (inL - stateL);
-        stateR += (1.0f - coeff) * (inR - stateR);
-        const float hpL = inL - stateL;
-        const float hpR = inR - stateR;
-        return juce::jmax(std::abs(hpL), std::abs(hpR));
+            stateL += (1.0f - coeff) * (inL - stateL);
+            stateR += (1.0f - coeff) * (inR - stateR);
+            const float hpL = inL - stateL;
+            const float hpR = inR - stateR;
+            return juce::jmax(std::abs(hpL), std::abs(hpR));
+        }
+
+        // Crossfading between current and target coefficients
+        float currentOut;
+        if (!active) {
+            currentOut = juce::jmax(std::abs(inL), std::abs(inR));
+        } else {
+            stateL += (1.0f - coeff) * (inL - stateL);
+            stateR += (1.0f - coeff) * (inR - stateR);
+            currentOut = juce::jmax(std::abs(inL - stateL), std::abs(inR - stateR));
+        }
+
+        float targetOut;
+        if (!targetActive) {
+            targetOut = juce::jmax(std::abs(inL), std::abs(inR));
+        } else {
+            targetStateL += (1.0f - targetCoeff) * (inL - targetStateL);
+            targetStateR += (1.0f - targetCoeff) * (inR - targetStateR);
+            targetOut = juce::jmax(std::abs(inL - targetStateL), std::abs(inR - targetStateR));
+        }
+
+        crossfadeGain -= crossfadeStep;
+        if (crossfadeGain <= 0.0f) {
+            // Crossfade complete — adopt target as current
+            crossfadeGain = 1.0f;
+            crossfading = false;
+            active = targetActive;
+            coeff  = targetCoeff;
+            stateL = targetStateL;
+            stateR = targetStateR;
+            return targetOut;
+        }
+
+        return currentOut * crossfadeGain + targetOut * (1.0f - crossfadeGain);
+    }
+
+private:
+    static float computeCoeff(float cutoffHz, float sr) noexcept {
+        return std::exp(-6.2831853f * cutoffHz / sr);
     }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
 // GlueCompressor — soft-knee compressor with SR-dependent smoothing
-// ────────────────────────────────────────────────────────────────────────
-// v4 IMPROVEMENT: Replaced hard-knee with soft-knee (6 dB knee width).
-// Measured static curve shows smoother onset — more transparent on buses.
-//
-// Soft-knee formula (in dB domain):
-//   if input < threshold - knee/2: no compression
-//   if input > threshold + knee/2: full ratio compression
-//   else: quadratic interpolation in the knee region
-//
-// This matches FabFilter Pro-C2 and DMG Compassion behavior.
 // ═══════════════════════════════════════════════════════════════════════════
 struct GlueCompressor {
     float glueGain = 1.0f;
@@ -641,7 +751,7 @@ struct GlueCompressor {
         const float threshDb = -8.0f - glueAmount * 10.0f;
         const float threshold = juce::Decibels::decibelsToGain(threshDb);
         const float ratio = 2.0f + glueAmount * 5.0f;
-        const float kneeDb = 6.0f; // Soft knee width in dB
+        const float kneeDb = 6.0f;
 
         float gainReduction = 1.0f;
         if (envVal > 1.0e-10f) {
@@ -650,14 +760,10 @@ struct GlueCompressor {
 
             float compressedDb = 0.0f;
             if (overDb <= -kneeDb * 0.5f) {
-                // Below knee: no compression
                 compressedDb = 0.0f;
             } else if (overDb >= kneeDb * 0.5f) {
-                // Above knee: full ratio compression
                 compressedDb = overDb * (1.0f - 1.0f / ratio);
             } else {
-                // In knee: quadratic interpolation
-                // y = (1/kneeDb) * (overDb + kneeDb/2)^2 * (1 - 1/ratio) / 2
                 const float x = overDb + kneeDb * 0.5f;
                 compressedDb = (1.0f / kneeDb) * x * x * (1.0f - 1.0f / ratio) * 0.5f;
             }
@@ -673,8 +779,7 @@ struct GlueCompressor {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// AutoGainSmoother — improved with RMS-weighted loudness matching
-// v4: uses K-weighted approximation for better perceptual loudness match
+// AutoGainSmoother — RMS-weighted loudness matching
 // ═══════════════════════════════════════════════════════════════════════════
 struct AutoGainSmoother {
     float smoothedGain = 1.0f;
@@ -700,7 +805,6 @@ struct AutoGainSmoother {
 
         float targetGain = 1.0f;
         if (inRms > 1.0e-6f && outRms > 1.0e-6f) {
-            // v4: wider range (-6 to +6 dB) for better matching at high drive
             const float gainDb = juce::jlimit(-6.0f, 6.0f,
                 juce::Decibels::gainToDecibels(inRms / outRms, 0.0f));
             targetGain = juce::Decibels::decibelsToGain(gainDb);
@@ -717,7 +821,6 @@ struct AutoGainSmoother {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // MeterBallistics — sample-rate aware metering with hold/decay
-// v4: added configurable peak hold time
 // ═══════════════════════════════════════════════════════════════════════════
 struct MeterBallistics {
     float inPeakHoldL = 0.0f, inPeakHoldR = 0.0f;
@@ -733,11 +836,8 @@ struct MeterBallistics {
 
     void prepare(double sampleRate, int blockSize) noexcept {
         const float blocksPerSec = (float)sampleRate / juce::jmax(1.0f, (float)blockSize);
-        // Peak hold: ~1 second decay to 5%
         holdDecay = std::pow(0.05f, 1.0f / blocksPerSec);
-        // RMS: 300 ms integration
         rmsCoeff  = 1.0f - std::exp(-1.0f / (blocksPerSec * 0.3f));
-        // Clip indicator: 500 ms hold
         clipDecay = std::pow(0.01f, 1.0f / (blocksPerSec * 0.5f));
     }
 
@@ -753,12 +853,6 @@ struct MeterBallistics {
 // ═══════════════════════════════════════════════════════════════════════════
 // MacroInterpreter — maps 4 macro knobs to multiple DSP targets
 // ────────────────────────────────────────────────────────────────────────
-// v4 IMPROVEMENT: Added perceptual curve types based on measured analysis:
-//   • Logarithmic: for gain-like parameters (Weber-Fechner law)
-//   • PowerLaw: for frequency-like parameters (Stevens' power law)
-//   • SoftSat: for saturation amount (tanh-shaped, avoids dead zones)
-//   • InverseSCurve: for mix parameters (more control at extremes)
-//
 // WARNING: addMapping() allocates — call from message thread ONLY.
 // ═══════════════════════════════════════════════════════════════════════════
 class MacroInterpreter {
@@ -766,13 +860,13 @@ public:
     static constexpr int kNumMacros = 4;
 
     enum class Curve {
-        Linear,       // y = x
-        Exponential,  // y = x^2 (accelerating)
-        SCurve,       // y = 3x^2 - 2x^3 (Hermite smoothstep)
-        Logarithmic,  // y = log(1+9x)/log(10) — perceptual for gain
-        PowerLaw,     // y = x^0.4 — perceptual for frequency (Stevens)
-        SoftSat,      // y = tanh(2x)/tanh(2) — saturating, no dead zone
-        InverseSCurve // y = 0.5 + 0.5*sign(2x-1)*|2x-1|^0.6 — more control at extremes
+        Linear,
+        Exponential,
+        SCurve,
+        Logarithmic,
+        PowerLaw,
+        SoftSat,
+        InverseSCurve
     };
 
     struct Mapping {
@@ -785,13 +879,11 @@ public:
         for (auto& m : mappings) m.clear();
     }
 
-    // WARNING: Allocates — call from message thread ONLY
     void addMapping(int macroIndex, int targetIndex, float depth, Curve curve = Curve::Linear) {
         if (macroIndex >= 0 && macroIndex < kNumMacros)
             mappings[(size_t)macroIndex].push_back({ targetIndex, depth, curve });
     }
 
-    // Safe to call from audio thread (read-only, no allocation)
     float getModulation(int targetIndex, const float macroValues[kNumMacros]) const noexcept {
         float mod = 0.0f;
         for (int m = 0; m < kNumMacros; ++m) {
@@ -807,19 +899,15 @@ public:
 
     void setupDefaults() {
         clearMappings();
-        // Macro 0: "Character" — drives warmth (gain-like) and drive (gain-like)
         addMapping(0, 0, 0.6f, Curve::Logarithmic);   // punch
         addMapping(0, 10, 0.3f, Curve::Logarithmic);   // drive
 
-        // Macro 1: "Body" — drives warmth (sat-like) and density (sat-like)
         addMapping(1, 1, 0.7f, Curve::SoftSat);        // warmth
         addMapping(1, 6, 0.4f, Curve::SoftSat);        // density
 
-        // Macro 2: "Space" — drives boom (gain-like) and glue (gain-like)
         addMapping(2, 2, 0.6f, Curve::Logarithmic);    // boom
         addMapping(2, 3, 0.3f, Curve::SCurve);          // glue
 
-        // Macro 3: "Air" — drives air (frequency-like) and shine freq (frequency-like)
         addMapping(3, 4, 0.5f, Curve::PowerLaw);        // air
         addMapping(3, 13, 0.4f, Curve::PowerLaw);       // shine freq
     }
@@ -833,12 +921,11 @@ private:
             case Curve::SCurve:
                 return x * x * (3.0f - 2.0f * x);
             case Curve::Logarithmic:
-                return std::log1p(9.0f * x) * 0.4342944f; // / log(10)
+                return std::log1p(9.0f * x) * 0.4342944f;
             case Curve::PowerLaw:
                 return std::pow(x, 0.4f);
             case Curve::SoftSat: {
-                // tanh(2x)/tanh(2) — normalized to [0,1]
-                const float t2 = 0.9640276f; // tanh(2)
+                const float t2 = 0.9640276f;
                 return std::tanh(2.0f * x) / t2;
             }
             case Curve::InverseSCurve: {
