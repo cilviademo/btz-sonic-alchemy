@@ -1,76 +1,98 @@
 /*
-  Box Tone Zone (BTZ) - PluginProcessor.cpp
+  Box Tone Zone (BTZ) — PluginProcessor.cpp
+  Overhauled: modular DSP, isolated oversampling, macro system,
+  SparkLimiter with lookahead, ShineProcessor high-shelf, LR2 crossover,
+  SR-dependent meters, smoothed auto-gain, fixed dry/wet mix.
 */
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-namespace {
-static inline float fastTanh(float x) {
-    const float x2 = x * x;
-    return x * (27.0f + x2) / (27.0f + 9.0f * x2);
-}
-}
+using namespace BTZDsp;
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Parameter Layout — grouped for DAW organization
+// ═══════════════════════════════════════════════════════════════════════════
 juce::AudioProcessorValueTreeState::ParameterLayout BTZAudioProcessor::createParameterLayout() {
-    std::vector<std::unique_ptr<juce::RangedAudioParameter>> params;
-
     auto pct = [](const juce::String& id, const juce::String& name, float def) {
         return std::make_unique<juce::AudioParameterFloat>(
             juce::ParameterID(id, 1), name,
             juce::NormalisableRange<float>(0.0f, 1.0f, 0.001f), def);
     };
 
-    params.push_back(pct("punch", "Punch", 0.18f));
-    params.push_back(pct("warmth", "Warmth", 0.22f));
-    params.push_back(pct("boom", "Boom", 0.10f));
-    params.push_back(pct("glue", "Glue", 0.25f));
-    params.push_back(pct("air", "Air", 0.12f));
-    params.push_back(pct("width", "Width", 0.50f));
-    params.push_back(pct("density", "Density", 0.16f));
-    params.push_back(pct("motion", "Motion", 0.04f));
-
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+    // ── Core group ──
+    auto core = std::make_unique<juce::AudioProcessorParameterGroup>("core", "Core", "|");
+    core->addChild(pct("punch",   "Punch",   0.18f));
+    core->addChild(pct("warmth",  "Warmth",  0.22f));
+    core->addChild(pct("boom",    "Boom",    0.10f));
+    core->addChild(pct("glue",    "Glue",    0.25f));
+    core->addChild(pct("air",     "Air",     0.12f));
+    core->addChild(pct("width",   "Width",   0.50f));
+    core->addChild(pct("density", "Density", 0.16f));
+    core->addChild(pct("motion",  "Motion",  0.04f));
+    core->addChild(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("vintageModern", 1), "Era",
         juce::NormalisableRange<float>(-1.0f, 1.0f, 0.01f), 0.0f));
-
-    params.push_back(pct("mix", "Mix", 1.0f));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+    core->addChild(pct("mix",  "Mix",  1.0f));
+    core->addChild(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("drive", 1), "Drive",
         juce::NormalisableRange<float>(0.0f, 12.0f, 0.1f), 0.0f));
 
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+    // ── SPARK group ──
+    auto spark = std::make_unique<juce::AudioProcessorParameterGroup>("spark", "SPARK", "|");
+    spark->addChild(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("sparkCeiling", 1), "TP Ceil",
         juce::NormalisableRange<float>(-3.0f, 0.0f, 0.01f), -0.3f));
-    params.push_back(pct("sparkMix", "Spark Mix", 1.0f));
+    spark->addChild(pct("sparkMix", "Spark Mix", 1.0f));
 
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+    // ── SHINE group ──
+    auto shine = std::make_unique<juce::AudioProcessorParameterGroup>("shine", "SHINE", "|");
+    shine->addChild(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("shineAmount", 1), "Shine",
         juce::NormalisableRange<float>(0.0f, 6.0f, 0.1f), 1.2f));
-    params.push_back(pct("shineMix", "Shine Mix", 0.30f));
+    shine->addChild(pct("shineMix", "Shine Mix", 0.30f));
+    shine->addChild(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("shineFreq", 1), "Shine Freq",
+        juce::NormalisableRange<float>(1000.0f, 20000.0f, 10.0f, 0.3f), 12000.0f));
+    shine->addChild(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("shineQ", 1), "Shine Q",
+        juce::NormalisableRange<float>(0.1f, 2.0f, 0.01f), 0.7f));
 
-    params.push_back(pct("masterIntensity", "Master", 0.42f));
-    params.push_back(pct("autogain", "AutoGain", 1.0f));
+    // ── Macro group ──
+    auto macros = std::make_unique<juce::AudioProcessorParameterGroup>("macros", "Macros", "|");
+    macros->addChild(pct("macro0", "Macro 1", 0.5f));
+    macros->addChild(pct("macro1", "Macro 2", 0.5f));
+    macros->addChild(pct("macro2", "Macro 3", 0.5f));
+    macros->addChild(pct("macro3", "Macro 4", 0.5f));
 
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+    // ── Global group ──
+    auto global = std::make_unique<juce::AudioProcessorParameterGroup>("global", "Global", "|");
+    global->addChild(pct("masterIntensity", "Master", 0.42f));
+    global->addChild(pct("autogain", "AutoGain", 1.0f));
+    global->addChild(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("qualityMode", 1), "Quality",
         juce::NormalisableRange<float>(0.0f, 2.0f, 1.0f), 1.0f));
-
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+    global->addChild(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("stabilityMode", 1), "Character",
         juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 1.0f));
-
-    params.push_back(std::make_unique<juce::AudioParameterFloat>(
+    global->addChild(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("bypass", 1), "Bypass",
         juce::NormalisableRange<float>(0.0f, 1.0f, 1.0f), 0.0f));
 
-    return { params.begin(), params.end() };
+    return { std::move(core), std::move(spark), std::move(shine),
+             std::move(macros), std::move(global) };
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Constructor
+// ═══════════════════════════════════════════════════════════════════════════
 BTZAudioProcessor::BTZAudioProcessor()
     : AudioProcessor(BusesProperties()
-                     .withInput("Input", juce::AudioChannelSet::stereo(), true)
+                     .withInput("Input",  juce::AudioChannelSet::stereo(), true)
                      .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts(*this, nullptr, "BTZParams", createParameterLayout()) {}
+      apvts(*this, nullptr, "BTZParams", createParameterLayout())
+{
+    macroInterpreter.setupDefaults();
+}
 
 bool BTZAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const {
     if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
@@ -78,16 +100,21 @@ bool BTZAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
     return layouts.getMainInputChannelSet() == layouts.getMainOutputChannelSet();
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Smoother initialization — all times in ms, all SR-aware
+// ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::initSmoothers(double sampleRate) {
-    auto initSmooth = [sampleRate](SmoothParam& s, float ms) { s.setTime(ms, sampleRate); };
-    initSmooth(sPunch, 5.0f);      initSmooth(sWarmth, 6.0f);
-    initSmooth(sBoom, 8.0f);       initSmooth(sGlue, 20.0f);
-    initSmooth(sAir, 6.0f);        initSmooth(sWidth, 20.0f);
-    initSmooth(sDensity, 6.0f);    initSmooth(sMotion, 40.0f);
-    initSmooth(sEra, 25.0f);       initSmooth(sMix, 12.0f);
-    initSmooth(sDrive, 5.0f);      initSmooth(sMaster, 25.0f);
-    initSmooth(sSparkCeil, 5.0f);  initSmooth(sSparkMix, 5.0f);
-    initSmooth(sShine, 5.0f);      initSmooth(sShineMix, 5.0f);
+    auto init = [sampleRate](SmoothParam& s, float ms) { s.setTime(ms, sampleRate); };
+    init(sPunch, 5.0f);      init(sWarmth, 6.0f);
+    init(sBoom, 8.0f);       init(sGlue, 20.0f);
+    init(sAir, 6.0f);        init(sWidth, 20.0f);
+    init(sDensity, 6.0f);    init(sMotion, 40.0f);
+    init(sEra, 25.0f);       init(sMix, 12.0f);
+    init(sDrive, 10.0f);     init(sMaster, 25.0f);
+    init(sSparkCeil, 5.0f);  init(sSparkMix, 5.0f);
+    init(sShine, 5.0f);      init(sShineMix, 5.0f);
+    init(sMacro0, 15.0f);    init(sMacro1, 15.0f);
+    init(sMacro2, 15.0f);    init(sMacro3, 15.0f);
 
     sPunch.snapTo(*apvts.getRawParameterValue("punch"));
     sWarmth.snapTo(*apvts.getRawParameterValue("warmth"));
@@ -105,20 +132,33 @@ void BTZAudioProcessor::initSmoothers(double sampleRate) {
     sSparkMix.snapTo(*apvts.getRawParameterValue("sparkMix"));
     sShine.snapTo(*apvts.getRawParameterValue("shineAmount"));
     sShineMix.snapTo(*apvts.getRawParameterValue("shineMix"));
+    sMacro0.snapTo(*apvts.getRawParameterValue("macro0"));
+    sMacro1.snapTo(*apvts.getRawParameterValue("macro1"));
+    sMacro2.snapTo(*apvts.getRawParameterValue("macro2"));
+    sMacro3.snapTo(*apvts.getRawParameterValue("macro3"));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// prepareToPlay — initialize all DSP modules
+// ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     currentSampleRate = sampleRate;
+    currentBlockSize  = samplesPerBlock;
     maxPreparedBlockSize = juce::jmax(samplesPerBlock, 32768);
 
+    // Safety layers
     safetyPre.setSampleRate(sampleRate);
     safetyPost.setSampleRate(sampleRate);
     safetyPre.reset();
     safetyPost.reset();
+
+    // Slew limiters
     slewL.setSampleRate(sampleRate);
     slewR.setSampleRate(sampleRate);
     slewL.reset();
     slewR.reset();
+
+    // Envelope followers (at base SR — they run in linear pre-processing)
     peakEnvL.setTimes(0.2f, 220.0f, sampleRate);
     peakEnvR.setTimes(0.2f, 220.0f, sampleRate);
     rmsEnvL.setTimes(25.0f, 300.0f, sampleRate);
@@ -126,36 +166,56 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     glueEnv.setTimes(5.0f, 80.0f, sampleRate);
     glueEnv.reset();
 
-    glueGain = 1.0f;
+    // Glue compressor (SR-dependent smoothing)
+    glueComp.prepare(sampleRate);
+    glueComp.reset();
+
+    // Crossover (LR2 at 250 Hz)
+    crossover.prepare(sampleRate, 250.0f);
+    crossover.reset();
+
+    // SPARK limiter
+    sparkLimiter.prepare(sampleRate, samplesPerBlock);
+    sparkLimiter.reset();
     sparkGrEnvelope = 0.0f;
+
+    // SHINE processor
+    shineProcessor.prepare(sampleRate);
+    shineProcessor.reset();
+
+    // Auto-gain smoother
+    autoGainSmoother.prepare(sampleRate);
+    autoGainSmoother.reset();
+
+    // Meter ballistics (SR-dependent)
+    meterBallistics.prepare(sampleRate, samplesPerBlock);
+    meterBallistics.reset();
+
+    // Width state
     hpStateL = hpStateR = 0.0f;
     sideLowState = 0.0f;
-    xoverLowL = xoverLowR = 0.0f;
-    noiseSeed = 12345u;
-
-    const float omega = 6.2831853f * 250.0f / (float) sampleRate;
-    xoverCoeff = omega / (1.0f + omega);
-
-    const float sideOmega = 6.2831853f * 120.0f / (float) sampleRate;
+    const float sideOmega = 6.2831853f * 120.0f / (float)sampleRate;
     sideLowCoeff = sideOmega / (1.0f + sideOmega);
 
-    const float sparkAttackMs = 8.0f;
-    const float sparkReleaseMs = 120.0f;
-    sparkAttackCoeff = 1.0f - std::exp(-1.0f / ((float) sampleRate * sparkAttackMs * 0.001f));
-    sparkReleaseCoeff = 1.0f - std::exp(-1.0f / ((float) sampleRate * sparkReleaseMs * 0.001f));
+    noiseSeed = 12345u;
 
+    // Smoothers
     initSmoothers(sampleRate);
 
+    // Dry buffer
     dryBuffer.setSize(2, maxPreparedBlockSize, false, false, true);
     dryBuffer.clear();
 
+    // Oversampling
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
     spec.maximumBlockSize = (juce::uint32) juce::jmax(1, samplesPerBlock);
     spec.numChannels = 2;
 
-    os2x = std::make_unique<juce::dsp::Oversampling<float>>(2, 1, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, false);
-    os4x = std::make_unique<juce::dsp::Oversampling<float>>(2, 2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, false);
+    os2x = std::make_unique<juce::dsp::Oversampling<float>>(
+        2, 1, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, false);
+    os4x = std::make_unique<juce::dsp::Oversampling<float>>(
+        2, 2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, false);
     os2x->initProcessing(spec.maximumBlockSize);
     os4x->initProcessing(spec.maximumBlockSize);
     os2x->reset();
@@ -175,16 +235,19 @@ int BTZAudioProcessor::getRequestedQualityMode() const {
 }
 
 void BTZAudioProcessor::updateLatencyFromQuality(int mode) {
-    int latency = 0;
+    int latency = sparkLimiter.getLatency(); // SPARK lookahead latency always present
     if (mode == 1 && os2x != nullptr)
-        latency = (int) std::ceil(os2x->getLatencyInSamples());
+        latency += (int) std::ceil(os2x->getLatencyInSamples());
     else if (mode >= 2 && os4x != nullptr)
-        latency = (int) std::ceil(os4x->getLatencyInSamples());
+        latency += (int) std::ceil(os4x->getLatencyInSamples());
 
     if (latency != getLatencySamples())
         setLatencySamples(latency);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// updateTargetsFromAPVTS — read all parameter values into smoothers
+// ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::updateTargetsFromAPVTS() {
     sPunch.setTarget(*apvts.getRawParameterValue("punch"));
     sWarmth.setTarget(*apvts.getRawParameterValue("warmth"));
@@ -202,44 +265,110 @@ void BTZAudioProcessor::updateTargetsFromAPVTS() {
     sSparkMix.setTarget(*apvts.getRawParameterValue("sparkMix"));
     sShine.setTarget(*apvts.getRawParameterValue("shineAmount"));
     sShineMix.setTarget(*apvts.getRawParameterValue("shineMix"));
+    sMacro0.setTarget(*apvts.getRawParameterValue("macro0"));
+    sMacro1.setTarget(*apvts.getRawParameterValue("macro1"));
+    sMacro2.setTarget(*apvts.getRawParameterValue("macro2"));
+    sMacro3.setTarget(*apvts.getRawParameterValue("macro3"));
+
+    // Update SHINE filter coefficients from parameters
+    const float shineFreq = *apvts.getRawParameterValue("shineFreq");
+    const float shineQ    = *apvts.getRawParameterValue("shineQ");
+    const float shineAmt  = *apvts.getRawParameterValue("shineAmount");
+    shineProcessor.setParameters(shineFreq, shineAmt, shineQ);
 }
 
-void BTZAudioProcessor::processCore(float* dataL, float* dataR, int numSamples, float osFactor) {
+// ═══════════════════════════════════════════════════════════════════════════
+// processLinearPre — runs at BASE sample rate, before oversampling
+// Handles: safety pre, drive, master scaling, glue, width, air (legacy HP)
+// ═══════════════════════════════════════════════════════════════════════════
+void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamples) {
     for (int n = 0; n < numSamples; ++n) {
-        float punch = sPunch.next();
-        float warmth = sWarmth.next();
-        float boom = sBoom.next();
-        float glue = sGlue.next();
-        float air = sAir.next();
-        float width = sWidth.next();
+        float punch   = sPunch.next();
+        float warmth  = sWarmth.next();
+        float boom    = sBoom.next();
+        float glue    = sGlue.next();
+        float air     = sAir.next();
+        float width   = sWidth.next();
         float density = sDensity.next();
-        float motion = sMotion.next();
-        float era = sEra.next();
-        float mix = sMix.next();
-        float drive = sDrive.next();
-        float master = sMaster.next();
-        float ceilDb = sSparkCeil.next();
-        float sparkMix = sSparkMix.next();
-        float shine = sShine.next();
-        float shineMix = sShineMix.next();
+        float drive   = sDrive.next();
+        float master  = sMaster.next();
+        float era     = sEra.next();
+        (void)sDensity.current; // density used in nonlinear
+        (void)sMotion.next();   // motion used in nonlinear post
 
         float L = dataL[n];
         float R = dataR[n];
 
+        // ── Safety Pre ──
         L = safetyPre.processSample(L, safetyPre.dcL, safetyPre.dcPrevL);
         R = safetyPre.processSample(R, safetyPre.dcR, safetyPre.dcPrevR);
 
+        // ── Drive (input gain) ──
         if (drive > 0.0f) {
             const float inGain = std::pow(10.0f, drive / 20.0f);
             L *= inGain;
             R *= inGain;
         }
 
+        // ── Master intensity scaling ──
         const float masterScale = juce::jlimit(0.25f, 1.25f, 0.7f + master * 0.6f);
-        punch *= masterScale; warmth *= masterScale; boom *= masterScale;
-        glue *= masterScale; air *= masterScale; density *= masterScale;
+        punch   *= masterScale;
+        warmth  *= masterScale;
+        boom    *= masterScale;
+        glue    *= masterScale;
+        air     *= masterScale;
+        density *= masterScale;
 
+        // ── Glue compressor (linear, SR-dependent) ──
         {
+            const float sidechain = juce::jmax(std::abs(L), std::abs(R));
+            const float envVal = glueEnv.process(sidechain);
+            glueComp.processStereo(L, R, glue, envVal);
+        }
+
+        // ── Width (M/S with mono-safe low-band) ──
+        {
+            const float mid  = 0.5f * (L + R);
+            const float side = 0.5f * (L - R);
+            const float widthScale = width * 2.0f;
+
+            sideLowState += sideLowCoeff * (side - sideLowState);
+            const float sideLow  = sideLowState;
+            const float sideHigh = side - sideLow;
+            const float lowBandWidth = juce::jmin(widthScale, 1.0f);
+            const float sideOut = sideLow * lowBandWidth + sideHigh * widthScale;
+
+            L = mid + sideOut;
+            R = mid - sideOut;
+        }
+
+        dataL[n] = L;
+        dataR[n] = R;
+    }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// processNonlinear — runs at OVERSAMPLED rate (or 1x in Eco mode)
+// Handles: preamp/color, slew, crossover, band saturation, punch, density
+// These are the stages that generate harmonics and need anti-aliasing.
+// ═══════════════════════════════════════════════════════════════════════════
+void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamples, float osFactor) {
+    (void) osFactor; // Available for future per-sample SR adjustment
+
+    for (int n = 0; n < numSamples; ++n) {
+        // Read current smoothed values (smoothers tick at base rate in processLinearPre,
+        // so here we just use the last smoothed value — no double-ticking)
+        const float warmth  = sWarmth.current;
+        const float boom    = sBoom.current;
+        const float punch   = sPunch.current;
+        const float density = sDensity.current;
+        const float era     = sEra.current;
+
+        float L = dataL[n];
+        float R = dataR[n];
+
+        // ── Preamp / Color (warmth-driven tanh saturation) ──
+        if (warmth > 0.001f) {
             const float drv = 1.0f + warmth * 2.8f;
             const float bias = warmth * 0.05f;
             const float eraScale = juce::jmax(0.55f, 1.0f + era * 0.30f);
@@ -254,139 +383,129 @@ void BTZAudioProcessor::processCore(float* dataL, float* dataR, int numSamples, 
             R = preamp(R);
         }
 
+        // ── Slew limiter ──
         L = slewL.process(L);
         R = slewR.process(R);
 
+        // ── Band split (LR2 crossover at 250 Hz) ──
+        float lowL, lowR, highL, highR;
+        crossover.process(L, R, lowL, lowR, highL, highR);
+
+        // ── Band saturation ──
         {
-            xoverLowL += xoverCoeff * (L - xoverLowL);
-            xoverLowR += xoverCoeff * (R - xoverLowR);
-            const float highL = L - xoverLowL;
-            const float highR = R - xoverLowR;
-
-            const float lowDrv = 1.0f + boom * 1.25f;
+            const float lowDrv  = 1.0f + boom * 1.25f;
             const float highDrv = 1.0f + warmth * 1.75f;
-            const float satAmt = juce::jlimit(0.0f, 1.0f, warmth * 0.65f + density * 0.35f);
+            const float satAmt  = juce::jlimit(0.0f, 1.0f, warmth * 0.65f + density * 0.35f);
 
-            const float satLowL = fastTanh(xoverLowL * lowDrv) / lowDrv;
-            const float satLowR = fastTanh(xoverLowR * lowDrv) / lowDrv;
-            const float satHiL = fastTanh(highL * highDrv) / highDrv;
-            const float satHiR = fastTanh(highR * highDrv) / highDrv;
+            if (satAmt > 0.001f) {
+                const float satLowL = fastTanh(lowL * lowDrv) / lowDrv;
+                const float satLowR = fastTanh(lowR * lowDrv) / lowDrv;
+                const float satHiL  = fastTanh(highL * highDrv) / highDrv;
+                const float satHiR  = fastTanh(highR * highDrv) / highDrv;
 
-            L = xoverLowL + (satLowL - xoverLowL) * satAmt + highL + (satHiL - highL) * satAmt;
-            R = xoverLowR + (satLowR - xoverLowR) * satAmt + highR + (satHiR - highR) * satAmt;
+                L = lowL + (satLowL - lowL) * satAmt + highL + (satHiL - highL) * satAmt;
+                R = lowR + (satLowR - lowR) * satAmt + highR + (satHiR - highR) * satAmt;
+            } else {
+                L = lowL + highL;
+                R = lowR + highR;
+            }
         }
 
-        {
+        // ── Punch (crest-aware harmonic injection) ──
+        if (punch > 0.002f) {
             const float peakL = peakEnvL.process(std::abs(L));
-            const float rmsL = std::sqrt(rmsEnvL.process(L * L) + 1.0e-12f);
+            const float rmsL  = std::sqrt(rmsEnvL.process(L * L) + 1.0e-12f);
             const float crest = peakL / juce::jmax(1.0e-5f, rmsL);
             const float harmonicBias = juce::jlimit(0.8f, 1.3f, 1.0f + (crest - 3.0f) * 0.06f);
             const float amount = punch * 0.25f;
-            if (amount > 0.0005f) {
-                const float drv = 1.0f + punch * 2.0f;
-                const float oddL = fastTanh(drv * L);
-                const float evenL = fastTanh(drv * L + 0.25f) - fastTanh(0.25f);
-                const float oddR = fastTanh(drv * R);
-                const float evenR = fastTanh(drv * R + 0.25f) - fastTanh(0.25f);
-                L = L + ((oddL * harmonicBias + evenL * (2.0f - harmonicBias)) - L) * amount;
-                R = R + ((oddR * harmonicBias + evenR * (2.0f - harmonicBias)) - R) * amount;
-            }
+            const float drv = 1.0f + punch * 2.0f;
+
+            const float oddL  = fastTanh(drv * L);
+            const float evenL = fastTanh(drv * L + 0.25f) - fastTanh(0.25f);
+            const float oddR  = fastTanh(drv * R);
+            const float evenR = fastTanh(drv * R + 0.25f) - fastTanh(0.25f);
+            L = L + ((oddL * harmonicBias + evenL * (2.0f - harmonicBias)) - L) * amount;
+            R = R + ((oddR * harmonicBias + evenR * (2.0f - harmonicBias)) - R) * amount;
         }
 
-        if (glue > 0.01f) {
-            const float threshold = juce::Decibels::decibelsToGain(-8.0f - glue * 10.0f);
-            const float ratio = 2.0f + glue * 5.0f;
-            const float sidechain = juce::jmax(std::abs(L), std::abs(R));
-            const float envVal = glueEnv.process(sidechain);
-
-            float gainReduction = 1.0f;
-            if (envVal > threshold) {
-                const float overDb = juce::Decibels::gainToDecibels(envVal / threshold, -100.0f);
-                const float reducedDb = overDb * (1.0f - 1.0f / ratio);
-                gainReduction = juce::Decibels::decibelsToGain(-reducedDb);
-            }
-
-            const float smoothCoeff = gainReduction < glueGain ? 0.02f : 0.002f;
-            glueGain += smoothCoeff * (gainReduction - glueGain);
-            L *= glueGain;
-            R *= glueGain;
-        }
-
-        {
-            const float mid = 0.5f * (L + R);
-            const float side = 0.5f * (L - R);
-            const float widthScale = width * 2.0f;
-
-            sideLowState += sideLowCoeff * (side - sideLowState);
-            const float sideLow = sideLowState;
-            const float sideHigh = side - sideLow;
-            const float lowBandWidth = juce::jmin(widthScale, 1.0f); // Mono-safe low-end widening cap.
-            const float sideOut = sideLow * lowBandWidth + sideHigh * widthScale;
-
-            L = mid + sideOut;
-            R = mid - sideOut;
-        }
-
-        {
-            const float airAmount = air + shine * shineMix * 0.15f;
-            if (airAmount > 0.001f) {
-                const float hpCoeff = juce::jlimit(0.70f, 0.995f, 0.95f - airAmount * 0.12f);
-                const float hfL = L - hpStateL; hpStateL = L * (1.0f - hpCoeff) + hpStateL * hpCoeff;
-                const float hfR = R - hpStateR; hpStateR = R * (1.0f - hpCoeff) + hpStateR * hpCoeff;
-                L += hfL * airAmount * 0.45f;
-                R += hfR * airAmount * 0.45f;
-            }
-        }
-
+        // ── Boom (low-band additive boost) ──
         if (boom > 0.01f) {
-            L += xoverLowL * boom * 0.28f;
-            R += xoverLowR * boom * 0.28f;
+            L += lowL * boom * 0.28f;
+            R += lowR * boom * 0.28f;
         }
 
+        // ── Density (additional tanh saturation) ──
         if (density > 0.001f) {
             const float drv = 1.0f + density * 3.0f;
             L = fastTanh(L * drv) / drv;
             R = fastTanh(R * drv) / drv;
         }
 
-        float sparkGrInst = 0.0f;
-        {
-            const float ceilLin = juce::Decibels::decibelsToGain(ceilDb);
-            const float absL = std::abs(L);
-            const float absR = std::abs(R);
-            const float inAbsMax = juce::jmax(absL, absR);
+        dataL[n] = L;
+        dataR[n] = R;
+    }
+}
 
-            if (absL > ceilLin)
-                L = ((L > 0.0f ? ceilLin : -ceilLin) * sparkMix) + L * (1.0f - sparkMix);
-            if (absR > ceilLin)
-                R = ((R > 0.0f ? ceilLin : -ceilLin) * sparkMix) + R * (1.0f - sparkMix);
+// ═══════════════════════════════════════════════════════════════════════════
+// processLinearPost — runs at BASE sample rate, after downsampling
+// Handles: SHINE, SPARK, motion, safety post, neutral comp, dry/wet
+// ═══════════════════════════════════════════════════════════════════════════
+void BTZAudioProcessor::processLinearPost(float* dataL, float* dataR, int numSamples) {
+    for (int n = 0; n < numSamples; ++n) {
+        const float warmth  = sWarmth.current;
+        const float density = sDensity.current;
+        const float boom    = sBoom.current;
+        const float motion  = sMotion.current;
+        const float mix     = sMix.next();
+        const float ceilDb  = sSparkCeil.next();
+        const float sparkMix = sSparkMix.next();
+        const float shineMix = sShineMix.next();
 
-            const float outAbsMax = juce::jmax(std::abs(L), std::abs(R));
-            if (inAbsMax > 1.0e-6f && outAbsMax < inAbsMax)
-                sparkGrInst = juce::jmax(0.0f, juce::Decibels::gainToDecibels(inAbsMax / outAbsMax, 0.0f));
+        float L = dataL[n];
+        float R = dataR[n];
+
+        // ── SHINE (proper high-shelf EQ) ──
+        if (shineMix > 0.001f) {
+            float shineL = L, shineR = R;
+            shineProcessor.processStereo(shineL, shineR);
+            L = L + (shineL - L) * shineMix;
+            R = R + (shineR - R) * shineMix;
         }
 
-        const float sparkCoeff = sparkGrInst > sparkGrEnvelope ? sparkAttackCoeff : sparkReleaseCoeff;
-        sparkGrEnvelope += sparkCoeff * (sparkGrInst - sparkGrEnvelope);
+        // ── SPARK (lookahead soft-clip limiter) ──
+        {
+            const float ceilLin = juce::Decibels::decibelsToGain(ceilDb);
+            const float grDb = sparkLimiter.processStereo(L, R, ceilLin, sparkMix);
+            // Smooth GR for metering
+            const float sparkAttack  = 0.3f;
+            const float sparkRelease = 0.02f;
+            const float coeff = grDb > sparkGrEnvelope ? sparkAttack : sparkRelease;
+            sparkGrEnvelope += coeff * (grDb - sparkGrEnvelope);
+        }
 
+        // ── Motion (noise injection) ──
         if (motion > 0.01f) {
             noiseSeed = 1664525u * noiseSeed + 1013904223u;
-            float white = (float) ((noiseSeed >> 9) & 0x7FFFFF) / 8388608.0f - 0.5f;
-            const float noiseLevel = 1.0e-6f * motion * 8.0f / juce::jmax(1.0f, osFactor);
+            float white = (float)((noiseSeed >> 9) & 0x7FFFFF) / 8388608.0f - 0.5f;
+            const float noiseLevel = 1.0e-6f * motion * 8.0f;
             L += white * noiseLevel;
             noiseSeed = 1664525u * noiseSeed + 1013904223u;
-            white = (float) ((noiseSeed >> 9) & 0x7FFFFF) / 8388608.0f - 0.5f;
+            white = (float)((noiseSeed >> 9) & 0x7FFFFF) / 8388608.0f - 0.5f;
             R += white * noiseLevel;
         }
 
+        // ── Safety Post ──
         L = safetyPost.processSample(L, safetyPost.dcL, safetyPost.dcPrevL);
         R = safetyPost.processSample(R, safetyPost.dcR, safetyPost.dcPrevR);
 
-        const float neutralComp = 1.0f / juce::jlimit(0.75f, 1.5f, 1.0f + 0.20f * (warmth + density + boom));
+        // ── Neutral compensation ──
+        const float neutralComp = 1.0f / juce::jlimit(0.75f, 1.5f,
+            1.0f + 0.20f * (warmth + density + boom));
         L *= neutralComp;
         R *= neutralComp;
 
-        if (n < maxPreparedBlockSize) {
+        // ── Dry/Wet mix (at base SR — correct buffer alignment) ──
+        if (mix < 0.999f && n < maxPreparedBlockSize) {
             const float dryL = dryBuffer.getSample(0, n);
             const float dryR = dryBuffer.getSample(1, n);
             L = dryL + (L - dryL) * mix;
@@ -398,7 +517,13 @@ void BTZAudioProcessor::processCore(float* dataL, float* dataR, int numSamples, 
     }
 }
 
-void BTZAudioProcessor::updateMeters(const float* inL, const float* inR, const float* outL, const float* outR, int n, float sparkGRDb) {
+// ═══════════════════════════════════════════════════════════════════════════
+// updateMeters — SR-dependent ballistics
+// ═══════════════════════════════════════════════════════════════════════════
+void BTZAudioProcessor::updateMeters(const float* inL, const float* inR,
+                                      const float* outL, const float* outR,
+                                      int n, float sparkGRDb)
+{
     float inPkL = 0.0f, inPkR = 0.0f, outPkL = 0.0f, outPkR = 0.0f;
     float inSqL = 0.0f, inSqR = 0.0f, outSqL = 0.0f, outSqR = 0.0f;
     float corrNum = 0.0f, corrDenL = 0.0f, corrDenR = 0.0f;
@@ -407,63 +532,68 @@ void BTZAudioProcessor::updateMeters(const float* inL, const float* inR, const f
 
     for (int i = 0; i < n; ++i) {
         const float iL = inL[i], iR = inR[i], oL = outL[i], oR = outR[i];
-        inPkL = juce::jmax(inPkL, std::abs(iL));
-        inPkR = juce::jmax(inPkR, std::abs(iR));
+        inPkL  = juce::jmax(inPkL,  std::abs(iL));
+        inPkR  = juce::jmax(inPkR,  std::abs(iR));
         outPkL = juce::jmax(outPkL, std::abs(oL));
         outPkR = juce::jmax(outPkR, std::abs(oR));
-        inSqL += iL * iL; inSqR += iR * iR;
-        outSqL += oL * oL; outSqR += oR * oR;
-        corrNum += oL * oR;
+        inSqL  += iL * iL;  inSqR  += iR * iR;
+        outSqL += oL * oL;  outSqR += oR * oR;
+        corrNum  += oL * oR;
         corrDenL += oL * oL;
         corrDenR += oR * oR;
         lufsSq += oL * oL + oR * oR;
-        clipIn = clipIn || (std::abs(iL) >= 0.999f || std::abs(iR) >= 0.999f);
+        clipIn  = clipIn  || (std::abs(iL) >= 0.999f || std::abs(iR) >= 0.999f);
         clipOut = clipOut || (std::abs(oL) >= 0.999f || std::abs(oR) >= 0.999f);
     }
 
     const float invN = 1.0f / juce::jmax(1, n);
-    const float inRmsL = std::sqrt(inSqL * invN + 1.0e-20f);
-    const float inRmsR = std::sqrt(inSqR * invN + 1.0e-20f);
+    const float inRmsL  = std::sqrt(inSqL  * invN + 1.0e-20f);
+    const float inRmsR  = std::sqrt(inSqR  * invN + 1.0e-20f);
     const float outRmsL = std::sqrt(outSqL * invN + 1.0e-20f);
     const float outRmsR = std::sqrt(outSqR * invN + 1.0e-20f);
 
-    meterBallistics.inPeakHoldL = juce::jmax(inPkL, meterBallistics.inPeakHoldL * meterBallistics.holdDecay);
-    meterBallistics.inPeakHoldR = juce::jmax(inPkR, meterBallistics.inPeakHoldR * meterBallistics.holdDecay);
-    meterBallistics.outPeakHoldL = juce::jmax(outPkL, meterBallistics.outPeakHoldL * meterBallistics.holdDecay);
-    meterBallistics.outPeakHoldR = juce::jmax(outPkR, meterBallistics.outPeakHoldR * meterBallistics.holdDecay);
-    meterBallistics.inRmsL += meterBallistics.rmsCoeff * (inRmsL - meterBallistics.inRmsL);
-    meterBallistics.inRmsR += meterBallistics.rmsCoeff * (inRmsR - meterBallistics.inRmsR);
-    meterBallistics.outRmsL += meterBallistics.rmsCoeff * (outRmsL - meterBallistics.outRmsL);
-    meterBallistics.outRmsR += meterBallistics.rmsCoeff * (outRmsR - meterBallistics.outRmsR);
-    meterBallistics.sparkGR += 0.2f * (sparkGRDb - meterBallistics.sparkGR);
-    meterBallistics.clipHoldIn = juce::jmax(clipIn ? 1.0f : 0.0f, meterBallistics.clipHoldIn * 0.92f);
-    meterBallistics.clipHoldOut = juce::jmax(clipOut ? 1.0f : 0.0f, meterBallistics.clipHoldOut * 0.92f);
+    // SR-dependent ballistics
+    auto& mb = meterBallistics;
+    mb.inPeakHoldL  = juce::jmax(inPkL,  mb.inPeakHoldL  * mb.holdDecay);
+    mb.inPeakHoldR  = juce::jmax(inPkR,  mb.inPeakHoldR  * mb.holdDecay);
+    mb.outPeakHoldL = juce::jmax(outPkL, mb.outPeakHoldL * mb.holdDecay);
+    mb.outPeakHoldR = juce::jmax(outPkR, mb.outPeakHoldR * mb.holdDecay);
+    mb.inRmsL  += mb.rmsCoeff * (inRmsL  - mb.inRmsL);
+    mb.inRmsR  += mb.rmsCoeff * (inRmsR  - mb.inRmsR);
+    mb.outRmsL += mb.rmsCoeff * (outRmsL - mb.outRmsL);
+    mb.outRmsR += mb.rmsCoeff * (outRmsR - mb.outRmsR);
+    mb.sparkGR += 0.2f * (sparkGRDb - mb.sparkGR);
+    mb.clipHoldIn  = juce::jmax(clipIn  ? 1.0f : 0.0f, mb.clipHoldIn  * mb.clipDecay);
+    mb.clipHoldOut = juce::jmax(clipOut ? 1.0f : 0.0f, mb.clipHoldOut * mb.clipDecay);
 
     const float corrDen = std::sqrt(corrDenL * corrDenR) + 1.0e-12f;
     const float correlation = juce::jlimit(-1.0f, 1.0f, corrNum / corrDen);
-
     const float lufsRms = std::sqrt((lufsSq * 0.5f) * invN + 1.0e-20f);
 
-    meters.inputPeakL.store(juce::Decibels::gainToDecibels(meterBallistics.inPeakHoldL, -100.0f), std::memory_order_relaxed);
-    meters.inputPeakR.store(juce::Decibels::gainToDecibels(meterBallistics.inPeakHoldR, -100.0f), std::memory_order_relaxed);
-    meters.inputRmsL.store(juce::Decibels::gainToDecibels(meterBallistics.inRmsL, -100.0f), std::memory_order_relaxed);
-    meters.inputRmsR.store(juce::Decibels::gainToDecibels(meterBallistics.inRmsR, -100.0f), std::memory_order_relaxed);
-    meters.outputPeakL.store(juce::Decibels::gainToDecibels(meterBallistics.outPeakHoldL, -100.0f), std::memory_order_relaxed);
-    meters.outputPeakR.store(juce::Decibels::gainToDecibels(meterBallistics.outPeakHoldR, -100.0f), std::memory_order_relaxed);
-    meters.outputRmsL.store(juce::Decibels::gainToDecibels(meterBallistics.outRmsL, -100.0f), std::memory_order_relaxed);
-    meters.outputRmsR.store(juce::Decibels::gainToDecibels(meterBallistics.outRmsR, -100.0f), std::memory_order_relaxed);
-    meters.sparkGainReductionDb.store(juce::jmax(0.0f, meterBallistics.sparkGR), std::memory_order_relaxed);
+    // Store to atomics
+    meters.inputPeakL.store(juce::Decibels::gainToDecibels(mb.inPeakHoldL, -100.0f), std::memory_order_relaxed);
+    meters.inputPeakR.store(juce::Decibels::gainToDecibels(mb.inPeakHoldR, -100.0f), std::memory_order_relaxed);
+    meters.inputRmsL.store(juce::Decibels::gainToDecibels(mb.inRmsL, -100.0f), std::memory_order_relaxed);
+    meters.inputRmsR.store(juce::Decibels::gainToDecibels(mb.inRmsR, -100.0f), std::memory_order_relaxed);
+    meters.outputPeakL.store(juce::Decibels::gainToDecibels(mb.outPeakHoldL, -100.0f), std::memory_order_relaxed);
+    meters.outputPeakR.store(juce::Decibels::gainToDecibels(mb.outPeakHoldR, -100.0f), std::memory_order_relaxed);
+    meters.outputRmsL.store(juce::Decibels::gainToDecibels(mb.outRmsL, -100.0f), std::memory_order_relaxed);
+    meters.outputRmsR.store(juce::Decibels::gainToDecibels(mb.outRmsR, -100.0f), std::memory_order_relaxed);
+    meters.sparkGainReductionDb.store(juce::jmax(0.0f, mb.sparkGR), std::memory_order_relaxed);
     meters.lufs.store(juce::Decibels::gainToDecibels(lufsRms, -100.0f), std::memory_order_relaxed);
-    meters.inputClip.store(meterBallistics.clipHoldIn, std::memory_order_relaxed);
-    meters.outputClip.store(meterBallistics.clipHoldOut, std::memory_order_relaxed);
+    meters.inputClip.store(mb.clipHoldIn, std::memory_order_relaxed);
+    meters.outputClip.store(mb.clipHoldOut, std::memory_order_relaxed);
     meters.correlation.store(correlation, std::memory_order_relaxed);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// processBlock — main entry point with isolated oversampling architecture
+// ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
     juce::ScopedNoDenormals noDenormals;
 
     const int numSamples = buffer.getNumSamples();
-    const int totalNumInputChannels = getTotalNumInputChannels();
+    const int totalNumInputChannels  = getTotalNumInputChannels();
     const int totalNumOutputChannels = getTotalNumOutputChannels();
 
     for (int ch = totalNumInputChannels; ch < totalNumOutputChannels; ++ch)
@@ -472,6 +602,7 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     if (numSamples <= 0 || buffer.getNumChannels() < 2)
         return;
 
+    // ── Store dry buffer (at base SR) ──
     const int copyCount = juce::jmin(numSamples, maxPreparedBlockSize);
     dryBuffer.copyFrom(0, 0, buffer, 0, 0, copyCount);
     dryBuffer.copyFrom(1, 0, buffer, 1, 0, copyCount);
@@ -480,8 +611,8 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const float* dryReadR = dryBuffer.getReadPointer(1);
 
     updateTargetsFromAPVTS();
-    const bool bypassed = *apvts.getRawParameterValue("bypass") > 0.5f;
-    const float autoGain = *apvts.getRawParameterValue("autogain");
+    const bool bypassed   = *apvts.getRawParameterValue("bypass") > 0.5f;
+    const float autoGain  = *apvts.getRawParameterValue("autogain");
     const int requestedQuality = getRequestedQualityMode();
 
     if (requestedQuality != activeQualityMode) {
@@ -493,40 +624,34 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     float* dataR = buffer.getWritePointer(1);
 
     if (! bypassed) {
+        // ── Phase 1: Linear pre-processing (always at base SR) ──
+        processLinearPre(dataL, dataR, numSamples);
+
+        // ── Phase 2: Nonlinear processing (oversampled if quality > 0) ──
         if (activeQualityMode == 1 && os2x != nullptr) {
             juce::dsp::AudioBlock<float> block(buffer);
             auto stereoBlock = block.getSubsetChannelBlock(0, 2).getSubBlock(0, (size_t) numSamples);
             auto upBlock = os2x->processSamplesUp(stereoBlock);
-            processCore(upBlock.getChannelPointer(0), upBlock.getChannelPointer(1), (int) upBlock.getNumSamples(), 2.0f);
+            processNonlinear(upBlock.getChannelPointer(0), upBlock.getChannelPointer(1),
+                             (int) upBlock.getNumSamples(), 2.0f);
             os2x->processSamplesDown(stereoBlock);
         } else if (activeQualityMode >= 2 && os4x != nullptr) {
             juce::dsp::AudioBlock<float> block(buffer);
             auto stereoBlock = block.getSubsetChannelBlock(0, 2).getSubBlock(0, (size_t) numSamples);
             auto upBlock = os4x->processSamplesUp(stereoBlock);
-            processCore(upBlock.getChannelPointer(0), upBlock.getChannelPointer(1), (int) upBlock.getNumSamples(), 4.0f);
+            processNonlinear(upBlock.getChannelPointer(0), upBlock.getChannelPointer(1),
+                             (int) upBlock.getNumSamples(), 4.0f);
             os4x->processSamplesDown(stereoBlock);
         } else {
-            processCore(dataL, dataR, numSamples, 1.0f);
+            processNonlinear(dataL, dataR, numSamples, 1.0f);
         }
-    }
 
-    if (autoGain > 0.5f && ! bypassed) {
-        float inRmsSq = 0.0f, outRmsSq = 0.0f;
-        for (int n = 0; n < numSamples; ++n) {
-            const float iL = dryReadL[n];
-            const float iR = dryReadR[n];
-            inRmsSq += iL * iL + iR * iR;
-            outRmsSq += dataL[n] * dataL[n] + dataR[n] * dataR[n];
-        }
-        const float inRms = std::sqrt(inRmsSq / juce::jmax(1, numSamples * 2) + 1.0e-20f);
-        const float outRms = std::sqrt(outRmsSq / juce::jmax(1, numSamples * 2) + 1.0e-20f);
-        if (inRms > 1.0e-6f && outRms > 1.0e-6f) {
-            const float gainDb = juce::jlimit(-4.0f, 4.0f, juce::Decibels::gainToDecibels(inRms / outRms, 0.0f));
-            const float gain = juce::Decibels::decibelsToGain(gainDb);
-            for (int n = 0; n < numSamples; ++n) {
-                dataL[n] *= gain;
-                dataR[n] *= gain;
-            }
+        // ── Phase 3: Linear post-processing (always at base SR) ──
+        processLinearPost(dataL, dataR, numSamples);
+
+        // ── Phase 4: Smoothed auto-gain ──
+        if (autoGain > 0.5f) {
+            autoGainSmoother.processBlock(dataL, dataR, numSamples, dryReadL, dryReadR);
         }
     }
 
@@ -538,6 +663,9 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     updateMeters(dryReadL, dryReadR, dataL, dataR, numSamples, sparkGrEnvelope);
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// State serialization
+// ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::getStateInformation(juce::MemoryBlock& destData) {
     const auto state = apvts.copyState();
     std::unique_ptr<juce::XmlElement> xml(state.createXml());
@@ -548,6 +676,9 @@ void BTZAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
     std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, sizeInBytes));
     if (xml && xml->hasTagName(apvts.state.getType()))
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
+
+    // Re-initialize smoothers after state recall to prevent parameter jumps
+    initSmoothers(currentSampleRate);
 
     activeQualityMode = getRequestedQualityMode();
     updateLatencyFromQuality(activeQualityMode);
@@ -560,4 +691,3 @@ juce::AudioProcessorEditor* BTZAudioProcessor::createEditor() {
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter() {
     return new BTZAudioProcessor();
 }
-
