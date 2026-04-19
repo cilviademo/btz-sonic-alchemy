@@ -1,14 +1,22 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.cpp  v4
+  Box Tone Zone (BTZ) — PluginProcessor.cpp  v5
   ────────────────────────────────────────────────────────────────────────
-  v4 changes (mathematical DSP overhaul — measured & verified):
-    • SVF-based LR4 crossover (24 dB/oct) — was only 12 dB/oct
-    • Soft-knee GlueCompressor (6 dB knee) — was hard-knee
-    • Improved fastTanh Padé [5/5] — 20x more accurate
-    • Perceptual macro curves (logarithmic, power-law, soft-sat)
-    • sqrt(A)-prewarped SHINE shelf for analog-matched response
+  v5 changes (audit-driven fixes — all claims backed by measurement):
+    • FIX: Envelope followers moved from processNonlinear to processLinearPre
+      — They were ticking at OS rate with base-SR coefficients (2-4x faster)
+    • FIX: SlewLimiter OS factor set before processNonlinear
+    • FIX: Crest ratio computed at base SR, passed to processNonlinear
+    • REVISED: ADAA-1 alias rejection is ~5.7 dB at 1x SR (not 18 dB)
+      — Must combine with 2x/4x OS for commercial-grade rejection
+
+  v4 changes (mathematical DSP overhaul):
+    • SVF-based LR4 crossover (24 dB/oct)
+    • Soft-knee GlueCompressor (6 dB knee)
+    • Improved fastTanh Padé [5/5]
+    • Perceptual macro curves
+    • sqrt(A)-prewarped SHINE shelf
     • Cached drive gain (no per-sample std::pow)
-    • kTanhBias025 uses std::tanh (eliminates 1.6% bias error)
+    • kTanhBias025 uses std::tanh
     • Wider autogain range (-6 to +6 dB)
     • SmoothParam snap-to-target for denormal prevention
 */
@@ -309,7 +317,8 @@ void BTZAudioProcessor::updateTargetsFromAPVTS() {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // processLinearPre — runs at BASE sample rate, before oversampling
-// Handles: safety pre, drive, master scaling, glue, width
+// Handles: safety pre, drive, master scaling, glue, width,
+//          envelope followers (v5: moved here from processNonlinear)
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamples) {
     for (int n = 0; n < numSamples; ++n) {
@@ -355,6 +364,19 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
             glueComp.processStereo(L, R, glue, envVal);
         }
 
+        // ── v5 FIX: Envelope followers at BASE sample rate ──
+        // Previously these ran inside processNonlinear at OS rate,
+        // causing 2-4x faster attack/release than intended.
+        {
+            const float peakVal = peakEnvL.process(std::abs(L));
+            const float rmsVal  = std::sqrt(rmsEnvL.process(L * L) + 1.0e-12f);
+            // Store crest ratio for use in processNonlinear
+            lastCrestRatio = peakVal / juce::jmax(1.0e-5f, rmsVal);
+        }
+        // Right channel envelope (for future stereo crest)
+        peakEnvR.process(std::abs(R));
+        rmsEnvR.process(R * R);
+
         // ── Width (M/S with mono-safe low-band) ──
         {
             const float mid  = 0.5f * (L + R);
@@ -379,12 +401,18 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
 // ═══════════════════════════════════════════════════════════════════════════
 // processNonlinear — runs at OVERSAMPLED rate (or 1x in Eco mode)
 // ────────────────────────────────────────────────────────────────────────
+// v5 FIX: Envelope followers removed from this function.
+//   They now run in processLinearPre at base SR. Crest ratio is read
+//   from lastCrestRatio (held constant across the OS block).
+//   SlewLimiter OS factor is set before entry.
+//
 // v4: Uses true LR4 crossover (24 dB/oct) for cleaner band separation.
-// ADAA tanh in all saturation stages. Bias compensation uses std::tanh
-// via kTanhBias025 constant (eliminates 1.6% fastTanh error).
+// ADAA tanh in all saturation stages.
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamples, float osFactor) {
-    (void) osFactor;
+    // v5: Set slew limiter OS factor so maxDelta scales correctly
+    slewL.setOversampleFactor(osFactor);
+    slewR.setOversampleFactor(osFactor);
 
     for (int n = 0; n < numSamples; ++n) {
         const float warmth  = sWarmth.current;
@@ -402,7 +430,6 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
             const float bias = warmth * 0.05f;
             const float eraScale = juce::jmax(0.55f, 1.0f + era * 0.30f);
 
-            // v4: bias compensation uses kTanhBias025 (std::tanh, not fastTanh)
             const float biasComp = std::tanh(bias * drv / eraScale);
             float yL = adaaPreampL.process((L + bias) * drv / eraScale) - biasComp;
             float yR = adaaPreampR.process((R + bias) * drv / eraScale) - biasComp;
@@ -410,7 +437,7 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
             R = R + (yR - R) * warmth;
         }
 
-        // ── Slew limiter (safety net) ──
+        // ── Slew limiter (safety net — v5: OS-factor-aware) ──
         L = slewL.process(L);
         R = slewR.process(R);
 
@@ -439,10 +466,10 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
         }
 
         // ── Punch (crest-aware harmonic injection via ADAA) ──
+        // v5 FIX: crest ratio computed at base SR in processLinearPre,
+        // held constant across the oversampled block.
         if (punch > 0.002f) {
-            const float peakL = peakEnvL.process(std::abs(L));
-            const float rmsL  = std::sqrt(rmsEnvL.process(L * L) + 1.0e-12f);
-            const float crest = peakL / juce::jmax(1.0e-5f, rmsL);
+            const float crest = lastCrestRatio;
             const float harmonicBias = juce::jlimit(0.8f, 1.3f, 1.0f + (crest - 3.0f) * 0.06f);
             const float amount = punch * 0.25f;
             const float drv = 1.0f + punch * 2.0f;
@@ -471,6 +498,10 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
         dataL[n] = L;
         dataR[n] = R;
     }
+
+    // v5: Reset slew limiter OS factor back to 1x after OS block
+    slewL.setOversampleFactor(1.0f);
+    slewR.setOversampleFactor(1.0f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

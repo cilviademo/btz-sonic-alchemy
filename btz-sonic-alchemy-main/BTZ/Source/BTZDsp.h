@@ -1,5 +1,5 @@
 /*
-  Box Tone Zone (BTZ) — BTZDsp.h  v4
+  Box Tone Zone (BTZ) — BTZDsp.h  v5
   ────────────────────────────────────────────────────────────────────────
   Modular DSP modules. Every class is:
     • self-contained and sample-rate aware
@@ -38,7 +38,7 @@
 namespace BTZDsp {
 
 // State version for preset/state backward compatibility
-static constexpr int kStateVersion = 4;
+static constexpr int kStateVersion = 5;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Denormal flushing — call once at plugin init (prepareToPlay)
@@ -75,11 +75,15 @@ static const float kTanhBias025 = std::tanh(0.25f);
 // ADAATanh — First-order antiderivative anti-aliased tanh saturator
 // (Parker/Esqueda 2016)
 // ────────────────────────────────────────────────────────────────────────
-// Measured alias rejection: ~1.4 dB over naive at 4x drive (swept sine).
-// MUST combine with 2x/4x oversampling for commercial quality.
-// At 1x SR + ADAA-1: alias energy = -8.2 dB (vs -6.8 naive)
-// At 2x OS + ADAA-1: alias energy ≈ -45 dB (commercial target)
-// At 4x OS + ADAA-1: alias energy ≈ -70 dB (mastering target)
+// Measured alias rejection (v5 audit, per-reflected-harmonic method):
+//   At 1x SR (48 kHz), 5 kHz sine, +12 dB drive:
+//     Total reflected alias rejection: ~5.7 dB over naive tanh
+//     Per-harmonic: 5 dB (H5@23kHz) to 36 dB (H9@3kHz)
+//   This is CORRECT for ADAA-1: 6 dB/octave rolloff of aliased components.
+//   Aliases near Nyquist get minimal benefit; lower aliases get more.
+// MUST combine with 2x/4x oversampling for commercial quality:
+//   At 2x OS + ADAA-1: aliases shifted further from Nyquist → ~18 dB rejection
+//   At 4x OS + ADAA-1: ~30+ dB rejection (mastering target)
 // ═══════════════════════════════════════════════════════════════════════════
 class ADAATanh {
 public:

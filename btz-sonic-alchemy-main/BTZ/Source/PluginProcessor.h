@@ -1,5 +1,5 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.h  v4
+  Box Tone Zone (BTZ) — PluginProcessor.h  v5
   ────────────────────────────────────────────────────────────────────────
   v4: Mathematical DSP overhaul — SVF LR4 crossover, soft-knee glue,
   improved fastTanh [5/5], perceptual macro curves, sqrt(A)-prewarped
@@ -108,6 +108,9 @@ private:
     // v4: cached drive gain to avoid per-sample std::pow
     float cachedDriveGain = 1.0f;
     float lastDriveDb = 0.0f;
+
+    // v5: crest ratio computed at base SR, held for processNonlinear
+    float lastCrestRatio = 3.0f;  // default crest ~3 (typical for music)
 
     double currentSampleRate = 44100.0;
     int maxPreparedBlockSize = 0;
