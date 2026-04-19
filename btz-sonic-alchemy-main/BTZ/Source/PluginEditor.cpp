@@ -1,3 +1,8 @@
+/*
+  Box Tone Zone (BTZ) — PluginEditor.cpp
+  Overhauled: macro knob bindings, SHINE freq/Q controls,
+  moodboard-ready structure, 4-page layout.
+*/
 #include "PluginEditor.h"
 
 BTZLookAndFeel::BTZLookAndFeel() {
@@ -53,7 +58,7 @@ void BTZLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int w, in
 
 BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioProcessorEditor(p), proc(p) {
     setLookAndFeel(&lookAndFeel);
-    setSize(980, 610);
+    setSize(980, 650);
 
     auto styleTab = [&](juce::TextButton& b, int pageIdx) {
         addAndMakeVisible(b);
@@ -65,14 +70,21 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
 
     addAndMakeVisible(btnBypass);
 
+    // ── Core knobs ──
     auto initKnob = [&](juce::Slider& s, juce::Label& l) { setupKnob(s, l); };
     initKnob(kPunch, lPunch); initKnob(kWarmth, lWarmth); initKnob(kBoom, lBoom);
     initKnob(kGlue, lGlue); initKnob(kAir, lAir); initKnob(kWidth, lWidth);
     initKnob(kDensity, lDensity); initKnob(kMotion, lMotion); initKnob(kEra, lEra);
     initKnob(kDrive, lDrive); initKnob(kMix, lMix); initKnob(kMaster, lMaster);
 
+    // ── Macro knobs ──
+    initKnob(kMacro0, lMacro0); initKnob(kMacro1, lMacro1);
+    initKnob(kMacro2, lMacro2); initKnob(kMacro3, lMacro3);
+
+    // ── SPARK / SHINE sliders ──
     setupSlider(sCeiling); setupSlider(sSparkMix); setupSlider(sShine);
     setupSlider(sShineMix); setupSlider(sIntensity);
+    setupSlider(sShineFreq); setupSlider(sShineQ);
 
     auto& apvts = proc.getAPVTS();
     aPunch    = std::make_unique<SliderAttachment>(apvts, "punch", kPunch);
@@ -91,8 +103,14 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
     aSparkMix = std::make_unique<SliderAttachment>(apvts, "sparkMix", sSparkMix);
     aShine    = std::make_unique<SliderAttachment>(apvts, "shineAmount", sShine);
     aShineMix = std::make_unique<SliderAttachment>(apvts, "shineMix", sShineMix);
+    aShineFreq = std::make_unique<SliderAttachment>(apvts, "shineFreq", sShineFreq);
+    aShineQ    = std::make_unique<SliderAttachment>(apvts, "shineQ", sShineQ);
     aIntensity = std::make_unique<SliderAttachment>(apvts, "masterIntensity", sIntensity);
-    aBypass = std::make_unique<ButtonAttachment>(apvts, "bypass", btnBypass);
+    aMacro0   = std::make_unique<SliderAttachment>(apvts, "macro0", kMacro0);
+    aMacro1   = std::make_unique<SliderAttachment>(apvts, "macro1", kMacro1);
+    aMacro2   = std::make_unique<SliderAttachment>(apvts, "macro2", kMacro2);
+    aMacro3   = std::make_unique<SliderAttachment>(apvts, "macro3", kMacro3);
+    aBypass   = std::make_unique<ButtonAttachment>(apvts, "bypass", btnBypass);
 
     startTimerHz(45);
 }
@@ -126,19 +144,19 @@ void BTZAudioProcessorEditor::setupSlider(juce::Slider& s) {
 void BTZAudioProcessorEditor::timerCallback() {
     auto& m = proc.getMeters();
     auto lerp = [](float& d, float t, float c) { d += c * (t - d); };
-    lerp(inPeakL, m.inputPeakL.load(std::memory_order_relaxed), 0.3f);
-    lerp(inPeakR, m.inputPeakR.load(std::memory_order_relaxed), 0.3f);
-    lerp(inRmsL,  m.inputRmsL.load(std::memory_order_relaxed), 0.2f);
-    lerp(inRmsR,  m.inputRmsR.load(std::memory_order_relaxed), 0.2f);
+    lerp(inPeakL,  m.inputPeakL.load(std::memory_order_relaxed),  0.3f);
+    lerp(inPeakR,  m.inputPeakR.load(std::memory_order_relaxed),  0.3f);
+    lerp(inRmsL,   m.inputRmsL.load(std::memory_order_relaxed),   0.2f);
+    lerp(inRmsR,   m.inputRmsR.load(std::memory_order_relaxed),   0.2f);
     lerp(outPeakL, m.outputPeakL.load(std::memory_order_relaxed), 0.3f);
     lerp(outPeakR, m.outputPeakR.load(std::memory_order_relaxed), 0.3f);
-    lerp(outRmsL,  m.outputRmsL.load(std::memory_order_relaxed), 0.2f);
-    lerp(outRmsR,  m.outputRmsR.load(std::memory_order_relaxed), 0.2f);
-    lerp(sparkGR, m.sparkGainReductionDb.load(std::memory_order_relaxed), 0.25f);
-    lerp(lufs, m.lufs.load(std::memory_order_relaxed), 0.15f);
-    lerp(corr, m.correlation.load(std::memory_order_relaxed), 0.2f);
-    lerp(inClip, m.inputClip.load(std::memory_order_relaxed), 0.3f);
-    lerp(outClip, m.outputClip.load(std::memory_order_relaxed), 0.3f);
+    lerp(outRmsL,  m.outputRmsL.load(std::memory_order_relaxed),  0.2f);
+    lerp(outRmsR,  m.outputRmsR.load(std::memory_order_relaxed),  0.2f);
+    lerp(sparkGR,  m.sparkGainReductionDb.load(std::memory_order_relaxed), 0.25f);
+    lerp(lufs,     m.lufs.load(std::memory_order_relaxed),        0.15f);
+    lerp(corr,     m.correlation.load(std::memory_order_relaxed), 0.2f);
+    lerp(inClip,   m.inputClip.load(std::memory_order_relaxed),  0.3f);
+    lerp(outClip,  m.outputClip.load(std::memory_order_relaxed), 0.3f);
     repaint();
 }
 
@@ -232,14 +250,21 @@ void BTZAudioProcessorEditor::resized() {
     bounds.removeFromTop(78);
     auto content = bounds.reduced(20, 16);
 
+    // ── Hide all controls ──
     auto hideKnob = [](juce::Slider& s, juce::Label& l) { s.setVisible(false); l.setVisible(false); };
     hideKnob(kPunch, lPunch); hideKnob(kWarmth, lWarmth); hideKnob(kBoom, lBoom);
     hideKnob(kGlue, lGlue); hideKnob(kAir, lAir); hideKnob(kWidth, lWidth);
     hideKnob(kDensity, lDensity); hideKnob(kMotion, lMotion); hideKnob(kEra, lEra);
     hideKnob(kDrive, lDrive); hideKnob(kMix, lMix); hideKnob(kMaster, lMaster);
-    sCeiling.setVisible(false); sSparkMix.setVisible(false); sShine.setVisible(false); sShineMix.setVisible(false); sIntensity.setVisible(false);
+    hideKnob(kMacro0, lMacro0); hideKnob(kMacro1, lMacro1);
+    hideKnob(kMacro2, lMacro2); hideKnob(kMacro3, lMacro3);
+    sCeiling.setVisible(false); sSparkMix.setVisible(false);
+    sShine.setVisible(false); sShineMix.setVisible(false);
+    sShineFreq.setVisible(false); sShineQ.setVisible(false);
+    sIntensity.setVisible(false);
 
     if (currentPage == 0) {
+        // ── MAIN page: 6x2 core knobs + 4 macro knobs below ──
         const int knob = 74, label = 16;
         const int gapX = (content.getWidth() - knob * 6) / 5;
         const int y1 = content.getY();
@@ -254,15 +279,41 @@ void BTZAudioProcessorEditor::resized() {
         place(kGlue, lGlue, 3, y1); place(kAir, lAir, 4, y1); place(kWidth, lWidth, 5, y1);
         place(kDensity, lDensity, 0, y2); place(kMotion, lMotion, 1, y2); place(kEra, lEra, 2, y2);
         place(kDrive, lDrive, 3, y2); place(kMix, lMix, 4, y2); place(kMaster, lMaster, 5, y2);
+
+        // Macro row below the core knobs
+        const int macroY = y2 + knob + label + 20;
+        const int macroKnob = 60;
+        const int macroGap = (content.getWidth() - macroKnob * 4) / 3;
+        auto placeMacro = [&](juce::Slider& s, juce::Label& l, int i) {
+            const int x = content.getX() + i * (macroKnob + macroGap);
+            s.setBounds(x, macroY, macroKnob, macroKnob);
+            l.setBounds(x, macroY + macroKnob, macroKnob, label);
+            s.setVisible(true); l.setVisible(true);
+        };
+        placeMacro(kMacro0, lMacro0, 0);
+        placeMacro(kMacro1, lMacro1, 1);
+        placeMacro(kMacro2, lMacro2, 2);
+        placeMacro(kMacro3, lMacro3, 3);
+
     } else if (currentPage == 1) {
+        // ── SPARK / SHINE page ──
         auto left = content.removeFromLeft(content.getWidth() / 2).reduced(20, 24);
         auto right = content.reduced(20, 24);
+
+        // SPARK controls (left)
         sCeiling.setBounds(left.removeFromTop(30)); left.removeFromTop(8);
         sSparkMix.setBounds(left.removeFromTop(30));
-        sShine.setBounds(right.removeFromTop(30)); right.removeFromTop(8);
-        sShineMix.setBounds(right.removeFromTop(30)); right.removeFromTop(24);
-        sIntensity.setBounds(right.removeFromTop(30));
-        sCeiling.setVisible(true); sSparkMix.setVisible(true); sShine.setVisible(true); sShineMix.setVisible(true); sIntensity.setVisible(true);
-    }
-}
+        sCeiling.setVisible(true); sSparkMix.setVisible(true);
 
+        // SHINE controls (right)
+        sShine.setBounds(right.removeFromTop(30)); right.removeFromTop(8);
+        sShineMix.setBounds(right.removeFromTop(30)); right.removeFromTop(8);
+        sShineFreq.setBounds(right.removeFromTop(30)); right.removeFromTop(8);
+        sShineQ.setBounds(right.removeFromTop(30)); right.removeFromTop(24);
+        sIntensity.setBounds(right.removeFromTop(30));
+        sShine.setVisible(true); sShineMix.setVisible(true);
+        sShineFreq.setVisible(true); sShineQ.setVisible(true);
+        sIntensity.setVisible(true);
+    }
+    // Page 2 (ADVANCED) is reserved for future expansion
+}

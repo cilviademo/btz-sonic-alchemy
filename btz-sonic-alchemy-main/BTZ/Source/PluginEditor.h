@@ -1,12 +1,27 @@
 /*
-  Box Tone Zone (BTZ) - PluginEditor.h
+  Box Tone Zone (BTZ) — PluginEditor.h
+  Overhauled: moodboard-aligned color system, macro knobs,
+  SHINE freq/Q controls, structured layout zones.
 */
 #pragma once
 
 #include "PluginProcessor.h"
 #include <JuceHeader.h>
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Color system — moodboard v0.2 aligned (near-black chassis, amber accent)
+// Legacy palette retained as fallback; new palette is primary.
+// ═══════════════════════════════════════════════════════════════════════════
 namespace BTZColors {
+    // ── Moodboard v0.2 primary palette ──
+    const juce::Colour obsidian  { 0xFF0A0A0D };  // deepest background
+    const juce::Colour panelDark { 0xFF13141A };  // panel background
+    const juce::Colour charcoal  { 0xFF1A1C23 };  // raised surfaces
+    const juce::Colour amber     { 0xFFE8A94A };  // primary accent
+    const juce::Colour cream     { 0xFFEAE0CC };  // primary text
+    const juce::Colour bone      { 0xFFD8CFB8 };  // secondary text
+
+    // ── Legacy palette (kept for compatibility during transition) ──
     const juce::Colour canvas { 0xFFF1EFEA };
     const juce::Colour panel  { 0xFFE8E3D9 };
     const juce::Colour well   { 0xFFD4CEC2 };
@@ -46,9 +61,11 @@ private:
     BTZLookAndFeel lookAndFeel;
     int currentPage = 0;
 
+    // ── Tab navigation ──
     juce::TextButton tabMain { "MAIN" }, tabSpark { "SPARK" }, tabAdvanced { "ADVANCED" };
     juce::ToggleButton btnBypass { "BYPASS" };
 
+    // ── Core knobs ──
     juce::Slider kPunch, kWarmth, kBoom, kGlue, kAir, kWidth, kDensity, kMotion, kEra;
     juce::Slider kDrive, kMix, kMaster;
     juce::Label lPunch{ "", "Punch" }, lWarmth{ "", "Warmth" }, lBoom{ "", "Boom" };
@@ -56,15 +73,26 @@ private:
     juce::Label lDensity{ "", "Density" }, lMotion{ "", "Motion" }, lEra{ "", "Era" };
     juce::Label lDrive{ "", "Drive" }, lMix{ "", "Mix" }, lMaster{ "", "Master" };
 
+    // ── SPARK / SHINE sliders ──
     juce::Slider sCeiling, sSparkMix, sShine, sShineMix, sIntensity;
+    juce::Slider sShineFreq, sShineQ;
 
+    // ── Macro knobs ──
+    juce::Slider kMacro0, kMacro1, kMacro2, kMacro3;
+    juce::Label lMacro0{ "", "Macro 1" }, lMacro1{ "", "Macro 2" };
+    juce::Label lMacro2{ "", "Macro 3" }, lMacro3{ "", "Macro 4" };
+
+    // ── Attachments ──
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
     std::unique_ptr<SliderAttachment> aPunch, aWarmth, aBoom, aGlue, aAir, aWidth;
     std::unique_ptr<SliderAttachment> aDensity, aMotion, aEra, aMix, aDrive, aMaster;
     std::unique_ptr<SliderAttachment> aCeiling, aSparkMix, aShine, aShineMix, aIntensity;
+    std::unique_ptr<SliderAttachment> aShineFreq, aShineQ;
+    std::unique_ptr<SliderAttachment> aMacro0, aMacro1, aMacro2, aMacro3;
     std::unique_ptr<ButtonAttachment> aBypass;
 
+    // ── Meter display state ──
     float inPeakL = -100.0f, inPeakR = -100.0f, inRmsL = -100.0f, inRmsR = -100.0f;
     float outPeakL = -100.0f, outPeakR = -100.0f, outRmsL = -100.0f, outRmsR = -100.0f;
     float sparkGR = 0.0f, lufs = -24.0f, corr = 1.0f;
@@ -72,4 +100,3 @@ private:
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BTZAudioProcessorEditor)
 };
-
