@@ -1,8 +1,15 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.cpp
-  Overhauled: modular DSP, isolated oversampling, macro system,
-  SparkLimiter with lookahead, ShineProcessor high-shelf, LR2 crossover,
-  SR-dependent meters, smoothed auto-gain, fixed dry/wet mix.
+  Box Tone Zone (BTZ) — PluginProcessor.cpp  v2
+  ────────────────────────────────────────────────────────────────────────
+  v2 changes (Claude review + /dsp-engineering skill):
+    • ADAATanh in ALL saturation stages (preamp, band sat, punch, density)
+    • TruePeakLimiter replaces SparkLimiter — ISP-aware, block-level API
+    • sparkMix REMOVED from limiter (causes overshoots)
+    • sparkCeiling held per block, NOT smoothed at audio rate
+    • FTZ/DAZ enabled at prepareToPlay()
+    • SVF-based ShineProcessor (modulation-safe)
+    • Pre-allocated sidechain buffer in TruePeakLimiter
+    • Per-channel per-stage ADAA instances (no sharing)
 */
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -38,11 +45,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout BTZAudioProcessor::createPar
         juce::NormalisableRange<float>(0.0f, 12.0f, 0.1f), 0.0f));
 
     // ── SPARK group ──
+    // NOTE: sparkMix removed — limiter must not have dry/wet blend
     auto spark = std::make_unique<juce::AudioProcessorParameterGroup>("spark", "SPARK", "|");
     spark->addChild(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("sparkCeiling", 1), "TP Ceil",
         juce::NormalisableRange<float>(-3.0f, 0.0f, 0.01f), -0.3f));
-    spark->addChild(pct("sparkMix", "Spark Mix", 1.0f));
 
     // ── SHINE group ──
     auto shine = std::make_unique<juce::AudioProcessorParameterGroup>("shine", "SHINE", "|");
@@ -101,7 +108,20 @@ bool BTZAudioProcessor::isBusesLayoutSupported(const BusesLayout& layouts) const
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ADAA reset helper — must call in prepareToPlay and after state recall
+// ═══════════════════════════════════════════════════════════════════════════
+void BTZAudioProcessor::resetAllADAA() {
+    adaaPreampL.reset();   adaaPreampR.reset();
+    adaaBandLowL.reset();  adaaBandLowR.reset();
+    adaaBandHighL.reset(); adaaBandHighR.reset();
+    adaaPunchOddL.reset(); adaaPunchOddR.reset();
+    adaaPunchEvenL.reset();adaaPunchEvenR.reset();
+    adaaDensityL.reset();  adaaDensityR.reset();
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
 // Smoother initialization — all times in ms, all SR-aware
+// Per parameter-smoothing.md: per-sample for gain/filter/freq
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::initSmoothers(double sampleRate) {
     auto init = [sampleRate](SmoothParam& s, float ms) { s.setTime(ms, sampleRate); };
@@ -111,10 +131,10 @@ void BTZAudioProcessor::initSmoothers(double sampleRate) {
     init(sDensity, 6.0f);    init(sMotion, 40.0f);
     init(sEra, 25.0f);       init(sMix, 12.0f);
     init(sDrive, 10.0f);     init(sMaster, 25.0f);
-    init(sSparkCeil, 5.0f);  init(sSparkMix, 5.0f);
     init(sShine, 5.0f);      init(sShineMix, 5.0f);
     init(sMacro0, 15.0f);    init(sMacro1, 15.0f);
     init(sMacro2, 15.0f);    init(sMacro3, 15.0f);
+    // NOTE: no smoother for sparkCeiling — held per block
 
     sPunch.snapTo(*apvts.getRawParameterValue("punch"));
     sWarmth.snapTo(*apvts.getRawParameterValue("warmth"));
@@ -128,8 +148,6 @@ void BTZAudioProcessor::initSmoothers(double sampleRate) {
     sMix.snapTo(*apvts.getRawParameterValue("mix"));
     sDrive.snapTo(*apvts.getRawParameterValue("drive"));
     sMaster.snapTo(*apvts.getRawParameterValue("masterIntensity"));
-    sSparkCeil.snapTo(*apvts.getRawParameterValue("sparkCeiling"));
-    sSparkMix.snapTo(*apvts.getRawParameterValue("sparkMix"));
     sShine.snapTo(*apvts.getRawParameterValue("shineAmount"));
     sShineMix.snapTo(*apvts.getRawParameterValue("shineMix"));
     sMacro0.snapTo(*apvts.getRawParameterValue("macro0"));
@@ -146,19 +164,22 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     currentBlockSize  = samplesPerBlock;
     maxPreparedBlockSize = juce::jmax(samplesPerBlock, 32768);
 
+    // ── FTZ/DAZ — per dsp-engineering/realtime-safety.md ──
+    BTZDsp::enableFlushToZero();
+
     // Safety layers
     safetyPre.setSampleRate(sampleRate);
     safetyPost.setSampleRate(sampleRate);
     safetyPre.reset();
     safetyPost.reset();
 
-    // Slew limiters
+    // Slew limiters (safety net — ADAA is now primary AA)
     slewL.setSampleRate(sampleRate);
     slewR.setSampleRate(sampleRate);
     slewL.reset();
     slewR.reset();
 
-    // Envelope followers (at base SR — they run in linear pre-processing)
+    // Envelope followers
     peakEnvL.setTimes(0.2f, 220.0f, sampleRate);
     peakEnvR.setTimes(0.2f, 220.0f, sampleRate);
     rmsEnvL.setTimes(25.0f, 300.0f, sampleRate);
@@ -166,7 +187,7 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     glueEnv.setTimes(5.0f, 80.0f, sampleRate);
     glueEnv.reset();
 
-    // Glue compressor (SR-dependent smoothing)
+    // Glue compressor
     glueComp.prepare(sampleRate);
     glueComp.reset();
 
@@ -174,12 +195,12 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     crossover.prepare(sampleRate, 250.0f);
     crossover.reset();
 
-    // SPARK limiter
-    sparkLimiter.prepare(sampleRate, samplesPerBlock);
-    sparkLimiter.reset();
-    sparkGrEnvelope = 0.0f;
+    // TruePeakLimiter (replaces SparkLimiter)
+    // 2 ms lookahead, pre-allocates sidechain buffer and ISP oversampler
+    truePeakLimiter.prepare(sampleRate, samplesPerBlock, 2.0f);
+    truePeakLimiter.reset();
 
-    // SHINE processor
+    // SHINE processor (now SVF-based)
     shineProcessor.prepare(sampleRate);
     shineProcessor.reset();
 
@@ -187,7 +208,7 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     autoGainSmoother.prepare(sampleRate);
     autoGainSmoother.reset();
 
-    // Meter ballistics (SR-dependent)
+    // Meter ballistics
     meterBallistics.prepare(sampleRate, samplesPerBlock);
     meterBallistics.reset();
 
@@ -199,6 +220,9 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
 
     noiseSeed = 12345u;
 
+    // ADAA saturators — reset all instances
+    resetAllADAA();
+
     // Smoothers
     initSmoothers(sampleRate);
 
@@ -206,7 +230,7 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     dryBuffer.setSize(2, maxPreparedBlockSize, false, false, true);
     dryBuffer.clear();
 
-    // Oversampling
+    // Oversampling (for nonlinear stages — ADAA reduces the need, but OS still helps)
     juce::dsp::ProcessSpec spec;
     spec.sampleRate = sampleRate;
     spec.maximumBlockSize = (juce::uint32) juce::jmax(1, samplesPerBlock);
@@ -235,13 +259,13 @@ int BTZAudioProcessor::getRequestedQualityMode() const {
 }
 
 void BTZAudioProcessor::updateLatencyFromQuality(int mode) {
-    int latency = sparkLimiter.getLatency(); // SPARK lookahead latency always present
+    int latency = truePeakLimiter.getLatencySamples();
     if (mode == 1 && os2x != nullptr)
         latency += (int) std::ceil(os2x->getLatencyInSamples());
     else if (mode >= 2 && os4x != nullptr)
         latency += (int) std::ceil(os4x->getLatencyInSamples());
 
-    if (latency != getLatencySamples())
+    if (getLatencySamples() != latency)
         setLatencySamples(latency);
 }
 
@@ -261,8 +285,6 @@ void BTZAudioProcessor::updateTargetsFromAPVTS() {
     sMix.setTarget(*apvts.getRawParameterValue("mix"));
     sDrive.setTarget(*apvts.getRawParameterValue("drive"));
     sMaster.setTarget(*apvts.getRawParameterValue("masterIntensity"));
-    sSparkCeil.setTarget(*apvts.getRawParameterValue("sparkCeiling"));
-    sSparkMix.setTarget(*apvts.getRawParameterValue("sparkMix"));
     sShine.setTarget(*apvts.getRawParameterValue("shineAmount"));
     sShineMix.setTarget(*apvts.getRawParameterValue("shineMix"));
     sMacro0.setTarget(*apvts.getRawParameterValue("macro0"));
@@ -279,7 +301,7 @@ void BTZAudioProcessor::updateTargetsFromAPVTS() {
 
 // ═══════════════════════════════════════════════════════════════════════════
 // processLinearPre — runs at BASE sample rate, before oversampling
-// Handles: safety pre, drive, master scaling, glue, width, air (legacy HP)
+// Handles: safety pre, drive, master scaling, glue, width
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamples) {
     for (int n = 0; n < numSamples; ++n) {
@@ -293,8 +315,8 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
         float drive   = sDrive.next();
         float master  = sMaster.next();
         float era     = sEra.next();
-        (void)sDensity.current; // density used in nonlinear
-        (void)sMotion.next();   // motion used in nonlinear post
+        (void)sDensity.current;
+        (void)sMotion.next();
 
         float L = dataL[n];
         float R = dataR[n];
@@ -349,15 +371,14 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
 
 // ═══════════════════════════════════════════════════════════════════════════
 // processNonlinear — runs at OVERSAMPLED rate (or 1x in Eco mode)
-// Handles: preamp/color, slew, crossover, band saturation, punch, density
-// These are the stages that generate harmonics and need anti-aliasing.
+// ────────────────────────────────────────────────────────────────────────
+// ALL saturation stages now use ADAATanh instead of fastTanh.
+// Per Claude review: "one ADAA instance per channel per saturation stage"
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamples, float osFactor) {
-    (void) osFactor; // Available for future per-sample SR adjustment
+    (void) osFactor;
 
     for (int n = 0; n < numSamples; ++n) {
-        // Read current smoothed values (smoothers tick at base rate in processLinearPre,
-        // so here we just use the last smoothed value — no double-ticking)
         const float warmth  = sWarmth.current;
         const float boom    = sBoom.current;
         const float punch   = sPunch.current;
@@ -367,23 +388,21 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
         float L = dataL[n];
         float R = dataR[n];
 
-        // ── Preamp / Color (warmth-driven tanh saturation) ──
+        // ── Preamp / Color (warmth-driven ADAA tanh saturation) ──
         if (warmth > 0.001f) {
             const float drv = 1.0f + warmth * 2.8f;
             const float bias = warmth * 0.05f;
             const float eraScale = juce::jmax(0.55f, 1.0f + era * 0.30f);
 
-            auto preamp = [&](float x) {
-                const float xb = x + bias;
-                float y = fastTanh(xb * drv / eraScale);
-                y -= fastTanh(bias * drv / eraScale);
-                return x + (y - x) * warmth;
-            };
-            L = preamp(L);
-            R = preamp(R);
+            // ADAA tanh: drive the input, process through ADAA, remove bias
+            const float biasComp = fastTanh(bias * drv / eraScale);
+            float yL = adaaPreampL.process((L + bias) * drv / eraScale) - biasComp;
+            float yR = adaaPreampR.process((R + bias) * drv / eraScale) - biasComp;
+            L = L + (yL - L) * warmth;
+            R = R + (yR - R) * warmth;
         }
 
-        // ── Slew limiter ──
+        // ── Slew limiter (safety net — ADAA is primary AA now) ──
         L = slewL.process(L);
         R = slewR.process(R);
 
@@ -391,17 +410,17 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
         float lowL, lowR, highL, highR;
         crossover.process(L, R, lowL, lowR, highL, highR);
 
-        // ── Band saturation ──
+        // ── Band saturation (ADAA tanh per band per channel) ──
         {
             const float lowDrv  = 1.0f + boom * 1.25f;
             const float highDrv = 1.0f + warmth * 1.75f;
             const float satAmt  = juce::jlimit(0.0f, 1.0f, warmth * 0.65f + density * 0.35f);
 
             if (satAmt > 0.001f) {
-                const float satLowL = fastTanh(lowL * lowDrv) / lowDrv;
-                const float satLowR = fastTanh(lowR * lowDrv) / lowDrv;
-                const float satHiL  = fastTanh(highL * highDrv) / highDrv;
-                const float satHiR  = fastTanh(highR * highDrv) / highDrv;
+                const float satLowL = adaaBandLowL.process(lowL * lowDrv) / lowDrv;
+                const float satLowR = adaaBandLowR.process(lowR * lowDrv) / lowDrv;
+                const float satHiL  = adaaBandHighL.process(highL * highDrv) / highDrv;
+                const float satHiR  = adaaBandHighR.process(highR * highDrv) / highDrv;
 
                 L = lowL + (satLowL - lowL) * satAmt + highL + (satHiL - highL) * satAmt;
                 R = lowR + (satLowR - lowR) * satAmt + highR + (satHiR - highR) * satAmt;
@@ -411,7 +430,7 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
             }
         }
 
-        // ── Punch (crest-aware harmonic injection) ──
+        // ── Punch (crest-aware harmonic injection via ADAA) ──
         if (punch > 0.002f) {
             const float peakL = peakEnvL.process(std::abs(L));
             const float rmsL  = std::sqrt(rmsEnvL.process(L * L) + 1.0e-12f);
@@ -420,10 +439,10 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
             const float amount = punch * 0.25f;
             const float drv = 1.0f + punch * 2.0f;
 
-            const float oddL  = fastTanh(drv * L);
-            const float evenL = fastTanh(drv * L + 0.25f) - fastTanh(0.25f);
-            const float oddR  = fastTanh(drv * R);
-            const float evenR = fastTanh(drv * R + 0.25f) - fastTanh(0.25f);
+            const float oddL  = adaaPunchOddL.process(drv * L);
+            const float evenL = adaaPunchEvenL.process(drv * L + 0.25f) - fastTanh(0.25f);
+            const float oddR  = adaaPunchOddR.process(drv * R);
+            const float evenR = adaaPunchEvenR.process(drv * R + 0.25f) - fastTanh(0.25f);
             L = L + ((oddL * harmonicBias + evenL * (2.0f - harmonicBias)) - L) * amount;
             R = R + ((oddR * harmonicBias + evenR * (2.0f - harmonicBias)) - R) * amount;
         }
@@ -434,11 +453,11 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
             R += lowR * boom * 0.28f;
         }
 
-        // ── Density (additional tanh saturation) ──
+        // ── Density (additional ADAA tanh saturation) ──
         if (density > 0.001f) {
             const float drv = 1.0f + density * 3.0f;
-            L = fastTanh(L * drv) / drv;
-            R = fastTanh(R * drv) / drv;
+            L = adaaDensityL.process(L * drv) / drv;
+            R = adaaDensityR.process(R * drv) / drv;
         }
 
         dataL[n] = L;
@@ -448,7 +467,8 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
 
 // ═══════════════════════════════════════════════════════════════════════════
 // processLinearPost — runs at BASE sample rate, after downsampling
-// Handles: SHINE, SPARK, motion, safety post, neutral comp, dry/wet
+// Handles: SHINE, motion, safety post, neutral comp, dry/wet
+// NOTE: SPARK (TruePeakLimiter) is now called at block level in processBlock
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processLinearPost(float* dataL, float* dataR, int numSamples) {
     for (int n = 0; n < numSamples; ++n) {
@@ -457,30 +477,17 @@ void BTZAudioProcessor::processLinearPost(float* dataL, float* dataR, int numSam
         const float boom    = sBoom.current;
         const float motion  = sMotion.current;
         const float mix     = sMix.next();
-        const float ceilDb  = sSparkCeil.next();
-        const float sparkMix = sSparkMix.next();
         const float shineMix = sShineMix.next();
 
         float L = dataL[n];
         float R = dataR[n];
 
-        // ── SHINE (proper high-shelf EQ) ──
+        // ── SHINE (SVF high-shelf EQ — modulation-safe) ──
         if (shineMix > 0.001f) {
             float shineL = L, shineR = R;
             shineProcessor.processStereo(shineL, shineR);
             L = L + (shineL - L) * shineMix;
             R = R + (shineR - R) * shineMix;
-        }
-
-        // ── SPARK (lookahead soft-clip limiter) ──
-        {
-            const float ceilLin = juce::Decibels::decibelsToGain(ceilDb);
-            const float grDb = sparkLimiter.processStereo(L, R, ceilLin, sparkMix);
-            // Smooth GR for metering
-            const float sparkAttack  = 0.3f;
-            const float sparkRelease = 0.02f;
-            const float coeff = grDb > sparkGrEnvelope ? sparkAttack : sparkRelease;
-            sparkGrEnvelope += coeff * (grDb - sparkGrEnvelope);
         }
 
         // ── Motion (noise injection) ──
@@ -552,7 +559,6 @@ void BTZAudioProcessor::updateMeters(const float* inL, const float* inR,
     const float outRmsL = std::sqrt(outSqL * invN + 1.0e-20f);
     const float outRmsR = std::sqrt(outSqR * invN + 1.0e-20f);
 
-    // SR-dependent ballistics
     auto& mb = meterBallistics;
     mb.inPeakHoldL  = juce::jmax(inPkL,  mb.inPeakHoldL  * mb.holdDecay);
     mb.inPeakHoldR  = juce::jmax(inPkR,  mb.inPeakHoldR  * mb.holdDecay);
@@ -570,7 +576,6 @@ void BTZAudioProcessor::updateMeters(const float* inL, const float* inR,
     const float correlation = juce::jlimit(-1.0f, 1.0f, corrNum / corrDen);
     const float lufsRms = std::sqrt((lufsSq * 0.5f) * invN + 1.0e-20f);
 
-    // Store to atomics
     meters.inputPeakL.store(juce::Decibels::gainToDecibels(mb.inPeakHoldL, -100.0f), std::memory_order_relaxed);
     meters.inputPeakR.store(juce::Decibels::gainToDecibels(mb.inPeakHoldR, -100.0f), std::memory_order_relaxed);
     meters.inputRmsL.store(juce::Decibels::gainToDecibels(mb.inRmsL, -100.0f), std::memory_order_relaxed);
@@ -588,6 +593,14 @@ void BTZAudioProcessor::updateMeters(const float* inL, const float* inR,
 
 // ═══════════════════════════════════════════════════════════════════════════
 // processBlock — main entry point with isolated oversampling architecture
+// ────────────────────────────────────────────────────────────────────────
+// Signal chain:
+//   1. processLinearPre (base SR)
+//   2. processNonlinear (oversampled — ADAA in all saturation stages)
+//   3. processLinearPost (base SR — SHINE, motion, safety, dry/wet)
+//   4. TruePeakLimiter (block-level, ISP-aware, held ceiling)
+//   5. AutoGain (block-level)
+//   6. Metering
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::MidiBuffer&) {
     juce::ScopedNoDenormals noDenormals;
@@ -615,6 +628,11 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const float autoGain  = *apvts.getRawParameterValue("autogain");
     const int requestedQuality = getRequestedQualityMode();
 
+    // ── sparkCeiling: held per block, NOT smoothed ──
+    // Per Claude review: "ceiling is a held value — do NOT smooth it into the limiter"
+    const float sparkCeilDb = *apvts.getRawParameterValue("sparkCeiling");
+    const float sparkCeilLin = juce::Decibels::decibelsToGain(sparkCeilDb);
+
     if (requestedQuality != activeQualityMode) {
         activeQualityMode = requestedQuality;
         updateLatencyFromQuality(activeQualityMode);
@@ -622,6 +640,8 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     float* dataL = buffer.getWritePointer(0);
     float* dataR = buffer.getWritePointer(1);
+
+    float sparkGRDb = 0.0f;
 
     if (! bypassed) {
         // ── Phase 1: Linear pre-processing (always at base SR) ──
@@ -649,7 +669,13 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         // ── Phase 3: Linear post-processing (always at base SR) ──
         processLinearPost(dataL, dataR, numSamples);
 
-        // ── Phase 4: Smoothed auto-gain ──
+        // ── Phase 4: TruePeakLimiter (block-level, ISP-aware) ──
+        // No sparkMix — limiter is always fully engaged when active.
+        // Ceiling is held per block (read once above, not smoothed per sample).
+        truePeakLimiter.processBlock(buffer, sparkCeilLin);
+        sparkGRDb = truePeakLimiter.getGainReductionDb();
+
+        // ── Phase 5: Smoothed auto-gain ──
         if (autoGain > 0.5f) {
             autoGainSmoother.processBlock(dataL, dataR, numSamples, dryReadL, dryReadR);
         }
@@ -657,10 +683,9 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     if (bypassed) {
         meterBallistics.sparkGR *= 0.9f;
-        sparkGrEnvelope *= 0.9f;
     }
 
-    updateMeters(dryReadL, dryReadR, dataL, dataR, numSamples, sparkGrEnvelope);
+    updateMeters(dryReadL, dryReadR, dataL, dataR, numSamples, sparkGRDb);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -677,8 +702,9 @@ void BTZAudioProcessor::setStateInformation(const void* data, int sizeInBytes) {
     if (xml && xml->hasTagName(apvts.state.getType()))
         apvts.replaceState(juce::ValueTree::fromXml(*xml));
 
-    // Re-initialize smoothers after state recall to prevent parameter jumps
+    // Re-initialize smoothers and ADAA after state recall to prevent jumps
     initSmoothers(currentSampleRate);
+    resetAllADAA();
 
     activeQualityMode = getRequestedQualityMode();
     updateLatencyFromQuality(activeQualityMode);

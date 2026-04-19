@@ -1,7 +1,9 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.h
-  Overhauled: modular DSP, isolated oversampling, macro system,
-  SR-dependent meters, parameter groups, SparkLimiter, ShineProcessor.
+  Box Tone Zone (BTZ) — PluginProcessor.h  v2
+  ────────────────────────────────────────────────────────────────────────
+  Overhauled: ADAATanh saturators (per-channel per-stage), TruePeakLimiter
+  (ISP-aware, monotonic-deque), SVF ShineProcessor, FTZ/DAZ, no sparkMix
+  on limiter, ceiling held per block.
 */
 #pragma once
 
@@ -14,6 +16,7 @@
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Meter state — atomic bridge from audio thread to UI thread
+// Per dsp-engineering/realtime-safety.md: relaxed atomics for metering.
 // ═══════════════════════════════════════════════════════════════════════════
 struct BTZMeterState {
     std::atomic<float> inputPeakL  { -100.0f };
@@ -74,10 +77,22 @@ private:
     BTZDsp::MeterBallistics meterBallistics;
 
     // ── Parameter smoothers ──
+    // Per parameter-smoothing.md: per-sample for gain/filter/freq, per-block for mix
     BTZDsp::SmoothParam sPunch, sWarmth, sBoom, sGlue, sAir, sWidth;
     BTZDsp::SmoothParam sDensity, sMotion, sEra, sMix, sDrive;
-    BTZDsp::SmoothParam sMaster, sSparkCeil, sSparkMix, sShine, sShineMix;
+    BTZDsp::SmoothParam sMaster, sShine, sShineMix;
     BTZDsp::SmoothParam sMacro0, sMacro1, sMacro2, sMacro3;
+    // NOTE: sparkCeiling is held per block (NOT smoothed) — see TruePeakLimiter docs
+    // NOTE: sparkMix REMOVED — limiter must not have dry/wet (causes overshoots)
+
+    // ── ADAA saturators — one instance per channel per saturation stage ──
+    // Per Claude review: "DO NOT share instances across channels or stages"
+    BTZDsp::ADAATanh adaaPreampL, adaaPreampR;       // Warmth preamp stage
+    BTZDsp::ADAATanh adaaBandLowL, adaaBandLowR;     // Band saturation (low)
+    BTZDsp::ADAATanh adaaBandHighL, adaaBandHighR;    // Band saturation (high)
+    BTZDsp::ADAATanh adaaPunchOddL, adaaPunchOddR;    // Punch odd harmonics
+    BTZDsp::ADAATanh adaaPunchEvenL, adaaPunchEvenR;  // Punch even harmonics
+    BTZDsp::ADAATanh adaaDensityL, adaaDensityR;      // Density saturation
 
     // ── DSP modules ──
     BTZDsp::SafetyLayer safetyPre, safetyPost;
@@ -86,15 +101,14 @@ private:
     BTZDsp::EnvFollower glueEnv;
     BTZDsp::GlueCompressor glueComp;
     BTZDsp::LinkwitzRileyCrossover crossover;
-    BTZDsp::SparkLimiter sparkLimiter;
-    BTZDsp::ShineProcessor shineProcessor;
+    BTZDsp::TruePeakLimiter truePeakLimiter;  // Replaces SparkLimiter
+    BTZDsp::ShineProcessor shineProcessor;     // Now SVF-based
     BTZDsp::AutoGainSmoother autoGainSmoother;
     BTZDsp::MacroInterpreter macroInterpreter;
 
     // ── DSP state ──
     float hpStateL = 0.0f, hpStateR = 0.0f;
     float sideLowState = 0.0f, sideLowCoeff = 0.0f;
-    float sparkGrEnvelope = 0.0f;
 
     double currentSampleRate = 44100.0;
     int maxPreparedBlockSize = 0;
@@ -110,6 +124,7 @@ private:
     // ── Internal methods ──
     void initSmoothers(double sampleRate);
     void updateTargetsFromAPVTS();
+    void resetAllADAA();
 
     // Linear pre-processing (runs at base SR)
     void processLinearPre(float* dataL, float* dataR, int numSamples);
