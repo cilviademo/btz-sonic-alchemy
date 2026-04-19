@@ -74,7 +74,7 @@ private:
     juce::Label lDrive{ "", "Drive" }, lMix{ "", "Mix" }, lMaster{ "", "Master" };
 
     // ── SPARK / SHINE sliders ──
-    juce::Slider sCeiling, sSparkMix, sShine, sShineMix, sIntensity;
+    juce::Slider sCeiling, sShine, sShineMix, sIntensity;
     juce::Slider sShineFreq, sShineQ;
 
     // ── Macro knobs ──
@@ -87,7 +87,7 @@ private:
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
     std::unique_ptr<SliderAttachment> aPunch, aWarmth, aBoom, aGlue, aAir, aWidth;
     std::unique_ptr<SliderAttachment> aDensity, aMotion, aEra, aMix, aDrive, aMaster;
-    std::unique_ptr<SliderAttachment> aCeiling, aSparkMix, aShine, aShineMix, aIntensity;
+    std::unique_ptr<SliderAttachment> aCeiling, aShine, aShineMix, aIntensity;
     std::unique_ptr<SliderAttachment> aShineFreq, aShineQ;
     std::unique_ptr<SliderAttachment> aMacro0, aMacro1, aMacro2, aMacro3;
     std::unique_ptr<ButtonAttachment> aBypass;

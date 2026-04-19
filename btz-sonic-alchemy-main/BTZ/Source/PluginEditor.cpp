@@ -82,7 +82,7 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
     initKnob(kMacro2, lMacro2); initKnob(kMacro3, lMacro3);
 
     // ── SPARK / SHINE sliders ──
-    setupSlider(sCeiling); setupSlider(sSparkMix); setupSlider(sShine);
+    setupSlider(sCeiling); setupSlider(sShine);
     setupSlider(sShineMix); setupSlider(sIntensity);
     setupSlider(sShineFreq); setupSlider(sShineQ);
 
@@ -100,7 +100,6 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p) : AudioPr
     aDrive    = std::make_unique<SliderAttachment>(apvts, "drive", kDrive);
     aMaster   = std::make_unique<SliderAttachment>(apvts, "masterIntensity", kMaster);
     aCeiling  = std::make_unique<SliderAttachment>(apvts, "sparkCeiling", sCeiling);
-    aSparkMix = std::make_unique<SliderAttachment>(apvts, "sparkMix", sSparkMix);
     aShine    = std::make_unique<SliderAttachment>(apvts, "shineAmount", sShine);
     aShineMix = std::make_unique<SliderAttachment>(apvts, "shineMix", sShineMix);
     aShineFreq = std::make_unique<SliderAttachment>(apvts, "shineFreq", sShineFreq);
@@ -258,7 +257,7 @@ void BTZAudioProcessorEditor::resized() {
     hideKnob(kDrive, lDrive); hideKnob(kMix, lMix); hideKnob(kMaster, lMaster);
     hideKnob(kMacro0, lMacro0); hideKnob(kMacro1, lMacro1);
     hideKnob(kMacro2, lMacro2); hideKnob(kMacro3, lMacro3);
-    sCeiling.setVisible(false); sSparkMix.setVisible(false);
+    sCeiling.setVisible(false);
     sShine.setVisible(false); sShineMix.setVisible(false);
     sShineFreq.setVisible(false); sShineQ.setVisible(false);
     sIntensity.setVisible(false);
@@ -301,9 +300,8 @@ void BTZAudioProcessorEditor::resized() {
         auto right = content.reduced(20, 24);
 
         // SPARK controls (left)
-        sCeiling.setBounds(left.removeFromTop(30)); left.removeFromTop(8);
-        sSparkMix.setBounds(left.removeFromTop(30));
-        sCeiling.setVisible(true); sSparkMix.setVisible(true);
+        sCeiling.setBounds(left.removeFromTop(30));
+        sCeiling.setVisible(true);
 
         // SHINE controls (right)
         sShine.setBounds(right.removeFromTop(30)); right.removeFromTop(8);
