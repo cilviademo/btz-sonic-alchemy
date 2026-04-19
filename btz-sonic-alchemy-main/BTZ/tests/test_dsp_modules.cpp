@@ -1,7 +1,13 @@
 /*
-  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v6
+  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v7
   ────────────────────────────────────────────────────────────────────────
   GoogleTest-based unit tests for all BTZDsp modules.
+  v7: Release-gate hardening:
+    - BypassCrossfader click-free transition test
+    - SidechainHPF crossfade (no click on mode change)
+    - Silence-in-silence-out verification
+    - State version validation
+    - SmoothParam automation zipper test
   v6: Senior-level fixes:
     - SidechainHPF tests (60/90/150 Hz, stereo, passthrough)
     - MacroInterpreter wiring integration tests
@@ -1193,6 +1199,162 @@ TEST(MacroWiring, ModulationScalesWithMacroValue) {
 
     EXPECT_GT(std::abs(modHigh), std::abs(modLow))
         << "Higher macro value should produce more modulation";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v7 TESTS: BypassCrossfader
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(V7Hardening, BypassCrossfaderClickFree) {
+    BypassCrossfader xf;
+    xf.prepare(64); // 64-sample fade
+    xf.reset();
+
+    // Start in active state (not bypassed)
+    xf.setBypassState(false);
+
+    // Generate a steady signal
+    const int N = 256;
+    float dryL[256], dryR[256], wetL[256], wetR[256];
+    for (int i = 0; i < N; ++i) {
+        dryL[i] = dryR[i] = 0.5f;
+        wetL[i] = wetR[i] = 0.8f; // different from dry
+    }
+
+    // Process first 64 samples (should be fully wet)
+    for (int i = 0; i < 64; ++i) {
+        float wL = wetL[i], wR = wetR[i];
+        xf.processStereo(dryL[i], dryR[i], wL, wR);
+        EXPECT_NEAR(wL, 0.8f, 0.01f) << "Should be fully wet before bypass";
+    }
+
+    // Toggle to bypass
+    xf.setBypassState(true);
+
+    // During fade: check no discontinuity > 0.02
+    float prevL = 0.8f;
+    float maxDelta = 0.0f;
+    for (int i = 0; i < 128; ++i) {
+        float wL = 0.8f, wR = 0.8f;
+        xf.processStereo(0.5f, 0.5f, wL, wR);
+        float delta = std::abs(wL - prevL);
+        maxDelta = std::max(maxDelta, delta);
+        prevL = wL;
+    }
+    EXPECT_LT(maxDelta, 0.02f)
+        << "Bypass transition should be smooth. Max delta: " << maxDelta;
+
+    // After fade: should be fully dry
+    float wL = 0.8f, wR = 0.8f;
+    xf.processStereo(0.5f, 0.5f, wL, wR);
+    EXPECT_NEAR(wL, 0.5f, 0.01f) << "Should be fully dry after bypass";
+}
+
+TEST(V7Hardening, BypassCrossfaderResetSettles) {
+    BypassCrossfader xf;
+    xf.prepare(64);
+    xf.setBypassState(true);
+    // Process a few samples mid-fade
+    for (int i = 0; i < 10; ++i) {
+        float wL = 1.0f, wR = 1.0f;
+        xf.processStereo(0.0f, 0.0f, wL, wR);
+    }
+    xf.reset();
+    // After reset, should be settled (no fade in progress)
+    float wL = 1.0f, wR = 1.0f;
+    xf.processStereo(0.0f, 0.0f, wL, wR);
+    // Should be either fully wet or fully dry, not mid-fade
+    bool settled = (std::abs(wL - 0.0f) < 0.01f || std::abs(wL - 1.0f) < 0.01f);
+    EXPECT_TRUE(settled) << "After reset, crossfader should be settled. Got: " << wL;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v7 TESTS: SidechainHPF Crossfade (click-free mode change)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(V7Hardening, SidechainHPFCrossfadeNoClick) {
+    SidechainHPF hpf;
+    hpf.prepareImmediate(kSR, 60.0f);
+    hpf.reset();
+
+    // Process steady signal at 60 Hz mode
+    auto sine = generateSine(200.0f, kSR, 4800, 0.8f);
+    for (int i = 0; i < 2400; ++i)
+        hpf.process(sine[i], sine[i]);
+
+    // Switch to 150 Hz mode (should crossfade, not click)
+    hpf.prepare(kSR, 150.0f);
+
+    float prevOut = hpf.process(sine[2400], sine[2400]);
+    float maxDelta = 0.0f;
+    for (int i = 2401; i < 4800; ++i) {
+        float out = hpf.process(sine[i], sine[i]);
+        float delta = std::abs(out - prevOut);
+        maxDelta = std::max(maxDelta, delta);
+        prevOut = out;
+    }
+    // Max delta should be small (no click)
+    EXPECT_LT(maxDelta, 0.1f)
+        << "HPF mode change should be smooth. Max delta: " << maxDelta;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v7 TESTS: SmoothParam Automation Zipper
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(V7Hardening, SmoothParamNoZipper) {
+    SmoothParam sp;
+    sp.prepare(kSR, 10.0f); // 10ms smoothing
+    sp.snapTo(0.0f);
+
+    // Jump to 1.0
+    sp.setTarget(1.0f);
+
+    float prev = 0.0f;
+    float maxDelta = 0.0f;
+    bool reachedTarget = false;
+    for (int i = 0; i < (int)(kSR * 0.1); ++i) { // 100ms
+        float val = sp.next();
+        float delta = std::abs(val - prev);
+        maxDelta = std::max(maxDelta, delta);
+        prev = val;
+        if (std::abs(val - 1.0f) < 0.001f) reachedTarget = true;
+    }
+
+    EXPECT_TRUE(reachedTarget) << "SmoothParam should reach target within 100ms";
+    EXPECT_LT(maxDelta, 0.05f)
+        << "SmoothParam should not have large jumps. Max delta: " << maxDelta;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v7 TESTS: State Version Validation
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(V7Hardening, StateVersionConstant) {
+    // Verify the state version is 7 (matches BTZDsp.h kStateVersion)
+    // This is a compile-time check — if someone changes the version
+    // without updating tests, this will catch it.
+    EXPECT_EQ(BTZDsp::kStateVersion, 7)
+        << "State version should be 7 for v7 release";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v7 TESTS: Safety Layer Silence-In-Silence-Out
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(V7Hardening, SafetyLayerSilenceInSilenceOut) {
+    SafetyLayer safety;
+    safety.setSampleRate(kSR);
+    safety.reset();
+
+    // Feed silence for 1000 samples
+    float maxOut = 0.0f;
+    for (int i = 0; i < 1000; ++i) {
+        float out = safety.processSample(0.0f, safety.dcL, safety.dcPrevL);
+        maxOut = std::max(maxOut, std::abs(out));
+    }
+    EXPECT_LT(maxOut, 1e-10f)
+        << "Silence in should produce silence out. Max output: " << maxOut;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
