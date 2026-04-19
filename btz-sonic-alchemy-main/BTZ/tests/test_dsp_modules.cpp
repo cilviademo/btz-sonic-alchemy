@@ -1,7 +1,10 @@
 /*
-  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v5
+  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v6
   ────────────────────────────────────────────────────────────────────────
   GoogleTest-based unit tests for all BTZDsp modules.
+  v6: Senior-level fixes:
+    - SidechainHPF tests (60/90/150 Hz, stereo, passthrough)
+    - MacroInterpreter wiring integration tests
   v5: Audit-driven fixes:
     - Envelope follower timing test (verifies base-SR coefficients)
     - SlewLimiter OS-factor scaling test
@@ -1086,6 +1089,110 @@ TEST(V5Audit, CrossoverNullPath) {
     // Complementary subtraction: error should be at floating-point precision
     EXPECT_LT(maxError, 1.0e-6f)
         << "Crossover low+high should equal input. Max error: " << maxError;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v6 TESTS: SidechainHPF
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(SidechainHPF, PassthroughWhenOff) {
+    SidechainHPF hpf;
+    hpf.prepare(kSR, 0.0f); // 0 Hz = off
+    hpf.reset();
+
+    // Feed a DC-ish low signal — should pass through unchanged
+    float L = 0.8f, R = 0.8f;
+    float result = hpf.process(L, R);
+    EXPECT_NEAR(result, std::max(std::abs(L), std::abs(R)), 0.01f);
+}
+
+TEST(SidechainHPF, AttenuatesLowFrequencies) {
+    SidechainHPF hpf;
+    hpf.prepare(kSR, 150.0f); // 150 Hz HPF
+    hpf.reset();
+
+    // Feed a 50 Hz sine (well below 150 Hz cutoff)
+    auto sine = generateSine(50.0f, kSR, 4800, 0.8f);
+    float maxOut = 0.0f;
+    for (int i = 0; i < 4800; ++i) {
+        float out = hpf.process(sine[i], sine[i]);
+        if (i > 480) maxOut = std::max(maxOut, out); // skip transient
+    }
+    // Should be significantly attenuated
+    EXPECT_LT(maxOut, 0.5f) << "50 Hz should be attenuated by 150 Hz HPF";
+}
+
+TEST(SidechainHPF, PassesHighFrequencies) {
+    SidechainHPF hpf;
+    hpf.prepare(kSR, 60.0f); // 60 Hz HPF
+    hpf.reset();
+
+    // Feed a 1 kHz sine (well above 60 Hz cutoff)
+    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
+    float maxOut = 0.0f;
+    for (int i = 0; i < 4800; ++i) {
+        float out = hpf.process(sine[i], sine[i]);
+        if (i > 480) maxOut = std::max(maxOut, out);
+    }
+    // Should pass through with minimal attenuation
+    EXPECT_GT(maxOut, 0.6f) << "1 kHz should pass through 60 Hz HPF";
+}
+
+TEST(SidechainHPF, ResetClearsState) {
+    SidechainHPF hpf;
+    hpf.prepare(kSR, 90.0f);
+    // Process some signal
+    for (int i = 0; i < 480; ++i) hpf.process(0.5f, 0.5f);
+    hpf.reset();
+    float out = hpf.process(0.0f, 0.0f);
+    EXPECT_NEAR(out, 0.0f, 1e-5f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v6 TESTS: MacroInterpreter Wiring Integration
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(MacroWiring, AllDefaultTargetsReceiveModulation) {
+    MacroInterpreter mi;
+    mi.setupDefaults();
+
+    // All macros at 1.0
+    float macros[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+    // Check all 7 default target indices that should receive modulation
+    // Targets: 0=punch, 1=warmth, 2=boom, 3=glue, 4=air, 6=density, 10=drive
+    int targetIndices[] = { 0, 1, 2, 3, 4, 6, 10 };
+    for (int idx : targetIndices) {
+        float mod = mi.getModulation(idx, macros);
+        EXPECT_NE(mod, 0.0f) << "Target " << idx << " should receive modulation";
+    }
+}
+
+TEST(MacroWiring, UnmappedTargetsGetZero) {
+    MacroInterpreter mi;
+    mi.setupDefaults();
+
+    float macros[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+
+    // Target 5 (width) and 7 (motion) are not in default mappings
+    float mod5 = mi.getModulation(5, macros);
+    float mod7 = mi.getModulation(7, macros);
+    EXPECT_FLOAT_EQ(mod5, 0.0f) << "Width should not be macro-mapped by default";
+    EXPECT_FLOAT_EQ(mod7, 0.0f) << "Motion should not be macro-mapped by default";
+}
+
+TEST(MacroWiring, ModulationScalesWithMacroValue) {
+    MacroInterpreter mi;
+    mi.setupDefaults();
+
+    float macrosLow[4] = { 0.25f, 0.0f, 0.0f, 0.0f };
+    float macrosHigh[4] = { 0.75f, 0.0f, 0.0f, 0.0f };
+
+    float modLow = mi.getModulation(0, macrosLow);   // punch at 0.25
+    float modHigh = mi.getModulation(0, macrosHigh);  // punch at 0.75
+
+    EXPECT_GT(std::abs(modHigh), std::abs(modLow))
+        << "Higher macro value should produce more modulation";
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
