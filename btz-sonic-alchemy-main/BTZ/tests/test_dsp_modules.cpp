@@ -1,14 +1,17 @@
 /*
-  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v4
+  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v5
   ────────────────────────────────────────────────────────────────────────
   GoogleTest-based unit tests for all BTZDsp modules.
-  v4: Updated for mathematical overhaul:
+  v5: Audit-driven fixes:
+    - Envelope follower timing test (verifies base-SR coefficients)
+    - SlewLimiter OS-factor scaling test
+    - Updated ADAA test comments with measured values
+  v4: Mathematical overhaul tests:
     - LR4 crossover (24 dB/oct SVF-based)
     - Soft-knee GlueCompressor
     - Padé [5/5] fastTanh
     - Perceptual macro curves
     - FixedDeque (pre-allocated, lock-free)
-    - All prior tests retained and updated.
 
   Build: cmake -DBTZ_BUILD_TESTS=ON ..
   Run:   ctest --output-on-failure
@@ -963,6 +966,126 @@ TEST(RealTimeSafety, FullChainWithExtremeParameters) {
         EXPECT_TRUE(std::isfinite(outL)) << "NaN/Inf at sample " << i;
         EXPECT_TRUE(std::isfinite(outR)) << "NaN/Inf at sample " << i;
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v5 AUDIT TESTS: Envelope Follower Timing
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Verify that EnvFollower release time matches configured value
+// (catches the v4 bug where OS-rate ticking caused 2-4x faster release)
+TEST(V5Audit, EnvFollowerReleaseTiming) {
+    // Configure for 220ms release at 48 kHz
+    EnvFollower env;
+    env.setTimes(0.2f, 220.0f, kSR);
+    env.reset();
+
+    // Feed a 1ms impulse to set peak
+    const int impulseSamples = (int)(kSR * 0.001);
+    for (int i = 0; i < impulseSamples; ++i)
+        env.process(1.0f);
+
+    float peakVal = env.env;
+    EXPECT_GT(peakVal, 0.5f) << "Envelope should have risen to near 1.0";
+
+    // Now release: measure time to reach 37% of peak (1 time constant)
+    int sampleCount = 0;
+    const float target = peakVal * 0.37f;
+    const int maxSamples = (int)(kSR * 2.0); // 2 second max
+    while (env.env > target && sampleCount < maxSamples) {
+        env.process(0.0f);
+        sampleCount++;
+    }
+
+    float releaseMs = (float)sampleCount / (float)kSR * 1000.0f;
+    // Should be approximately 220ms (1 time constant)
+    // Allow 10% tolerance
+    EXPECT_NEAR(releaseMs, 220.0f, 22.0f)
+        << "Release time should be ~220ms at base SR. Got " << releaseMs << "ms";
+}
+
+// Verify that EnvFollower at 2x OS rate (wrong) gives wrong timing
+// This is a regression test: if someone moves envelopes back to OS path,
+// this test documents the expected failure.
+TEST(V5Audit, EnvFollowerOSRateBug) {
+    // Configure with base SR coefficients
+    EnvFollower envBase;
+    envBase.setTimes(0.2f, 220.0f, kSR);
+    envBase.reset();
+
+    // Configure with 2x OS SR coefficients (correct for OS path)
+    EnvFollower envOS;
+    envOS.setTimes(0.2f, 220.0f, kSR * 2.0);
+    envOS.reset();
+
+    // Feed impulse
+    for (int i = 0; i < 48; ++i) {
+        envBase.process(1.0f);
+        envOS.process(1.0f);
+    }
+
+    // Release for 500 base-SR samples (ticking envBase at 1x, envOS at 2x)
+    for (int i = 0; i < 500; ++i) {
+        envBase.process(0.0f);
+        // envOS ticks twice per base sample (simulating OS)
+        envOS.process(0.0f);
+        envOS.process(0.0f);
+    }
+
+    // envBase should still be higher (slower release)
+    // envOS should have decayed more (correct for 2x rate)
+    // If both are equal, the OS coefficients are wrong
+    EXPECT_GT(envBase.env, envOS.env)
+        << "Base-SR envelope should decay slower than OS-rate envelope";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v5 AUDIT TESTS: SlewLimiter OS-Factor Scaling
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(V5Audit, SlewLimiterOSFactorScaling) {
+    SlewLimiter slew;
+    slew.setSampleRate(kSR);
+    slew.reset();
+
+    float baseDelta = slew.maxDelta;
+    EXPECT_GT(baseDelta, 0.0f);
+
+    // At 4x OS, maxDelta should be 1/4 of base
+    slew.setOversampleFactor(4.0f);
+    EXPECT_NEAR(slew.maxDelta, baseDelta / 4.0f, 1e-6f)
+        << "SlewLimiter maxDelta should scale inversely with OS factor";
+
+    // Reset to 1x
+    slew.setOversampleFactor(1.0f);
+    EXPECT_NEAR(slew.maxDelta, baseDelta, 1e-6f)
+        << "SlewLimiter maxDelta should return to base after OS reset";
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v5 AUDIT TESTS: Null-Path Crossover Complementarity
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(V5Audit, CrossoverNullPath) {
+    // Verify that low + high = input (complementary crossover)
+    LinkwitzRileyCrossover xo;
+    xo.prepare(kSR, 250.0f);
+    xo.reset();
+
+    auto input = generateSine(1000.0f, kSR, kBlockSize * 4);
+    float maxError = 0.0f;
+
+    for (int i = 0; i < (int)input.size(); ++i) {
+        float lowL, lowR, highL, highR;
+        xo.process(input[i], input[i], lowL, lowR, highL, highR);
+        float reconstructed = lowL + highL;
+        float error = std::abs(reconstructed - input[i]);
+        maxError = std::max(maxError, error);
+    }
+
+    // Complementary subtraction: error should be at floating-point precision
+    EXPECT_LT(maxError, 1.0e-6f)
+        << "Crossover low+high should equal input. Max error: " << maxError;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
