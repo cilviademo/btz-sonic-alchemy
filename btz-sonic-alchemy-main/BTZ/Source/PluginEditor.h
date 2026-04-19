@@ -1,11 +1,11 @@
 /*
-  Box Tone Zone (BTZ) — PluginEditor.h  v2
+  Box Tone Zone (BTZ) — PluginEditor.h  v3
   ────────────────────────────────────────────────────────────────────────
-  UI Unification Pass: one visual language, one component system,
-  one brand identity across Main, SPARK, and Advanced pages.
-
-  All styling driven by BTZTheme.h tokens.
-  No hardcoded colors or fonts.
+  Ecosystem-aligned luxury UI.  1280×800 window.
+  Module-specific accents: BTZ=amber, SPARK=coral, SHINE=cyan.
+  Premium MacroKnob rendering (cream gradient body, halo arc, tick dots).
+  Glue SC HPF toggle exposed on Advanced page.
+  All styling from BTZTheme.h v3 (BTZColours + BTZTokens).
 */
 #pragma once
 
@@ -19,6 +19,9 @@
 class BTZLookAndFeel : public juce::LookAndFeel_V4 {
 public:
     BTZLookAndFeel();
+
+    // ── Current module accent (set per page) ──
+    BTZColours::Module currentModule = BTZColours::Module::BTZ;
 
     // ── Standard JUCE overrides ──
     void drawRotarySlider(juce::Graphics&, int x, int y, int w, int h,
@@ -40,21 +43,29 @@ public:
 
     void drawLabel(juce::Graphics&, juce::Label&) override;
 
-    // ── BTZ custom draw methods (called from component paint) ──
-    static void drawBTZPanelBackground(juce::Graphics& g, juce::Rectangle<float> area,
-                                       bool raised = false);
+    void drawComboBox(juce::Graphics&, int w, int h, bool isDown,
+                      int bx, int by, int bw, int bh, juce::ComboBox&) override;
+
+    void drawPopupMenuItem(juce::Graphics&, const juce::Rectangle<int>& area,
+                           bool isSeparator, bool isActive, bool isHighlighted,
+                           bool isTicked, bool hasSubMenu,
+                           const juce::String& text, const juce::String& shortcut,
+                           const juce::Drawable*, const juce::Colour*) override;
+
+    // ── Premium MacroKnob draw (called from paint for macro knobs) ──
+    static void drawMacroKnob(juce::Graphics& g, juce::Rectangle<float> area,
+                              float normValue, BTZColours::Module module,
+                              bool isHovered = false);
+
+    // ── BTZ custom draw methods ──
+    static void drawBTZPanelBackground(juce::Graphics& g, juce::Rectangle<float> area);
     static void drawBTZSectionHeader(juce::Graphics& g, juce::Rectangle<float> area,
-                                     const juce::String& text);
+                                     const juce::String& text, BTZColours::Module module);
     static void drawBTZMeter(juce::Graphics& g, juce::Rectangle<float> area,
                              float valuePct, bool isGR = false);
-    static void drawBTZSegmentedMeter(juce::Graphics& g, juce::Rectangle<float> area,
-                                      float valuePct, bool isGR = false);
     static void drawBTZTab(juce::Graphics& g, juce::Rectangle<float> area,
-                           const juce::String& text, bool isActive);
-    static void drawBTZValueBox(juce::Graphics& g, juce::Rectangle<float> area,
-                                const juce::String& value, const juce::String& unit);
-    static void drawBTZTooltip(juce::Graphics& g, juce::Rectangle<float> area,
-                               const juce::String& text);
+                           const juce::String& text, bool isActive,
+                           BTZColours::Module module = BTZColours::Module::BTZ);
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -73,12 +84,16 @@ private:
 
     // ── Setup helpers ──
     void setupKnob(juce::Slider& s, juce::Label& l, const juce::String& labelText);
-    void setupSlider(juce::Slider& s);
+    void setupSmallKnob(juce::Slider& s, juce::Label& l, const juce::String& labelText);
+    void setupMacroKnob(juce::Slider& s, juce::Label& l, const juce::String& labelText);
 
     // ── Paint helpers ──
     void paintHeader(juce::Graphics& g, juce::Rectangle<float> area);
     void paintMeterStrip(juce::Graphics& g, juce::Rectangle<float> area);
     void paintFooter(juce::Graphics& g, juce::Rectangle<float> area);
+    void paintMainPage(juce::Graphics& g, juce::Rectangle<float> content);
+    void paintSparkPage(juce::Graphics& g, juce::Rectangle<float> content);
+    void paintAdvancedPage(juce::Graphics& g, juce::Rectangle<float> content);
 
     // ── Layout helpers ──
     void layoutMainPage(juce::Rectangle<int> content);
@@ -101,15 +116,15 @@ private:
     juce::Label lPunch, lWarmth, lBoom, lGlue, lAir, lWidth;
     juce::Label lDensity, lMotion, lEra, lDrive, lMix, lMaster;
 
-    // ── Macro knobs (Main page) ──
+    // ── Macro knobs (Main page — 110px premium rendering) ──
     juce::Slider kMacro0, kMacro1, kMacro2, kMacro3;
     juce::Label lMacro0, lMacro1, lMacro2, lMacro3;
 
     // ── SPARK controls ──
-    juce::Slider kCeiling;          // knob (limiter convention: keep as slider? No — ceiling is a set-and-forget, knob is fine)
+    juce::Slider kCeiling;
     juce::Label lCeiling;
 
-    // ── SHINE controls (knobs for consistency) ──
+    // ── SHINE controls ──
     juce::Slider kShine, kShineMix, kShineFreq, kShineQ;
     juce::Label lShine, lShineMix, lShineFreq, lShineQ;
 
@@ -117,13 +132,14 @@ private:
     juce::Slider kIntensity;
     juce::Label lIntensity;
 
-    // ── Advanced page controls ──
-    // (These expose the same parameters but in a different organizational view)
-    // Advanced page shows: Drive, Era, Density, Motion as knobs + metering context
+    // ── Advanced page: Glue SC HPF toggle ──
+    juce::ComboBox cGlueScHpf;
+    juce::Label lGlueScHpf;
 
     // ── Attachments ──
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
     using ButtonAttachment = juce::AudioProcessorValueTreeState::ButtonAttachment;
+    using ComboAttachment  = juce::AudioProcessorValueTreeState::ComboBoxAttachment;
 
     std::unique_ptr<SliderAttachment> aPunch, aWarmth, aBoom, aGlue, aAir, aWidth;
     std::unique_ptr<SliderAttachment> aDensity, aMotion, aEra, aMix, aDrive, aMaster;
@@ -131,6 +147,7 @@ private:
     std::unique_ptr<SliderAttachment> aShineFreq, aShineQ;
     std::unique_ptr<SliderAttachment> aMacro0, aMacro1, aMacro2, aMacro3;
     std::unique_ptr<ButtonAttachment> aBypass;
+    std::unique_ptr<ComboAttachment>  aGlueScHpf;
 
     // ── Meter display state ──
     float inPeakL = -100.0f, inPeakR = -100.0f, inRmsL = -100.0f, inRmsR = -100.0f;
