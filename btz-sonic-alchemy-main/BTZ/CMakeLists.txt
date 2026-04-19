@@ -37,6 +37,24 @@ if(NOT BTZ_JUCE_FETCHED)
 endif()
 
 # ═══════════════════════════════════════════════════════════════════════════
+# CLAP format support (optional, enable with -DBTZ_BUILD_CLAP=ON)
+# Requires clap-juce-extensions: https://github.com/free-audio/clap-juce-extensions
+# ═══════════════════════════════════════════════════════════════════════════
+option(BTZ_BUILD_CLAP "Build CLAP format via clap-juce-extensions" OFF)
+
+if(BTZ_BUILD_CLAP)
+    include(FetchContent)
+    FetchContent_Declare(
+        clap-juce-extensions
+        GIT_REPOSITORY https://github.com/free-audio/clap-juce-extensions.git
+        GIT_TAG        main
+        GIT_SHALLOW    TRUE
+    )
+    FetchContent_MakeAvailable(clap-juce-extensions)
+    message(STATUS "BTZ: CLAP format enabled via clap-juce-extensions")
+endif()
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Plugin target
 # ═══════════════════════════════════════════════════════════════════════════
 juce_add_plugin(BTZ
@@ -53,12 +71,21 @@ juce_add_plugin(BTZ
     COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
+# v7: Register CLAP format if enabled
+if(BTZ_BUILD_CLAP)
+    clap_juce_extensions_plugin(TARGET BTZ
+        CLAP_ID "com.btzaudio.btz"
+        CLAP_FEATURES audio-effect mixing mastering
+    )
+endif()
+
 juce_generate_juce_header(BTZ)
 
 target_sources(BTZ PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/BTZDsp.h
+    Source/BTZTheme.h
 )
 
 target_compile_definitions(BTZ PUBLIC
@@ -108,4 +135,63 @@ if(BTZ_BUILD_TESTS)
     # Register with CTest
     include(GoogleTest)
     gtest_discover_tests(BTZTests)
+endif()
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Validator integration targets (manual, not built by default)
+# Usage: cmake --build . --target validate_vst3
+#        cmake --build . --target validate_au
+# ═══════════════════════════════════════════════════════════════════════════
+
+# pluginval — cross-platform VST3/AU/CLAP validator
+# Download from: https://github.com/Tracktion/pluginval/releases
+# Set PLUGINVAL_PATH to the pluginval executable
+if(DEFINED ENV{PLUGINVAL_PATH})
+    set(PLUGINVAL "$ENV{PLUGINVAL_PATH}")
+
+    # VST3 validation (strictness 10 = maximum)
+    add_custom_target(validate_vst3
+        COMMAND ${PLUGINVAL}
+            --validate "$<TARGET_FILE:BTZ_VST3>"
+            --strictness-level 10
+            --timeout-ms 120000
+            --repeat-count 2
+            --randomise
+            --validate-in-process
+        DEPENDS BTZ_VST3
+        COMMENT "Running pluginval on BTZ VST3 (strictness 10)..."
+    )
+
+    # AU validation (macOS only)
+    if(APPLE)
+        add_custom_target(validate_au
+            COMMAND ${PLUGINVAL}
+                --validate "$<TARGET_FILE:BTZ_AU>"
+                --strictness-level 10
+                --timeout-ms 120000
+                --repeat-count 2
+                --randomise
+            DEPENDS BTZ_AU
+            COMMENT "Running pluginval on BTZ AU (strictness 10)..."
+        )
+
+        # auvaltool — Apple's native AU validator
+        add_custom_target(validate_auvaltool
+            COMMAND auvaltool -v aufx Btz1 BTZa
+            DEPENDS BTZ_AU
+            COMMENT "Running auvaltool on BTZ AU..."
+        )
+    endif()
+
+    # VST3 SDK validator (if available)
+    if(DEFINED ENV{VST3_VALIDATOR_PATH})
+        add_custom_target(validate_vst3_sdk
+            COMMAND "$ENV{VST3_VALIDATOR_PATH}" "$<TARGET_FILE:BTZ_VST3>"
+            DEPENDS BTZ_VST3
+            COMMENT "Running VST3 SDK validator on BTZ..."
+        )
+    endif()
+else()
+    message(STATUS "BTZ: PLUGINVAL_PATH not set. Validator targets disabled.")
+    message(STATUS "BTZ: Set PLUGINVAL_PATH env var to enable: export PLUGINVAL_PATH=/path/to/pluginval")
 endif()
