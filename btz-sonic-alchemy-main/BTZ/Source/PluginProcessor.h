@@ -1,9 +1,8 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.h  v5
+  Box Tone Zone (BTZ) — PluginProcessor.h  v6
   ────────────────────────────────────────────────────────────────────────
-  v4: Mathematical DSP overhaul — SVF LR4 crossover, soft-knee glue,
-  improved fastTanh [5/5], perceptual macro curves, sqrt(A)-prewarped
-  SHINE shelf, wider autogain range.
+  v6: Macro wiring (macros now drive DSP targets via MacroInterpreter),
+  Glue sidechain HPF (off/60/90/150 Hz), ecosystem UX integration.
 */
 #pragma once
 
@@ -94,6 +93,7 @@ private:
     BTZDsp::SlewLimiter slewL, slewR;
     BTZDsp::EnvFollower peakEnvL, peakEnvR, rmsEnvL, rmsEnvR;
     BTZDsp::EnvFollower glueEnv;
+    BTZDsp::SidechainHPF glueScHpf;  // v6: sidechain HPF for glue compressor
     BTZDsp::GlueCompressor glueComp;
     BTZDsp::LinkwitzRileyCrossover crossover;  // v4: now true LR4 (SVF-based)
     BTZDsp::TruePeakLimiter truePeakLimiter;
@@ -111,6 +111,12 @@ private:
 
     // v5: crest ratio computed at base SR, held for processNonlinear
     float lastCrestRatio = 3.0f;  // default crest ~3 (typical for music)
+
+    // v6: macro value array for MacroInterpreter
+    float macroValues[BTZDsp::MacroInterpreter::kNumMacros] = { 0.0f, 0.0f, 0.0f, 0.0f };
+
+    // v6: cached glue SC HPF frequency
+    float lastGlueScHpfFreq = 0.0f;
 
     double currentSampleRate = 44100.0;
     int maxPreparedBlockSize = 0;

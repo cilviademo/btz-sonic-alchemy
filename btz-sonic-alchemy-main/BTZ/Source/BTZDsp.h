@@ -1,5 +1,5 @@
 /*
-  Box Tone Zone (BTZ) — BTZDsp.h  v5
+  Box Tone Zone (BTZ) — BTZDsp.h  v6
   ────────────────────────────────────────────────────────────────────────
   Modular DSP modules. Every class is:
     • self-contained and sample-rate aware
@@ -38,7 +38,7 @@
 namespace BTZDsp {
 
 // State version for preset/state backward compatibility
-static constexpr int kStateVersion = 5;
+static constexpr int kStateVersion = 6;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Denormal flushing — call once at plugin init (prepareToPlay)
@@ -569,6 +569,46 @@ private:
 
     float ic1eqL = 0.0f, ic2eqL = 0.0f;
     float ic1eqR = 0.0f, ic2eqR = 0.0f;
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SidechainHPF — 1-pole high-pass filter for compressor sidechain
+// ────────────────────────────────────────────────────────────────────────
+// v6: Every commercial bus compressor has a sidechain HPF to prevent
+// kick drums from pumping the mix. Supports Off / 60 / 90 / 150 Hz.
+// ═══════════════════════════════════════════════════════════════════════════
+struct SidechainHPF {
+    float stateL = 0.0f;
+    float stateR = 0.0f;
+    float coeff  = 0.0f;  // 0 = bypassed
+    bool  active = false;
+
+    void prepare(double sampleRate, float cutoffHz) noexcept {
+        if (cutoffHz < 10.0f) {
+            active = false;
+            coeff = 0.0f;
+            return;
+        }
+        active = true;
+        // 1-pole HPF: coeff = exp(-2*pi*fc/sr)
+        const float srf = (float)juce::jmax(1.0, sampleRate);
+        coeff = std::exp(-6.2831853f * cutoffHz / srf);
+    }
+
+    void reset() noexcept { stateL = stateR = 0.0f; }
+
+    // Returns high-passed sidechain value (mono: max of L/R)
+    inline float process(float inL, float inR) noexcept {
+        if (!active) return juce::jmax(std::abs(inL), std::abs(inR));
+
+        // HPF: y[n] = coeff * (y[n-1] + x[n] - x[n-1])
+        // Simplified: state tracks the lowpass, output = input - lowpass
+        stateL += (1.0f - coeff) * (inL - stateL);
+        stateR += (1.0f - coeff) * (inR - stateR);
+        const float hpL = inL - stateL;
+        const float hpR = inR - stateR;
+        return juce::jmax(std::abs(hpL), std::abs(hpR));
+    }
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

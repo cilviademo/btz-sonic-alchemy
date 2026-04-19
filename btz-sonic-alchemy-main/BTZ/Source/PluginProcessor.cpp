@@ -1,24 +1,21 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.cpp  v5
+  Box Tone Zone (BTZ) — PluginProcessor.cpp  v6
   ────────────────────────────────────────────────────────────────────────
-  v5 changes (audit-driven fixes — all claims backed by measurement):
-    • FIX: Envelope followers moved from processNonlinear to processLinearPre
-      — They were ticking at OS rate with base-SR coefficients (2-4x faster)
-    • FIX: SlewLimiter OS factor set before processNonlinear
-    • FIX: Crest ratio computed at base SR, passed to processNonlinear
-    • REVISED: ADAA-1 alias rejection is ~5.7 dB at 1x SR (not 18 dB)
-      — Must combine with 2x/4x OS for commercial-grade rejection
+  v6 changes:
+    • FIX: Macros now WIRED — MacroInterpreter.getModulation() called in
+      updateTargetsFromAPVTS, additive offsets applied to DSP smoothers
+    • FIX: Glue sidechain HPF — off/60/90/150 Hz, prevents kick pumping
+    • NEW: glueScHpf APVTS parameter (choice: 0=off, 1=60, 2=90, 3=150)
+
+  v5 changes (audit-driven fixes):
+    • Envelope followers at base SR (not OS rate)
+    • SlewLimiter OS factor set before processNonlinear
+    • Crest ratio computed at base SR
+    • ADAA-1 alias rejection ~5.7 dB at 1x SR
 
   v4 changes (mathematical DSP overhaul):
-    • SVF-based LR4 crossover (24 dB/oct)
-    • Soft-knee GlueCompressor (6 dB knee)
-    • Improved fastTanh Padé [5/5]
-    • Perceptual macro curves
-    • sqrt(A)-prewarped SHINE shelf
-    • Cached drive gain (no per-sample std::pow)
-    • kTanhBias025 uses std::tanh
-    • Wider autogain range (-6 to +6 dB)
-    • SmoothParam snap-to-target for denormal prevention
+    • SVF LR4 crossover, soft-knee glue, Padé [5/5] fastTanh,
+      perceptual macro curves, sqrt(A)-prewarped SHINE shelf
 */
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
@@ -55,6 +52,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout BTZAudioProcessor::createPar
 
     // ── SPARK group ──
     auto spark = std::make_unique<juce::AudioProcessorParameterGroup>("spark", "SPARK", "|");
+    // v6: Glue sidechain HPF (0=off, 1=60Hz, 2=90Hz, 3=150Hz)
+    spark->addChild(std::make_unique<juce::AudioParameterFloat>(
+        juce::ParameterID("glueScHpf", 1), "SC HPF",
+        juce::NormalisableRange<float>(0.0f, 3.0f, 1.0f), 1.0f));
     spark->addChild(std::make_unique<juce::AudioParameterFloat>(
         juce::ParameterID("sparkCeiling", 1), "Ceiling",
         juce::NormalisableRange<float>(-3.0f, 0.0f, 0.1f), -0.3f));
@@ -197,6 +198,11 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     glueComp.prepare(sampleRate);
     glueComp.reset();
 
+    // v6: Glue sidechain HPF (default 60 Hz)
+    glueScHpf.prepare(sampleRate, 60.0f);
+    glueScHpf.reset();
+    lastGlueScHpfFreq = 60.0f;
+
     // Crossover (v4: TRUE LR4 at 250 Hz — SVF-based, 24 dB/oct)
     crossover.prepare(sampleRate, 250.0f);
     crossover.reset();
@@ -301,6 +307,58 @@ void BTZAudioProcessor::updateTargetsFromAPVTS() {
     sMacro2.setTarget(*apvts.getRawParameterValue("macro2"));
     sMacro3.setTarget(*apvts.getRawParameterValue("macro3"));
 
+    // ── v6: Wire macros through MacroInterpreter ──
+    // Read current smoothed macro values into the array
+    macroValues[0] = sMacro0.current;
+    macroValues[1] = sMacro1.current;
+    macroValues[2] = sMacro2.current;
+    macroValues[3] = sMacro3.current;
+
+    // Apply macro modulation as additive offsets to DSP target smoothers.
+    // Target indices match setupDefaults():
+    //   0=punch, 1=warmth, 2=boom, 3=glue, 4=air, 6=density,
+    //   10=drive, 13=shineFreq
+    {
+        const float modPunch   = macroInterpreter.getModulation(0,  macroValues);
+        const float modWarmth  = macroInterpreter.getModulation(1,  macroValues);
+        const float modBoom    = macroInterpreter.getModulation(2,  macroValues);
+        const float modGlue    = macroInterpreter.getModulation(3,  macroValues);
+        const float modAir     = macroInterpreter.getModulation(4,  macroValues);
+        const float modDensity = macroInterpreter.getModulation(6,  macroValues);
+        const float modDrive   = macroInterpreter.getModulation(10, macroValues);
+
+        // Additive: clamp final target to valid range
+        sPunch.setTarget(juce::jlimit(0.0f, 1.0f,
+            *apvts.getRawParameterValue("punch") + modPunch));
+        sWarmth.setTarget(juce::jlimit(0.0f, 1.0f,
+            *apvts.getRawParameterValue("warmth") + modWarmth));
+        sBoom.setTarget(juce::jlimit(0.0f, 1.0f,
+            *apvts.getRawParameterValue("boom") + modBoom));
+        sGlue.setTarget(juce::jlimit(0.0f, 1.0f,
+            *apvts.getRawParameterValue("glue") + modGlue));
+        sAir.setTarget(juce::jlimit(0.0f, 1.0f,
+            *apvts.getRawParameterValue("air") + modAir));
+        sDensity.setTarget(juce::jlimit(0.0f, 1.0f,
+            *apvts.getRawParameterValue("density") + modDensity));
+        sDrive.setTarget(juce::jlimit(0.0f, 12.0f,
+            *apvts.getRawParameterValue("drive") + modDrive * 12.0f));
+    }
+
+    // ── v6: Update glue sidechain HPF frequency ──
+    {
+        const float hpfMode = *apvts.getRawParameterValue("glueScHpf");
+        float hpfFreq = 0.0f;
+        if (hpfMode >= 2.5f)      hpfFreq = 150.0f;
+        else if (hpfMode >= 1.5f) hpfFreq = 90.0f;
+        else if (hpfMode >= 0.5f) hpfFreq = 60.0f;
+        // else off
+
+        if (std::abs(hpfFreq - lastGlueScHpfFreq) > 0.1f) {
+            lastGlueScHpfFreq = hpfFreq;
+            glueScHpf.prepare(currentSampleRate, hpfFreq);
+        }
+    }
+
     // Update SHINE filter coefficients
     const float shineFreq = *apvts.getRawParameterValue("shineFreq");
     const float shineQ    = *apvts.getRawParameterValue("shineQ");
@@ -357,9 +415,10 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
         air     *= masterScale;
         density *= masterScale;
 
-        // ── Glue compressor (v4: soft-knee, SR-dependent) ──
+        // ── Glue compressor (v4: soft-knee, v6: sidechain HPF) ──
         {
-            const float sidechain = juce::jmax(std::abs(L), std::abs(R));
+            // v6: HPF on sidechain to prevent kick pumping
+            const float sidechain = glueScHpf.process(L, R);
             const float envVal = glueEnv.process(sidechain);
             glueComp.processStereo(L, R, glue, envVal);
         }
