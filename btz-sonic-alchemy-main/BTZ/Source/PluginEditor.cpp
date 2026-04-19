@@ -1,13 +1,10 @@
 /*
-  Box Tone Zone (BTZ) — PluginEditor.cpp  v3
+  Box Tone Zone (BTZ) — PluginEditor.cpp  v9
   ────────────────────────────────────────────────────────────────────────
-  Ecosystem-aligned luxury UI.  1280×800.
-  Module accents: BTZ=amber, SPARK=coral, SHINE=cyan.
-  Premium MacroKnob rendering: cream gradient body, halo arc, tick dots.
-  Reduced glow (~50%), stronger hierarchy, brand presence.
-  Glue SC HPF combo exposed on Advanced page.
-  ALL colors from BTZColours / BTZTheme::Color.
-  ALL fonts from BTZTokens / BTZTheme::Font.
+  v9: Resizable UI, preset browser, A/B, undo/redo, saturation model
+      selector, mid/side toggle, multiband selector, spectrum area,
+      GR history, MIDI learn context menu, EBU R128 LUFS readout.
+  v3: 3-page luxury UI, module accents, premium macro knobs.
 */
 #include "PluginEditor.h"
 #include "BTZTheme.h"
@@ -43,12 +40,9 @@ BTZLookAndFeel::BTZLookAndFeel() {
     setColour(juce::ComboBox::arrowColourId, mute);
 }
 
-// ── Utility knob: dark body, module-accent arc ──
 void BTZLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int w, int h,
                                       float sliderPos, float, float, juce::Slider&) {
     const auto accent = BTZColours::accentFor(currentModule);
-    const auto accentDim = BTZColours::accentDimFor(currentModule);
-
     const float diameter = (float)juce::jmin(w, h) * 0.85f;
     const float radius = diameter * 0.5f;
     const float cx = (float)x + (float)w * 0.5f;
@@ -59,14 +53,14 @@ void BTZLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int w, in
     const float arcRadius = radius * 0.9f;
     const float arcThickness = diameter * KnobStyle::arcThicknessRatio;
 
-    // ── Track arc ──
+    // Track arc
     juce::Path track;
     track.addCentredArc(cx, cy, arcRadius, arcRadius, 0.0f, startAngle, endAngle, true);
     g.setColour(rule);
     g.strokePath(track, juce::PathStrokeType(arcThickness, juce::PathStrokeType::curved,
                                               juce::PathStrokeType::rounded));
 
-    // ── Fill arc (module accent) ──
+    // Fill arc
     if (sliderPos > 0.001f) {
         juce::Path fill;
         fill.addCentredArc(cx, cy, arcRadius, arcRadius, 0.0f, startAngle, angle, true);
@@ -75,25 +69,21 @@ void BTZLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int w, in
                                                  juce::PathStrokeType::rounded));
     }
 
-    // ── Knob body (dark brushed-metal) ──
+    // Knob body
     const float bodyR = radius * KnobStyle::bodyRadiusRatio;
     juce::ColourGradient bodyGrad(charcoal, cx, cy - bodyR, panel, cx, cy + bodyR, false);
     g.setGradientFill(bodyGrad);
     g.fillEllipse(cx - bodyR, cy - bodyR, bodyR * 2.0f, bodyR * 2.0f);
-
-    // ── Body border ──
     g.setColour(hairline);
     g.drawEllipse(cx - bodyR, cy - bodyR, bodyR * 2.0f, bodyR * 2.0f, 0.5f);
 
-    // ── Indicator line (module accent) ──
+    // Indicator line
     g.setColour(accent);
     const float ix1 = cx + radius * KnobStyle::indicatorStart * std::cos(angle - juce::MathConstants<float>::halfPi);
     const float iy1 = cy + radius * KnobStyle::indicatorStart * std::sin(angle - juce::MathConstants<float>::halfPi);
     const float ix2 = cx + radius * KnobStyle::indicatorEnd * std::cos(angle - juce::MathConstants<float>::halfPi);
     const float iy2 = cy + radius * KnobStyle::indicatorEnd * std::sin(angle - juce::MathConstants<float>::halfPi);
     g.drawLine(ix1, iy1, ix2, iy2, 2.0f);
-
-    // ── NO hover glow fill (v3: removed for restraint) ──
 }
 
 void BTZLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int w, int h,
@@ -105,7 +95,6 @@ void BTZLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int w, in
 
     g.setColour(juce::Colour(0xFF101218));
     g.fillRoundedRectangle((float)x, trackY - trackH * 0.5f, (float)w, trackH, 2.0f);
-
     g.setColour(hairline);
     g.drawRoundedRectangle((float)x, trackY - trackH * 0.5f, (float)w, trackH, 2.0f, 0.5f);
 
@@ -138,7 +127,6 @@ void BTZLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& button,
     g.setColour(button.getToggleState() ? amber : bone);
     g.drawText(button.getButtonText(), button.getLocalBounds(), juce::Justification::centred);
 
-    // ── Active tab underline (module accent) ──
     if (button.getToggleState()) {
         auto bounds = button.getLocalBounds().toFloat();
         auto accent = amber;
@@ -149,8 +137,7 @@ void BTZLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& button,
     }
 }
 
-void BTZLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button,
-                                       bool, bool) {
+void BTZLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& button, bool, bool) {
     auto bounds = button.getLocalBounds().toFloat();
     auto toggleArea = bounds.removeFromLeft(bounds.getHeight()).reduced(4.0f);
 
@@ -177,14 +164,13 @@ void BTZLookAndFeel::drawLabel(juce::Graphics& g, juce::Label& label) {
 }
 
 void BTZLookAndFeel::drawComboBox(juce::Graphics& g, int w, int h, bool,
-                                   int, int, int, int, juce::ComboBox& box) {
+                                   int, int, int, int, juce::ComboBox&) {
     auto bounds = juce::Rectangle<float>(0, 0, (float)w, (float)h);
     g.setColour(panel);
     g.fillRoundedRectangle(bounds, 0.0f);
     g.setColour(hairline);
     g.drawRoundedRectangle(bounds, 0.0f, 0.5f);
 
-    // ── Arrow ──
     auto arrowArea = bounds.removeFromRight(24.0f).reduced(6.0f);
     juce::Path arrow;
     arrow.addTriangle(arrowArea.getX(), arrowArea.getCentreY() - 3.0f,
@@ -203,18 +189,16 @@ void BTZLookAndFeel::drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<
         g.fillRect(area.reduced(8, 0).withHeight(1).withCentre(area.getCentre()));
         return;
     }
-
     if (isHighlighted) {
         g.setColour(stone);
         g.fillRect(area);
     }
-
     g.setFont(Font::label());
     g.setColour(isActive ? (isTicked ? amber : cream) : mute);
     g.drawText(text, area.reduced(12, 0), juce::Justification::centredLeft);
 }
 
-// ── Premium MacroKnob: cream gradient body, halo arc, tick dots ──
+// Premium MacroKnob rendering
 void BTZLookAndFeel::drawMacroKnob(juce::Graphics& g, juce::Rectangle<float> area,
                                     float normValue, BTZColours::Module module, bool isHovered) {
     const auto accent = BTZColours::accentFor(module);
@@ -228,26 +212,24 @@ void BTZLookAndFeel::drawMacroKnob(juce::Graphics& g, juce::Rectangle<float> are
     const float arcRadius = radius * 0.92f;
     const float arcThickness = diameter * 0.045f;
 
-    // ── Tick dots ──
+    // Tick dots
     const int numTicks = BTZTokens::Dim::tickDotCount;
     for (int i = 0; i < numTicks; ++i) {
         float t = (float)i / (float)(numTicks - 1);
         float tickAngle = startAngle + t * (endAngle - startAngle);
-        float dx = cx + (arcRadius + 8.0f) * std::cos(tickAngle - juce::MathConstants<float>::halfPi);
-        float dy = cy + (arcRadius + 8.0f) * std::sin(tickAngle - juce::MathConstants<float>::halfPi);
-        bool active = (tickAngle <= angle);
-        g.setColour(active ? accent : deepMute);
-        g.fillEllipse(dx - 2.0f, dy - 2.0f, 4.0f, 4.0f);
+        float tx = cx + (arcRadius + 6.0f) * std::cos(tickAngle - juce::MathConstants<float>::halfPi);
+        float ty = cy + (arcRadius + 6.0f) * std::sin(tickAngle - juce::MathConstants<float>::halfPi);
+        g.setColour(t <= normValue ? accent.withAlpha(0.7f) : rule);
+        g.fillEllipse(tx - 1.5f, ty - 1.5f, 3.0f, 3.0f);
     }
 
-    // ── Halo arc (background) ──
+    // Halo arc
     juce::Path haloTrack;
     haloTrack.addCentredArc(cx, cy, arcRadius, arcRadius, 0.0f, startAngle, endAngle, true);
     g.setColour(rule);
     g.strokePath(haloTrack, juce::PathStrokeType(arcThickness, juce::PathStrokeType::curved,
                                                    juce::PathStrokeType::rounded));
 
-    // ── Halo arc (value fill — module accent) ──
     if (normValue > 0.001f) {
         juce::Path haloFill;
         haloFill.addCentredArc(cx, cy, arcRadius, arcRadius, 0.0f, startAngle, angle, true);
@@ -256,50 +238,45 @@ void BTZLookAndFeel::drawMacroKnob(juce::Graphics& g, juce::Rectangle<float> are
                                                       juce::PathStrokeType::rounded));
     }
 
-    // ── Cream gradient body (premium) ──
+    // Cream gradient body
     const float bodyR = radius * 0.72f;
     juce::ColourGradient bodyGrad(knobHighlight, cx, cy - bodyR, knobShadow, cx, cy + bodyR, false);
-    bodyGrad.addColour(0.5, knobMid);
     g.setGradientFill(bodyGrad);
     g.fillEllipse(cx - bodyR, cy - bodyR, bodyR * 2.0f, bodyR * 2.0f);
-
-    // ── Body border ──
-    g.setColour(paper.withAlpha(0.3f));
+    g.setColour(bone.withAlpha(0.3f));
     g.drawEllipse(cx - bodyR, cy - bodyR, bodyR * 2.0f, bodyR * 2.0f, 0.5f);
 
-    // ── Indicator notch (dark line on cream body) ──
-    g.setColour(juce::Colour(0xFF3A3530));
-    const float ix1 = cx + bodyR * 0.25f * std::cos(angle - juce::MathConstants<float>::halfPi);
-    const float iy1 = cy + bodyR * 0.25f * std::sin(angle - juce::MathConstants<float>::halfPi);
-    const float ix2 = cx + bodyR * 0.75f * std::cos(angle - juce::MathConstants<float>::halfPi);
-    const float iy2 = cy + bodyR * 0.75f * std::sin(angle - juce::MathConstants<float>::halfPi);
-    g.drawLine(ix1, iy1, ix2, iy2, 2.0f);
+    // Indicator
+    g.setColour(accent);
+    const float ix1 = cx + bodyR * 0.3f * std::cos(angle - juce::MathConstants<float>::halfPi);
+    const float iy1 = cy + bodyR * 0.3f * std::sin(angle - juce::MathConstants<float>::halfPi);
+    const float ix2 = cx + bodyR * 0.85f * std::cos(angle - juce::MathConstants<float>::halfPi);
+    const float iy2 = cy + bodyR * 0.85f * std::sin(angle - juce::MathConstants<float>::halfPi);
+    g.drawLine(ix1, iy1, ix2, iy2, 2.5f);
 
-    // ── Subtle glow on hover only (reduced intensity) ──
+    // Hover glow (subtle)
     if (isHovered) {
-        g.setColour(accent.withAlpha(BTZColours::amberSoftGlowAlpha));
-        g.drawEllipse(cx - arcRadius - 4.0f, cy - arcRadius - 4.0f,
-                      (arcRadius + 4.0f) * 2.0f, (arcRadius + 4.0f) * 2.0f, 3.0f);
+        g.setColour(accent.withAlpha(0.08f));
+        g.fillEllipse(cx - radius, cy - radius, diameter, diameter);
     }
 }
 
-// ── Static draw methods ──
-
 void BTZLookAndFeel::drawBTZPanelBackground(juce::Graphics& g, juce::Rectangle<float> area) {
-    g.setColour(panel);
-    g.fillRoundedRectangle(area, 0.0f);
-    g.setColour(rule);
-    g.drawRoundedRectangle(area, 0.0f, 0.5f);
+    g.setColour(charcoal);
+    g.fillRoundedRectangle(area, Geometry::panelRadius);
+    g.setColour(hairline);
+    g.drawRoundedRectangle(area, Geometry::panelRadius, 0.5f);
 }
 
 void BTZLookAndFeel::drawBTZSectionHeader(juce::Graphics& g, juce::Rectangle<float> area,
                                            const juce::String& text, BTZColours::Module module) {
     g.setFont(Font::sectionHeader());
-    g.setColour(BTZColours::accentFor(module));
+    g.setColour(accentFor(module));
     g.drawText(text, area, juce::Justification::centredLeft);
-    auto line = area.removeFromBottom(1.0f);
+    auto lineArea = area;
+    lineArea.removeFromLeft(g.getCurrentFont().getStringWidthFloat(text) + 12.0f);
     g.setColour(rule);
-    g.fillRect(line);
+    g.fillRect(lineArea.withHeight(1.0f).withCentre(area.getCentre()));
 }
 
 void BTZLookAndFeel::drawBTZMeter(juce::Graphics& g, juce::Rectangle<float> area,
@@ -307,24 +284,22 @@ void BTZLookAndFeel::drawBTZMeter(juce::Graphics& g, juce::Rectangle<float> area
     g.setColour(juce::Colour(0xFF101218));
     g.fillRoundedRectangle(area, Effects::meterCornerRadius);
 
-    float pct = juce::jlimit(0.0f, 1.0f, valuePct);
-    if (pct > 0.001f) {
+    const float fillW = area.getWidth() * juce::jlimit(0.0f, 1.0f, valuePct);
+    if (fillW > 0.5f) {
         juce::Colour fillColour;
         if (isGR) {
             fillColour = amber;
-        } else if (pct < 0.6f) {
-            fillColour = meterSafe;
-        } else if (pct < 0.8f) {
-            fillColour = meterOptimal;
-        } else if (pct < 0.95f) {
-            fillColour = meterHot;
-        } else {
+        } else if (valuePct > 0.95f) {
             fillColour = meterClip;
+        } else if (valuePct > 0.75f) {
+            fillColour = meterHot;
+        } else if (valuePct > 0.5f) {
+            fillColour = meterOptimal;
+        } else {
+            fillColour = meterSafe;
         }
-        auto fillArea = area;
-        fillArea.setWidth(area.getWidth() * pct);
         g.setColour(fillColour);
-        g.fillRoundedRectangle(fillArea, Effects::meterCornerRadius);
+        g.fillRoundedRectangle(area.withWidth(fillW), Effects::meterCornerRadius);
     }
 }
 
@@ -332,32 +307,38 @@ void BTZLookAndFeel::drawBTZTab(juce::Graphics& g, juce::Rectangle<float> area,
                                  const juce::String& text, bool isActive,
                                  BTZColours::Module module) {
     g.setFont(Font::tab());
-    g.setColour(isActive ? BTZColours::accentFor(module) : bone);
+    g.setColour(isActive ? accentFor(module) : bone);
     g.drawText(text, area, juce::Justification::centred);
     if (isActive) {
-        g.setColour(BTZColours::accentFor(module));
+        g.setColour(accentFor(module));
         g.fillRect(area.removeFromBottom(2.0f));
     }
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// BTZAudioProcessorEditor — Constructor
-// ═══════════════════════════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Constructor
+// ═══════════════════════════════════════════════════════════════════════════
 BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
-    : AudioProcessorEditor(&p), proc(p) {
+    : AudioProcessorEditor(&p), proc(p)
+{
     setLookAndFeel(&lookAndFeel);
+
+    // v9: Resizable UI
+    constrainer.setFixedAspectRatio((double)Geometry::windowWidth / (double)Geometry::windowHeight);
+    constrainer.setMinimumSize(Window::minWidth, Window::minHeight);
+    constrainer.setMaximumSize(Geometry::windowWidth * 2, Geometry::windowHeight * 2);
+    setConstrainer(&constrainer);
+    resizer = std::make_unique<juce::ResizableCornerComponent>(this, &constrainer);
+    addAndMakeVisible(*resizer);
+
     setSize(Geometry::windowWidth, Geometry::windowHeight);
 
     // ── Tab navigation ──
-    auto setupTab = [this](juce::TextButton& btn, int page) {
+    auto setupTab = [&](juce::TextButton& btn, int page) {
         btn.setClickingTogglesState(true);
-        btn.setRadioGroupId(1);
-        btn.onClick = [this, page, &btn] {
-            currentPage = page;
-            resized();
-            repaint();
-        };
+        btn.setRadioGroupId(1001);
+        btn.onClick = [this, page] { currentPage = page; resized(); repaint(); };
         addAndMakeVisible(btn);
     };
     setupTab(tabMain, 0);
@@ -367,134 +348,216 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
 
     // ── Bypass ──
     addAndMakeVisible(btnBypass);
-    aBypass = std::make_unique<ButtonAttachment>(proc.apvts, "bypass", btnBypass);
+    aBypass = std::make_unique<ButtonAttachment>(proc.getAPVTS(), "bypass", btnBypass);
+
+    // ── v9: Undo/Redo buttons ──
+    btnUndo.onClick = [this] { proc.undo(); repaint(); };
+    btnRedo.onClick = [this] { proc.redo(); repaint(); };
+    addAndMakeVisible(btnUndo);
+    addAndMakeVisible(btnRedo);
+
+    // ── v9: A/B buttons ──
+    btnAB.onClick = [this] {
+        proc.toggleAB();
+        btnAB.setButtonText(proc.isSlotA() ? "A" : "B");
+        repaint();
+    };
+    btnCopyAB.onClick = [this] { proc.copyAtoB(); };
+    addAndMakeVisible(btnAB);
+    addAndMakeVisible(btnCopyAB);
+
+    // ── v9: Preset navigation ──
+    lblPresetName.setText(proc.getCurrentPresetName().isEmpty() ? "Init" : proc.getCurrentPresetName(),
+                          juce::dontSendNotification);
+    lblPresetName.setJustificationType(juce::Justification::centred);
+    lblPresetName.setColour(juce::Label::textColourId, cream);
+    addAndMakeVisible(lblPresetName);
+
+    btnPresetPrev.onClick = [this] {
+        int idx = proc.getCurrentPresetIndex();
+        if (idx > 0) proc.setCurrentProgram(idx - 1);
+        lblPresetName.setText(proc.getCurrentPresetName().isEmpty() ? "Init" : proc.getCurrentPresetName(),
+                              juce::dontSendNotification);
+        repaint();
+    };
+    btnPresetNext.onClick = [this] {
+        int idx = proc.getCurrentPresetIndex();
+        proc.setCurrentProgram(idx + 1);
+        lblPresetName.setText(proc.getCurrentPresetName().isEmpty() ? "Init" : proc.getCurrentPresetName(),
+                              juce::dontSendNotification);
+        repaint();
+    };
+    btnPresetSave.onClick = [this] {
+        auto dir = proc.getPresetsDirectory();
+        juce::FileChooser chooser("Save Preset", dir, "*.btzpreset");
+        if (chooser.browseForFileToSave(true)) {
+            auto file = chooser.getResult();
+            proc.savePreset(file, file.getFileNameWithoutExtension());
+            lblPresetName.setText(file.getFileNameWithoutExtension(), juce::dontSendNotification);
+        }
+    };
+    addAndMakeVisible(btnPresetPrev);
+    addAndMakeVisible(btnPresetNext);
+    addAndMakeVisible(btnPresetSave);
 
     // ── Core knobs ──
-    setupKnob(kPunch, lPunch, "PUNCH");       aPunch   = std::make_unique<SliderAttachment>(proc.apvts, "punch", kPunch);
-    setupKnob(kWarmth, lWarmth, "WARMTH");     aWarmth  = std::make_unique<SliderAttachment>(proc.apvts, "warmth", kWarmth);
-    setupKnob(kBoom, lBoom, "BOOM");           aBoom    = std::make_unique<SliderAttachment>(proc.apvts, "boom", kBoom);
-    setupKnob(kGlue, lGlue, "GLUE");          aGlue    = std::make_unique<SliderAttachment>(proc.apvts, "glue", kGlue);
-    setupKnob(kAir, lAir, "AIR");             aAir     = std::make_unique<SliderAttachment>(proc.apvts, "air", kAir);
-    setupKnob(kWidth, lWidth, "WIDTH");        aWidth   = std::make_unique<SliderAttachment>(proc.apvts, "width", kWidth);
-    setupKnob(kDensity, lDensity, "DENSITY");  aDensity = std::make_unique<SliderAttachment>(proc.apvts, "density", kDensity);
-    setupKnob(kMotion, lMotion, "MOTION");     aMotion  = std::make_unique<SliderAttachment>(proc.apvts, "motion", kMotion);
-    setupKnob(kEra, lEra, "ERA");             aEra     = std::make_unique<SliderAttachment>(proc.apvts, "era", kEra);
-    setupKnob(kDrive, lDrive, "DRIVE");        aDrive   = std::make_unique<SliderAttachment>(proc.apvts, "drive", kDrive);
-    setupKnob(kMix, lMix, "MIX");             aMix     = std::make_unique<SliderAttachment>(proc.apvts, "mix", kMix);
-    setupKnob(kMaster, lMaster, "MASTER");     aMaster  = std::make_unique<SliderAttachment>(proc.apvts, "master", kMaster);
+    setupKnob(kPunch, lPunch, "PUNCH");
+    setupKnob(kWarmth, lWarmth, "WARMTH");
+    setupKnob(kBoom, lBoom, "BOOM");
+    setupKnob(kGlue, lGlue, "GLUE");
+    setupKnob(kAir, lAir, "AIR");
+    setupKnob(kWidth, lWidth, "WIDTH");
+    setupKnob(kDensity, lDensity, "DENSITY");
+    setupKnob(kMotion, lMotion, "MOTION");
+    setupKnob(kEra, lEra, "ERA");
+    setupKnob(kDrive, lDrive, "DRIVE");
+    setupKnob(kMix, lMix, "MIX");
+    setupKnob(kMaster, lMaster, "MASTER");
 
-    // ── Macro knobs (premium 110px) ──
-    setupMacroKnob(kMacro0, lMacro0, "PUNCH");   aMacro0 = std::make_unique<SliderAttachment>(proc.apvts, "macro0", kMacro0);
-    setupMacroKnob(kMacro1, lMacro1, "WARMTH");   aMacro1 = std::make_unique<SliderAttachment>(proc.apvts, "macro1", kMacro1);
-    setupMacroKnob(kMacro2, lMacro2, "BOOM");     aMacro2 = std::make_unique<SliderAttachment>(proc.apvts, "macro2", kMacro2);
-    setupMacroKnob(kMacro3, lMacro3, "GLUE");     aMacro3 = std::make_unique<SliderAttachment>(proc.apvts, "macro3", kMacro3);
+    // ── Macro knobs ──
+    setupMacroKnob(kMacro0, lMacro0, "MACRO A");
+    setupMacroKnob(kMacro1, lMacro1, "MACRO B");
+    setupMacroKnob(kMacro2, lMacro2, "MACRO C");
+    setupMacroKnob(kMacro3, lMacro3, "MACRO D");
 
-    // ── SPARK controls ──
-    setupKnob(kCeiling, lCeiling, "CEILING");      aCeiling   = std::make_unique<SliderAttachment>(proc.apvts, "sparkCeiling", kCeiling);
-    setupKnob(kIntensity, lIntensity, "INTENSITY"); aIntensity = std::make_unique<SliderAttachment>(proc.apvts, "intensity", kIntensity);
+    // ── SPARK/SHINE knobs ──
+    setupKnob(kCeiling, lCeiling, "CEILING");
+    setupKnob(kIntensity, lIntensity, "INTENSITY");
+    setupKnob(kShine, lShine, "SHINE");
+    setupKnob(kShineMix, lShineMix, "SHINE MIX");
+    setupSmallKnob(kShineFreq, lShineFreq, "FREQ");
+    setupSmallKnob(kShineQ, lShineQ, "Q");
 
-    // ── SHINE controls ──
-    setupKnob(kShine, lShine, "SHINE");           aShine    = std::make_unique<SliderAttachment>(proc.apvts, "shine", kShine);
-    setupKnob(kShineMix, lShineMix, "SHINE MIX"); aShineMix = std::make_unique<SliderAttachment>(proc.apvts, "shineMix", kShineMix);
-    setupSmallKnob(kShineFreq, lShineFreq, "FREQ");  aShineFreq = std::make_unique<SliderAttachment>(proc.apvts, "shineFreq", kShineFreq);
-    setupSmallKnob(kShineQ, lShineQ, "Q");            aShineQ    = std::make_unique<SliderAttachment>(proc.apvts, "shineQ", kShineQ);
-
-    // ── Glue SC HPF combo (Advanced page) ──
+    // ── Glue SC HPF combo ──
     lGlueScHpf.setText("SC HPF", juce::dontSendNotification);
-    lGlueScHpf.setJustificationType(juce::Justification::centred);
+    lGlueScHpf.setJustificationType(juce::Justification::centredLeft);
     addAndMakeVisible(lGlueScHpf);
-    cGlueScHpf.addItem("OFF", 1);
-    cGlueScHpf.addItem("60 Hz", 2);
-    cGlueScHpf.addItem("90 Hz", 3);
-    cGlueScHpf.addItem("150 Hz", 4);
     addAndMakeVisible(cGlueScHpf);
-    aGlueScHpf = std::make_unique<ComboAttachment>(proc.apvts, "glueScHpf", cGlueScHpf);
 
-    startTimerHz(24);
+    // ── v9: Saturation model combo ──
+    lSatModel.setText("SAT MODEL", juce::dontSendNotification);
+    lSatModel.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(lSatModel);
+    addAndMakeVisible(cSatModel);
+
+    // ── v9: Mid/Side toggle ──
+    addAndMakeVisible(btnMidSide);
+
+    // ── v9: Multiband combo ──
+    lMultiband.setText("MULTIBAND", juce::dontSendNotification);
+    lMultiband.setJustificationType(juce::Justification::centredLeft);
+    addAndMakeVisible(lMultiband);
+    addAndMakeVisible(cMultiband);
+
+    // ── Attachments ──
+    auto& apvts = proc.getAPVTS();
+    aPunch   = std::make_unique<SliderAttachment>(apvts, "punch",    kPunch);
+    aWarmth  = std::make_unique<SliderAttachment>(apvts, "warmth",   kWarmth);
+    aBoom    = std::make_unique<SliderAttachment>(apvts, "boom",     kBoom);
+    aGlue    = std::make_unique<SliderAttachment>(apvts, "glue",     kGlue);
+    aAir     = std::make_unique<SliderAttachment>(apvts, "air",      kAir);
+    aWidth   = std::make_unique<SliderAttachment>(apvts, "width",    kWidth);
+    aDensity = std::make_unique<SliderAttachment>(apvts, "density",  kDensity);
+    aMotion  = std::make_unique<SliderAttachment>(apvts, "motion",   kMotion);
+    aEra     = std::make_unique<SliderAttachment>(apvts, "era",      kEra);
+    aDrive   = std::make_unique<SliderAttachment>(apvts, "drive",    kDrive);
+    aMix     = std::make_unique<SliderAttachment>(apvts, "mix",      kMix);
+    aMaster  = std::make_unique<SliderAttachment>(apvts, "master",   kMaster);
+    aCeiling = std::make_unique<SliderAttachment>(apvts, "ceiling",  kCeiling);
+    aShine   = std::make_unique<SliderAttachment>(apvts, "shine",    kShine);
+    aShineMix= std::make_unique<SliderAttachment>(apvts, "shineMix", kShineMix);
+    aIntensity = std::make_unique<SliderAttachment>(apvts, "intensity", kIntensity);
+    aShineFreq = std::make_unique<SliderAttachment>(apvts, "shineFreq", kShineFreq);
+    aShineQ    = std::make_unique<SliderAttachment>(apvts, "shineQ",    kShineQ);
+    aMacro0  = std::make_unique<SliderAttachment>(apvts, "macro0",   kMacro0);
+    aMacro1  = std::make_unique<SliderAttachment>(apvts, "macro1",   kMacro1);
+    aMacro2  = std::make_unique<SliderAttachment>(apvts, "macro2",   kMacro2);
+    aMacro3  = std::make_unique<SliderAttachment>(apvts, "macro3",   kMacro3);
+    aBypass  = std::make_unique<ButtonAttachment>(apvts, "bypass",   btnBypass);
+    aGlueScHpf = std::make_unique<ComboAttachment>(apvts, "glueScHpf", cGlueScHpf);
+    aSatModel  = std::make_unique<ComboAttachment>(apvts, "satModel",  cSatModel);
+    aMidSide   = std::make_unique<ButtonAttachment>(apvts, "midSide",  btnMidSide);
+    aMultiband = std::make_unique<ComboAttachment>(apvts, "multibandCount", cMultiband);
+
+    startTimerHz(30);
 }
 
 BTZAudioProcessorEditor::~BTZAudioProcessorEditor() {
     setLookAndFeel(nullptr);
+    stopTimer();
 }
 
-// ── Setup helpers ──
+void BTZAudioProcessorEditor::timerCallback() {
+    auto& m = proc.getMeters();
+    inPeakL  = m.inputPeakL.load();   inPeakR  = m.inputPeakR.load();
+    inRmsL   = m.inputRmsL.load();    inRmsR   = m.inputRmsR.load();
+    outPeakL = m.outputPeakL.load();  outPeakR = m.outputPeakR.load();
+    outRmsL  = m.outputRmsL.load();   outRmsR  = m.outputRmsR.load();
+    sparkGR  = m.sparkGainReductionDb.load();
+    lufs     = m.lufs.load();
+    lufsShort = m.lufsShortTerm.load();
+    lufsInt  = m.lufsIntegrated.load();
+    corr     = m.correlation.load();
+    inClip   = m.inputClip.load();
+    outClip  = m.outputClip.load();
+    repaint();
+}
 
-void BTZAudioProcessorEditor::setupKnob(juce::Slider& s, juce::Label& l, const juce::String& labelText) {
+void BTZAudioProcessorEditor::setupKnob(juce::Slider& s, juce::Label& l, const juce::String& text) {
     s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    s.setTextBoxStyle(juce::Slider::NoTextBox, true, 0, 0);
-    s.setDoubleClickReturnValue(true, s.getRange().getStart());
+    s.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 14);
     addAndMakeVisible(s);
-
-    l.setText(labelText, juce::dontSendNotification);
+    l.setText(text, juce::dontSendNotification);
     l.setJustificationType(juce::Justification::centred);
-    l.setColour(juce::Label::textColourId, mute);
     addAndMakeVisible(l);
 }
 
-void BTZAudioProcessorEditor::setupSmallKnob(juce::Slider& s, juce::Label& l, const juce::String& labelText) {
-    setupKnob(s, l, labelText);
+void BTZAudioProcessorEditor::setupSmallKnob(juce::Slider& s, juce::Label& l, const juce::String& text) {
+    setupKnob(s, l, text);
 }
 
-void BTZAudioProcessorEditor::setupMacroKnob(juce::Slider& s, juce::Label& l, const juce::String& labelText) {
+void BTZAudioProcessorEditor::setupMacroKnob(juce::Slider& s, juce::Label& l, const juce::String& text) {
     s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     s.setTextBoxStyle(juce::Slider::NoTextBox, true, 0, 0);
-    s.setDoubleClickReturnValue(true, 0.0);
-    s.setLookAndFeel(nullptr);  // MacroKnobs use custom paint, not LookAndFeel
+    s.setColour(juce::Slider::rotarySliderFillColourId, juce::Colours::transparentBlack);
+    s.setColour(juce::Slider::rotarySliderOutlineColourId, juce::Colours::transparentBlack);
+    s.setColour(juce::Slider::thumbColourId, juce::Colours::transparentBlack);
     addAndMakeVisible(s);
-
-    l.setText(labelText, juce::dontSendNotification);
+    l.setText(text, juce::dontSendNotification);
     l.setJustificationType(juce::Justification::centred);
-    l.setColour(juce::Label::textColourId, bone);
     l.setFont(Font::macroLabel());
     addAndMakeVisible(l);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Timer — Meter updates
-// ═══════════════════════════════════════════════════════════════════════════
-
-void BTZAudioProcessorEditor::timerCallback() {
-    auto& m = proc.meterBallistics;
-    inPeakL  = m.getInPeakL();   inPeakR  = m.getInPeakR();
-    inRmsL   = m.getInRmsL();    inRmsR   = m.getInRmsR();
-    outPeakL = m.getOutPeakL();  outPeakR = m.getOutPeakR();
-    outRmsL  = m.getOutRmsL();   outRmsR  = m.getOutRmsR();
-    sparkGR  = m.getGR();        lufs     = m.getLufs();
-    corr     = m.getCorrelation();
-    inClip   = m.getInClip();    outClip  = m.getOutClip();
-    repaint();
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Paint
 // ═══════════════════════════════════════════════════════════════════════════
-
 void BTZAudioProcessorEditor::paint(juce::Graphics& g) {
-    // ── Full background ──
     g.fillAll(obsidian);
 
     auto bounds = getLocalBounds().toFloat();
 
-    // ── Header ──
+    // Header
     auto headerArea = bounds.removeFromTop((float)Geometry::headerHeight);
     paintHeader(g, headerArea);
 
-    // ── Hairline under header ──
-    g.setColour(rule);
+    // Hairline
+    g.setColour(hairline);
     g.fillRect(bounds.removeFromTop(1.0f));
 
-    // ── Meter strip ──
+    // Meter strip
     auto meterArea = bounds.removeFromTop((float)Geometry::meterStripHeight);
     paintMeterStrip(g, meterArea);
 
-    // ── Hairline under meters ──
-    g.setColour(rule);
+    // Hairline
+    g.setColour(hairline);
     g.fillRect(bounds.removeFromTop(1.0f));
 
-    // ── Content area ──
-    auto content = bounds.reduced((float)Geometry::padContent, (float)Space::lg);
+    // Content
+    auto content = bounds;
+    content.removeFromBottom(24.0f);  // Reserve footer
 
-    // ── Page-specific paint (section headers, panel backgrounds) ──
     if (currentPage == 0)
         paintMainPage(g, content);
     else if (currentPage == 1)
@@ -502,11 +565,11 @@ void BTZAudioProcessorEditor::paint(juce::Graphics& g) {
     else
         paintAdvancedPage(g, content);
 
-    // ── Footer ──
+    // Footer
     auto footerArea = getLocalBounds().toFloat().removeFromBottom(24.0f);
     paintFooter(g, footerArea);
 
-    // ── Paint macro knobs manually (they bypass LookAndFeel) ──
+    // Paint macro knobs manually
     if (currentPage == 0) {
         auto drawMacro = [&](juce::Slider& s) {
             if (s.isVisible()) {
@@ -526,13 +589,11 @@ void BTZAudioProcessorEditor::paintHeader(juce::Graphics& g, juce::Rectangle<flo
     g.setColour(panel);
     g.fillRect(area);
 
-    // ── Brand: "BTZ" left-aligned ──
     auto brandArea = area.reduced(20.0f, 0.0f);
     g.setFont(Font::title());
     g.setColour(amber);
     g.drawText("BTZ", brandArea.removeFromLeft(60.0f), juce::Justification::centredLeft);
 
-    // ── "SONIC ALCHEMY" subtitle ──
     g.setFont(Font::subtitle());
     g.setColour(mute);
     g.drawText("SONIC ALCHEMY", brandArea.removeFromLeft(140.0f), juce::Justification::centredLeft);
@@ -575,12 +636,14 @@ void BTZAudioProcessorEditor::paintMeterStrip(juce::Graphics& g, juce::Rectangle
     drawMeterRow("OUT RMS",  outRmsL, outRmsR);
     drawMeterRow("SPARK GR", sparkGR, sparkGR, true);
 
-    // ── Status row ──
+    // Status row with LUFS
     auto statusRow = body.removeFromTop(14.0f);
     g.setFont(Font::meter());
     g.setColour(deepMute);
-    g.drawText("LUFS: " + juce::String(lufs, 1), statusRow.removeFromLeft(100.0f), juce::Justification::centredLeft);
-    g.drawText("CORR: " + juce::String(corr, 2), statusRow.removeFromLeft(90.0f), juce::Justification::centredLeft);
+    g.drawText("M:" + juce::String(lufs, 1) + " LUFS", statusRow.removeFromLeft(100.0f), juce::Justification::centredLeft);
+    g.drawText("S:" + juce::String(lufsShort, 1), statusRow.removeFromLeft(70.0f), juce::Justification::centredLeft);
+    g.drawText("I:" + juce::String(lufsInt, 1), statusRow.removeFromLeft(70.0f), juce::Justification::centredLeft);
+    g.drawText("CORR:" + juce::String(corr, 2), statusRow.removeFromLeft(80.0f), juce::Justification::centredLeft);
 
     g.setColour(inClip > 0.2f ? stateClip : deepMute);
     g.drawText("IN CLIP", statusRow.removeFromLeft(60.0f), juce::Justification::centredLeft);
@@ -596,7 +659,6 @@ void BTZAudioProcessorEditor::paintFooter(juce::Graphics& g, juce::Rectangle<flo
 }
 
 void BTZAudioProcessorEditor::paintMainPage(juce::Graphics& g, juce::Rectangle<float> content) {
-    // ── Section headers ──
     auto topHeader = content.removeFromTop(20.0f);
     BTZLookAndFeel::drawBTZSectionHeader(g, topHeader.removeFromLeft(content.getWidth() * 0.5f),
                                           "TONE SHAPING", BTZColours::Module::BTZ);
@@ -608,12 +670,10 @@ void BTZAudioProcessorEditor::paintSparkPage(juce::Graphics& g, juce::Rectangle<
     auto leftPanel = content.removeFromLeft(content.getWidth() * 0.5f);
     auto rightPanel = content;
 
-    // ── SPARK panel background ──
     BTZLookAndFeel::drawBTZPanelBackground(g, leftPanel.reduced(4.0f));
     BTZLookAndFeel::drawBTZSectionHeader(g, leftPanel.reduced(16.0f, 12.0f).removeFromTop(22.0f),
                                           "SPARK  —  LIMITER", BTZColours::Module::SPARK);
 
-    // ── SHINE panel background ──
     BTZLookAndFeel::drawBTZPanelBackground(g, rightPanel.reduced(4.0f));
     BTZLookAndFeel::drawBTZSectionHeader(g, rightPanel.reduced(16.0f, 12.0f).removeFromTop(22.0f),
                                           "SHINE  —  EXCITER", BTZColours::Module::SHINE);
@@ -622,16 +682,81 @@ void BTZAudioProcessorEditor::paintSparkPage(juce::Graphics& g, juce::Rectangle<
 void BTZAudioProcessorEditor::paintAdvancedPage(juce::Graphics& g, juce::Rectangle<float> content) {
     BTZLookAndFeel::drawBTZSectionHeader(g, content.removeFromTop(22.0f),
                                           "CHARACTER  —  ADVANCED", BTZColours::Module::BTZ);
+
+    // v9: Spectrum analyzer area
+    auto specArea = content.removeFromBottom(content.getHeight() * 0.3f);
+    paintSpectrumArea(g, specArea.removeFromLeft(specArea.getWidth() * 0.6f));
+    paintGRHistory(g, specArea);
 }
+
+void BTZAudioProcessorEditor::paintSpectrumArea(juce::Graphics& g, juce::Rectangle<float> area) {
+    area = area.reduced(8.0f);
+    g.setColour(juce::Colour(0xFF0D0E12));
+    g.fillRoundedRectangle(area, 2.0f);
+    g.setColour(hairline);
+    g.drawRoundedRectangle(area, 2.0f, 0.5f);
+
+    g.setFont(Font::meter());
+    g.setColour(deepMute);
+    g.drawText("SPECTRUM", area.reduced(8.0f, 4.0f), juce::Justification::topLeft);
+
+    // Draw frequency grid lines
+    const float w = area.getWidth();
+    const float h = area.getHeight();
+    g.setColour(rule.withAlpha(0.3f));
+    for (float freq : { 100.0f, 1000.0f, 10000.0f }) {
+        float x = area.getX() + w * std::log10(freq / 20.0f) / std::log10(20000.0f / 20.0f);
+        g.drawVerticalLine((int)x, area.getY(), area.getBottom());
+    }
+    for (float db : { -48.0f, -24.0f, 0.0f }) {
+        float y = area.getBottom() - h * (db + 60.0f) / 66.0f;
+        g.drawHorizontalLine((int)y, area.getX(), area.getRight());
+    }
+}
+
+void BTZAudioProcessorEditor::paintGRHistory(juce::Graphics& g, juce::Rectangle<float> area) {
+    area = area.reduced(8.0f);
+    g.setColour(juce::Colour(0xFF0D0E12));
+    g.fillRoundedRectangle(area, 2.0f);
+    g.setColour(hairline);
+    g.drawRoundedRectangle(area, 2.0f, 0.5f);
+
+    g.setFont(Font::meter());
+    g.setColour(deepMute);
+    g.drawText("GR HISTORY", area.reduced(8.0f, 4.0f), juce::Justification::topLeft);
+
+    // Draw GR history from ring buffer
+    auto& grHist = proc.getGRHistory();
+    const int histSize = BTZDsp::GainReductionHistory::kHistorySize;
+    const int wp = grHist.writePos.load(std::memory_order_relaxed);
+    const float w = area.getWidth();
+    const float h = area.getHeight();
+
+    juce::Path grPath;
+    bool started = false;
+    for (int i = 0; i < histSize; ++i) {
+        int idx = (wp + i) % histSize;
+        float grDb = grHist.history[(size_t)idx];
+        float x = area.getX() + (float)i / (float)histSize * w;
+        float y = area.getY() + h * 0.1f + juce::jlimit(0.0f, h * 0.8f, std::abs(grDb) / 18.0f * h * 0.8f);
+        if (!started) { grPath.startNewSubPath(x, y); started = true; }
+        else grPath.lineTo(x, y);
+    }
+    g.setColour(amber.withAlpha(0.6f));
+    g.strokePath(grPath, juce::PathStrokeType(1.0f));
+}
+
 
 // ═══════════════════════════════════════════════════════════════════════════
 // Resized — Layout
 // ═══════════════════════════════════════════════════════════════════════════
-
 void BTZAudioProcessorEditor::resized() {
     auto bounds = getLocalBounds();
 
-    // ── Header: tabs + bypass ──
+    // v9: Resizer in bottom-right corner
+    resizer->setBounds(bounds.getWidth() - 16, bounds.getHeight() - 16, 16, 16);
+
+    // Header: tabs + bypass + toolbar
     auto header = bounds.removeFromTop(Geometry::headerHeight);
     auto tabArea = header.reduced(280, 10);
     const int tabW = Geometry::tabWidth;
@@ -642,22 +767,36 @@ void BTZAudioProcessorEditor::resized() {
     tabAdvanced.setBounds(startX + (tabW + gap) * 2, tabArea.getY(), tabW, Geometry::tabHeight);
     btnBypass.setBounds(header.getRight() - 140, header.getY() + 10, 120, header.getHeight() - 20);
 
+    // v9: Toolbar (undo/redo, A/B, preset nav) in header left
+    int toolX = header.getX() + 220;
+    int toolY = header.getY() + 12;
+    int toolH = header.getHeight() - 24;
+    int toolBtnW = 40;
+    btnUndo.setBounds(toolX, toolY, toolBtnW, toolH);
+    btnRedo.setBounds(toolX + toolBtnW + 4, toolY, toolBtnW, toolH);
+    btnAB.setBounds(toolX + (toolBtnW + 4) * 2, toolY, 30, toolH);
+    btnCopyAB.setBounds(toolX + (toolBtnW + 4) * 2 + 34, toolY, 36, toolH);
+
+    // Preset nav in header right (before bypass)
+    int presetRightEdge = header.getRight() - 150;
+    int presetW = 200;
+    int presetX = presetRightEdge - presetW;
+    btnPresetPrev.setBounds(presetX, toolY, 24, toolH);
+    lblPresetName.setBounds(presetX + 28, toolY, presetW - 100, toolH);
+    btnPresetNext.setBounds(presetX + presetW - 68, toolY, 24, toolH);
+    btnPresetSave.setBounds(presetX + presetW - 40, toolY, 40, toolH);
+
     tabMain.setToggleState(currentPage == 0, juce::dontSendNotification);
     tabSpark.setToggleState(currentPage == 1, juce::dontSendNotification);
     tabAdvanced.setToggleState(currentPage == 2, juce::dontSendNotification);
 
-    // ── Set module accent for LookAndFeel ──
     if (currentPage == 1)
         lookAndFeel.currentModule = BTZColours::Module::SPARK;
-    else if (currentPage == 2)
-        lookAndFeel.currentModule = BTZColours::Module::BTZ;
     else
         lookAndFeel.currentModule = BTZColours::Module::BTZ;
 
-    // ── Skip meter strip + hairlines ──
     bounds.removeFromTop(Geometry::meterStripHeight + 2);
 
-    // ── Content area ──
     auto content = bounds.reduced(Geometry::padContent, Space::lg + 10);
 
     hideAllControls();
@@ -684,10 +823,14 @@ void BTZAudioProcessorEditor::hideAllControls() {
     hide(kIntensity, lIntensity);
     cGlueScHpf.setVisible(false);
     lGlueScHpf.setVisible(false);
+    cSatModel.setVisible(false);
+    lSatModel.setVisible(false);
+    btnMidSide.setVisible(false);
+    cMultiband.setVisible(false);
+    lMultiband.setVisible(false);
 }
 
 void BTZAudioProcessorEditor::layoutMainPage(juce::Rectangle<int> content) {
-    // Skip section header area
     content.removeFromTop(24);
 
     const int knob = Geometry::knobLarge;
@@ -712,7 +855,7 @@ void BTZAudioProcessorEditor::layoutMainPage(juce::Rectangle<int> content) {
     place(kDensity, lDensity, 0, 1); place(kMotion, lMotion, 1, 1); place(kEra, lEra, 2, 1);
     place(kDrive, lDrive, 3, 1); place(kMix, lMix, 4, 1); place(kMaster, lMaster, 5, 1);
 
-    // ── Macro row (premium 110px knobs) ──
+    // Macro row
     const int macroY = y2 + knob + label + Space::secLg;
     const int macroKnob = Geometry::knobMacro;
     const int macroGap = (content.getWidth() - macroKnob * 4) / 3;
@@ -736,7 +879,7 @@ void BTZAudioProcessorEditor::layoutSparkPage(juce::Rectangle<int> content) {
     const int smallKnob = Geometry::knobSmall;
     const int label = Geometry::knobLabelHeight;
 
-    // ── SPARK: Ceiling + Intensity ──
+    // SPARK: Ceiling + Intensity
     int sparkCenterX = leftPanel.getCentreX() - knob / 2;
     int sparkY = leftPanel.getY() + Space::secMd;
     kCeiling.setBounds(sparkCenterX, sparkY, knob, knob);
@@ -748,7 +891,7 @@ void BTZAudioProcessorEditor::layoutSparkPage(juce::Rectangle<int> content) {
     lIntensity.setBounds(sparkCenterX, intensityY + knob, knob, label);
     kIntensity.setVisible(true); lIntensity.setVisible(true);
 
-    // ── SHINE: Amount + Mix (top), Freq + Q (bottom) ──
+    // SHINE: Amount + Mix (top), Freq + Q (bottom)
     int shineY = rightPanel.getY() + Space::secMd;
     int shineGap = Space::xl;
     int shineTotalW = knob * 2 + shineGap;
@@ -796,25 +939,74 @@ void BTZAudioProcessorEditor::layoutAdvancedPage(juce::Rectangle<int> content) {
     placeTop(kDensity, lDensity, 2);
     placeTop(kMotion, lMotion, 3);
 
-    // Bottom row: Mix + Master + SC HPF
+    // Middle row: Mix + Master + SC HPF + Sat Model + M/S + Multiband
     const int y2 = y1 + knob + label + Space::secLg;
     const int botGap = Space::xl;
-    const int botTotalW = medKnob * 2 + botGap + Space::xl + 120;
-    const int botStartX = content.getCentreX() - botTotalW / 2;
 
-    kMix.setBounds(botStartX, y2, medKnob, medKnob);
-    lMix.setBounds(botStartX, y2 + medKnob, medKnob, label);
+    kMix.setBounds(content.getX(), y2, medKnob, medKnob);
+    lMix.setBounds(content.getX(), y2 + medKnob, medKnob, label);
     kMix.setVisible(true); lMix.setVisible(true);
 
-    kMaster.setBounds(botStartX + medKnob + botGap, y2, medKnob, medKnob);
-    lMaster.setBounds(botStartX + medKnob + botGap, y2 + medKnob, medKnob, label);
+    kMaster.setBounds(content.getX() + medKnob + botGap, y2, medKnob, medKnob);
+    lMaster.setBounds(content.getX() + medKnob + botGap, y2 + medKnob, medKnob, label);
     kMaster.setVisible(true); lMaster.setVisible(true);
 
-    // ── Glue SC HPF combo ──
-    int comboX = botStartX + medKnob * 2 + botGap + Space::xl;
+    // SC HPF combo
+    int comboX = content.getX() + medKnob * 2 + botGap * 2;
     int comboY = y2 + (medKnob - 28) / 2;
     lGlueScHpf.setBounds(comboX, comboY - 18, 120, 16);
     lGlueScHpf.setVisible(true);
     cGlueScHpf.setBounds(comboX, comboY, 120, 28);
     cGlueScHpf.setVisible(true);
+
+    // v9: Saturation model combo
+    int satX = comboX + 130;
+    lSatModel.setBounds(satX, comboY - 18, 120, 16);
+    lSatModel.setVisible(true);
+    cSatModel.setBounds(satX, comboY, 120, 28);
+    cSatModel.setVisible(true);
+
+    // v9: Mid/Side toggle
+    int msX = satX + 130;
+    btnMidSide.setBounds(msX, comboY, 80, 28);
+    btnMidSide.setVisible(true);
+
+    // v9: Multiband combo
+    int mbX = msX + 90;
+    lMultiband.setBounds(mbX, comboY - 18, 120, 16);
+    lMultiband.setVisible(true);
+    cMultiband.setBounds(mbX, comboY, 120, 28);
+    cMultiband.setVisible(true);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v9: MIDI Learn context menu
+// ═══════════════════════════════════════════════════════════════════════════
+void BTZAudioProcessorEditor::showMIDILearnMenu(juce::Slider& slider, const juce::String& paramID) {
+    juce::PopupMenu menu;
+    auto& ml = proc.getMIDILearn();
+
+    menu.addItem(1, "MIDI Learn");
+    menu.addItem(2, "Clear MIDI Mapping");
+    menu.addSeparator();
+    menu.addItem(3, "Reset to Default");
+
+    menu.showMenuAsync(juce::PopupMenu::Options().withTargetComponent(&slider),
+        [this, paramID, &ml](int result) {
+            if (result == 1) {
+                ml.startLearning(paramID);
+            } else if (result == 2) {
+                // Find and remove mapping for this param
+                for (int i = 0; i < ml.numMappings; ++i) {
+                    if (ml.mappings[(size_t)i].parameterID == paramID) {
+                        ml.removeMapping(ml.mappings[(size_t)i].ccNumber);
+                        break;
+                    }
+                }
+            } else if (result == 3) {
+                if (auto* param = proc.getAPVTS().getParameter(paramID)) {
+                    param->setValueNotifyingHost(param->getDefaultValue());
+                }
+            }
+        });
 }

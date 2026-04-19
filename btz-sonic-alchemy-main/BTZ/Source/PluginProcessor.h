@@ -1,22 +1,23 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.h  v8
+  Box Tone Zone (BTZ) — PluginProcessor.h  v9
   ────────────────────────────────────────────────────────────────────────
-  v8 (competitive-audit driven):
-    • REMOVED all 12 ADAATanh instances — measured -18.6 dB alias rejection
-      WITH ADAA vs -59.0 dB WITHOUT. Plain fastTanh + OS is strictly superior.
-    • REMOVED SlewLimiter — was only a safety net for ADAA
-    • DC blocker cutoff lowered from 5 Hz to 1 Hz (neutral-path fix)
-    • TruePeakLimiter: tightened release + added attack coeff for ISP compliance
-    • State version bumped to 8
+  v9 (industry-gap closure):
+    • 5 saturation models (Tanh, Tube, Tape, Transistor, Transformer)
+    • Configurable multiband engine (1–6 bands)
+    • Mid/Side processing mode
+    • Undo/Redo state stack (64 levels)
+    • A/B comparison slots
+    • Preset system (save/load/browse)
+    • MIDI learn CC mapping
+    • LFO modulation sources
+    • EBU R128 loudness metering (momentary/short-term/integrated)
+    • Spectrum analyzer ring buffer
+    • Gain reduction history graph
+    • 8x/16x oversampling options
+    • State version bumped to 9
   ────────────────────────────────────────────────────────────────────────
-  v7 (release-gate hardening):
-    • Click-free bypass via BypassCrossfader (64-sample cosine ramp)
-    • Full resetAll() method — transport stop/start safe
-    • releaseResources() guarded — no deallocation of dryBuffer
-    • OS objects created once, not recreated on every prepareToPlay
-    • State migration with version validation (v4→v8 compat)
-    • Silence-in-silence-out detection
-    • glueScHpf crossfade on mode change (via SidechainHPF v7)
+  v8: removed ADAA, 1 Hz DC blocker, tightened TruePeakLimiter
+  v7: BypassCrossfader, full resetAll(), state migration v4–v9
 */
 #pragma once
 
@@ -27,9 +28,9 @@
 #include <cstdint>
 #include <memory>
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
 // Meter state — atomic bridge from audio thread to UI thread
-// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
 struct BTZMeterState {
     std::atomic<float> inputPeakL  { -100.0f };
     std::atomic<float> inputPeakR  { -100.0f };
@@ -41,14 +42,16 @@ struct BTZMeterState {
     std::atomic<float> outputRmsR  { -100.0f };
     std::atomic<float> sparkGainReductionDb { 0.0f };
     std::atomic<float> lufs        { -24.0f };
+    std::atomic<float> lufsShortTerm { -24.0f };
+    std::atomic<float> lufsIntegrated { -24.0f };
     std::atomic<float> inputClip   { 0.0f };
     std::atomic<float> outputClip  { 0.0f };
     std::atomic<float> correlation { 1.0f };
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
 // BTZAudioProcessor — main plugin processor
-// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
 class BTZAudioProcessor : public juce::AudioProcessor {
 public:
     BTZAudioProcessor();
@@ -63,21 +66,51 @@ public:
     bool hasEditor() const override { return true; }
 
     const juce::String getName() const override { return "Box Tone Zone (BTZ)"; }
-    bool acceptsMidi() const override { return false; }
+    bool acceptsMidi() const override { return true; }   // v9: MIDI learn
     bool producesMidi() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
-    int getNumPrograms() override { return 1; }
-    int getCurrentProgram() override { return 0; }
-    void setCurrentProgram(int) override {}
-    const juce::String getProgramName(int) override { return {}; }
-    void changeProgramName(int, const juce::String&) override {}
+    int getNumPrograms() override;
+    int getCurrentProgram() override;
+    void setCurrentProgram(int index) override;
+    const juce::String getProgramName(int index) override;
+    void changeProgramName(int index, const juce::String& newName) override;
 
     void getStateInformation(juce::MemoryBlock& destData) override;
     void setStateInformation(const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     BTZMeterState& getMeters() { return meters; }
+
+    // ── v9: Undo/Redo ──
+    void pushUndoState(const juce::String& description = {});
+    bool canUndo() const;
+    bool canRedo() const;
+    void undo();
+    void redo();
+
+    // ── v9: A/B Comparison ──
+    void storeToSlotA();
+    void storeToSlotB();
+    void toggleAB();
+    bool isSlotA() const;
+    void copyAtoB();
+
+    // ── v9: Preset System ──
+    bool loadPreset(const juce::File& file);
+    bool savePreset(const juce::File& file, const juce::String& name,
+                    const juce::String& category = {});
+    juce::File getPresetsDirectory() const;
+    juce::Array<BTZDsp::PresetInfo> scanPresets() const;
+    int getCurrentPresetIndex() const { return currentPresetIndex; }
+    juce::String getCurrentPresetName() const { return currentPresetName; }
+
+    // ── v9: MIDI Learn ──
+    BTZDsp::MIDILearnState& getMIDILearn() { return midiLearn; }
+
+    // ── v9: Spectrum + GR History (UI reads these) ──
+    BTZDsp::SpectrumBuffer& getSpectrumBuffer() { return spectrumBuffer; }
+    BTZDsp::GainReductionHistory& getGRHistory() { return grHistory; }
 
 private:
     // ── Parameter layout ──
@@ -86,7 +119,6 @@ private:
 
     // ── Meter state ──
     BTZMeterState meters;
-    BTZDsp::MeterBallistics meterBallistics;
 
     // ── Parameter smoothers ──
     BTZDsp::SmoothParam sPunch, sWarmth, sBoom, sGlue, sAir, sWidth;
@@ -94,51 +126,59 @@ private:
     BTZDsp::SmoothParam sShine, sShineMix, sShineFreq, sShineQ;
     BTZDsp::SmoothParam sMacro0, sMacro1, sMacro2, sMacro3;
 
-    // v8: ADAA REMOVED — plain fastTanh + oversampling is strictly superior
-    // (no per-channel per-stage instances needed)
-
     // ── DSP modules ──
     BTZDsp::SafetyLayer safetyPre, safetyPost;
     BTZDsp::EnvFollower peakEnvL, peakEnvR, rmsEnvL, rmsEnvR;
     BTZDsp::EnvFollower glueEnv;
     BTZDsp::SidechainHPF glueScHpf;
     BTZDsp::GlueCompressor glueComp;
-    BTZDsp::LinkwitzRileyCrossover crossover;
+    BTZDsp::LinkwitzRileyCrossover crossover;  // Legacy single crossover for Boom
     BTZDsp::TruePeakLimiter truePeakLimiter;
     BTZDsp::ShineProcessor shineProcessor;
     BTZDsp::AutoGainSmoother autoGainSmoother;
     BTZDsp::MacroInterpreter macroInterpreter;
-
-    // v7: Click-free bypass crossfader
     BTZDsp::BypassCrossfader bypassCrossfader;
+
+    // ── v9: New DSP modules ──
+    BTZDsp::MultibandEngine multibandEngine;
+    BTZDsp::MidSideEncoder midSideEncoder;
+    BTZDsp::LFO lfoModSources[4];  // Up to 4 LFO sources
+    BTZDsp::LoudnessMeter loudnessMeter;
+    BTZDsp::SpectrumBuffer spectrumBuffer;
+    BTZDsp::GainReductionHistory grHistory;
+
+    // ── v9: State management ──
+    BTZDsp::UndoStack undoStack;
+    BTZDsp::ABState abState;
+    BTZDsp::MIDILearnState midiLearn;
+
+    // ── v9: Preset state ──
+    int currentPresetIndex = -1;
+    juce::String currentPresetName;
 
     // ── DSP state ──
     float hpStateL = 0.0f, hpStateR = 0.0f;
     float sideLowState = 0.0f, sideLowCoeff = 0.0f;
 
-    // v4: cached drive gain to avoid per-sample std::pow
     float cachedDriveGain = 1.0f;
     float lastDriveDb = 0.0f;
-
-    // v5: crest ratio computed at base SR, held for processNonlinear
     float lastCrestRatio = 3.0f;
+    float motionPhase = 0.0f;  // v9: Motion LFO phase accumulator
 
-    // v6: macro value array for MacroInterpreter
-    float macroValues[BTZDsp::MacroInterpreter::kNumMacros] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    float macroValues[BTZDsp::MacroInterpreter::kNumMacros] = {};
 
-    // v6: cached glue SC HPF frequency
     float lastGlueScHpfFreq = 60.0f;
     double glueScHpfSampleRate = 44100.0;
 
-    // v7: silence detection — skip processing when input is silent
+    // v9: Per-channel tape hysteresis state (for fullband mode)
+    float tapeStateL = 0.0f, tapeStateR = 0.0f;
+
+    // Silence detection
     int silentFrameCount = 0;
-    static constexpr int kSilentFrameThreshold = 512;  // ~12ms at 44.1kHz
-    static constexpr float kSilenceThreshold = 1.0e-8f;
+    static constexpr int kSilentFrameThreshold = 512;
+    static constexpr float kSilenceThresholdProc = 1.0e-8f;
 
-    // v7: track whether prepareToPlay has been called (guard processBlock)
     bool prepared = false;
-
-    // v7: track last prepared SR/blockSize to avoid OS recreation
     double lastPreparedSR = 0.0;
     int lastPreparedBlockSize = 0;
 
@@ -151,16 +191,20 @@ private:
     juce::AudioBuffer<float> dryBuffer;
     std::unique_ptr<juce::dsp::Oversampling<float>> os2x;
     std::unique_ptr<juce::dsp::Oversampling<float>> os4x;
+    std::unique_ptr<juce::dsp::Oversampling<float>> os8x;
+    std::unique_ptr<juce::dsp::Oversampling<float>> os16x;
     int activeQualityMode = 1;
 
     // ── Internal methods ──
     void initSmoothers(double sampleRate);
     void updateTargetsFromAPVTS();
-    void resetAll();  // v7: full DSP state reset (transport-safe)
+    void resetAll();
 
     void processLinearPre(float* dataL, float* dataR, int numSamples);
     void processNonlinear(float* dataL, float* dataR, int numSamples, float osFactor);
     void processLinearPost(float* dataL, float* dataR, int numSamples);
+
+    void processMIDILearn(juce::MidiBuffer& midi);
 
     void updateMeters(const float* inL, const float* inR,
                       const float* outL, const float* outR,
@@ -168,7 +212,6 @@ private:
     int getRequestedQualityMode() const;
     void updateLatencyFromQuality(int mode);
 
-    // v7: state migration
     void migrateState(juce::ValueTree& state, int fromVersion);
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BTZAudioProcessor)

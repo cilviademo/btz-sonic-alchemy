@@ -40,7 +40,7 @@ endif()
 # CLAP format support (optional, enable with -DBTZ_BUILD_CLAP=ON)
 # Requires clap-juce-extensions: https://github.com/free-audio/clap-juce-extensions
 # ═══════════════════════════════════════════════════════════════════════════
-option(BTZ_BUILD_CLAP "Build CLAP format via clap-juce-extensions" OFF)
+option(BTZ_BUILD_CLAP "Build CLAP format via clap-juce-extensions" ON)
 
 if(BTZ_BUILD_CLAP)
     include(FetchContent)
@@ -58,14 +58,14 @@ endif()
 # Plugin target
 # ═══════════════════════════════════════════════════════════════════════════
 juce_add_plugin(BTZ
-    FORMATS VST3 AU Standalone
+    FORMATS VST3 AU Standalone AAX
     PRODUCT_NAME "Box Tone Zone (BTZ)"
     PLUGIN_MANUFACTURER_CODE BTZa
     PLUGIN_CODE Btz1
     COMPANY_NAME "BTZ Audio"
     BUNDLE_ID "com.btzaudio.btz"
     IS_SYNTH FALSE
-    NEEDS_MIDI_INPUT FALSE
+    NEEDS_MIDI_INPUT TRUE
     NEEDS_MIDI_OUTPUT FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD FALSE
@@ -86,6 +86,8 @@ target_sources(BTZ PRIVATE
     Source/PluginEditor.cpp
     Source/BTZDsp.h
     Source/BTZTheme.h
+    Source/PluginProcessor.h
+    Source/PluginEditor.h
 )
 
 target_compile_definitions(BTZ PUBLIC

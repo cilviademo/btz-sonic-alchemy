@@ -1,11 +1,20 @@
 /*
-  Box Tone Zone (BTZ) — PluginEditor.h  v3
+  Box Tone Zone (BTZ) — PluginEditor.h  v9
   ────────────────────────────────────────────────────────────────────────
-  Ecosystem-aligned luxury UI.  1280×800 window.
-  Module-specific accents: BTZ=amber, SPARK=coral, SHINE=cyan.
-  Premium MacroKnob rendering (cream gradient body, halo arc, tick dots).
-  Glue SC HPF toggle exposed on Advanced page.
-  All styling from BTZTheme.h v3 (BTZColours + BTZTokens).
+  v9 (industry-gap closure):
+    • Resizable UI (75%–200% scaling, aspect ratio locked)
+    • Preset browser (load/save/navigate)
+    • A/B comparison toggle
+    • Undo/Redo buttons
+    • Saturation model selector
+    • Mid/Side toggle
+    • Multiband count selector
+    • Spectrum analyzer display area
+    • Gain reduction history display area
+    • MIDI learn right-click context menu
+    • EBU R128 LUFS readout (momentary/short-term/integrated)
+  ────────────────────────────────────────────────────────────────────────
+  v3: 3-page luxury UI, module accents, premium macro knobs
 */
 #pragma once
 
@@ -13,17 +22,15 @@
 #include "BTZTheme.h"
 #include <JuceHeader.h>
 
-// ═══════════════════════════════════════════════════════════════════════════
-// BTZLookAndFeel — Single rendering authority for all BTZ controls
-// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
+// BTZLookAndFeel — rendering authority for all BTZ controls
+// ═══════════════════════════════════════════════════════════════════════
 class BTZLookAndFeel : public juce::LookAndFeel_V4 {
 public:
     BTZLookAndFeel();
 
-    // ── Current module accent (set per page) ──
     BTZColours::Module currentModule = BTZColours::Module::BTZ;
 
-    // ── Standard JUCE overrides ──
     void drawRotarySlider(juce::Graphics&, int x, int y, int w, int h,
                           float sliderPos, float startAngle, float endAngle,
                           juce::Slider&) override;
@@ -52,12 +59,10 @@ public:
                            const juce::String& text, const juce::String& shortcut,
                            const juce::Drawable*, const juce::Colour*) override;
 
-    // ── Premium MacroKnob draw (called from paint for macro knobs) ──
     static void drawMacroKnob(juce::Graphics& g, juce::Rectangle<float> area,
                               float normValue, BTZColours::Module module,
                               bool isHovered = false);
 
-    // ── BTZ custom draw methods ──
     static void drawBTZPanelBackground(juce::Graphics& g, juce::Rectangle<float> area);
     static void drawBTZSectionHeader(juce::Graphics& g, juce::Rectangle<float> area,
                                      const juce::String& text, BTZColours::Module module);
@@ -68,9 +73,9 @@ public:
                            BTZColours::Module module = BTZColours::Module::BTZ);
 };
 
-// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
 // BTZAudioProcessorEditor
-// ═══════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════
 class BTZAudioProcessorEditor : public juce::AudioProcessorEditor, private juce::Timer {
 public:
     explicit BTZAudioProcessorEditor(BTZAudioProcessor&);
@@ -94,6 +99,8 @@ private:
     void paintMainPage(juce::Graphics& g, juce::Rectangle<float> content);
     void paintSparkPage(juce::Graphics& g, juce::Rectangle<float> content);
     void paintAdvancedPage(juce::Graphics& g, juce::Rectangle<float> content);
+    void paintSpectrumArea(juce::Graphics& g, juce::Rectangle<float> area);
+    void paintGRHistory(juce::Graphics& g, juce::Rectangle<float> area);
 
     // ── Layout helpers ──
     void layoutMainPage(juce::Rectangle<int> content);
@@ -101,13 +108,28 @@ private:
     void layoutAdvancedPage(juce::Rectangle<int> content);
     void hideAllControls();
 
+    // ── v9: MIDI learn context menu ──
+    void showMIDILearnMenu(juce::Slider& slider, const juce::String& paramID);
+
     BTZAudioProcessor& proc;
     BTZLookAndFeel lookAndFeel;
     int currentPage = 0;
 
+    // v9: Resizable UI
+    juce::ComponentBoundsConstrainer constrainer;
+    std::unique_ptr<juce::ResizableCornerComponent> resizer;
+
     // ── Tab navigation ──
     juce::TextButton tabMain { "MAIN" }, tabSpark { "SPARK" }, tabAdvanced { "ADVANCED" };
     juce::ToggleButton btnBypass { "BYPASS" };
+
+    // ── v9: Toolbar buttons ──
+    juce::TextButton btnUndo { "UNDO" }, btnRedo { "REDO" };
+    juce::TextButton btnAB { "A" };
+    juce::TextButton btnCopyAB { "A>B" };
+    juce::TextButton btnPresetPrev { "<" }, btnPresetNext { ">" };
+    juce::TextButton btnPresetSave { "SAVE" };
+    juce::Label lblPresetName;
 
     // ── Core knobs (Main page) ──
     juce::Slider kPunch, kWarmth, kBoom, kGlue, kAir, kWidth;
@@ -116,7 +138,7 @@ private:
     juce::Label lPunch, lWarmth, lBoom, lGlue, lAir, lWidth;
     juce::Label lDensity, lMotion, lEra, lDrive, lMix, lMaster;
 
-    // ── Macro knobs (Main page — 110px premium rendering) ──
+    // ── Macro knobs (Main page) ──
     juce::Slider kMacro0, kMacro1, kMacro2, kMacro3;
     juce::Label lMacro0, lMacro1, lMacro2, lMacro3;
 
@@ -132,9 +154,16 @@ private:
     juce::Slider kIntensity;
     juce::Label lIntensity;
 
-    // ── Advanced page: Glue SC HPF toggle ──
+    // ── Advanced page controls ──
     juce::ComboBox cGlueScHpf;
     juce::Label lGlueScHpf;
+
+    // ── v9: New controls ──
+    juce::ComboBox cSatModel;
+    juce::Label lSatModel;
+    juce::ToggleButton btnMidSide { "M/S" };
+    juce::ComboBox cMultiband;
+    juce::Label lMultiband;
 
     // ── Attachments ──
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -148,11 +177,15 @@ private:
     std::unique_ptr<SliderAttachment> aMacro0, aMacro1, aMacro2, aMacro3;
     std::unique_ptr<ButtonAttachment> aBypass;
     std::unique_ptr<ComboAttachment>  aGlueScHpf;
+    std::unique_ptr<ComboAttachment>  aSatModel;
+    std::unique_ptr<ButtonAttachment> aMidSide;
+    std::unique_ptr<ComboAttachment>  aMultiband;
 
     // ── Meter display state ──
     float inPeakL = -100.0f, inPeakR = -100.0f, inRmsL = -100.0f, inRmsR = -100.0f;
     float outPeakL = -100.0f, outPeakR = -100.0f, outRmsL = -100.0f, outRmsR = -100.0f;
-    float sparkGR = 0.0f, lufs = -24.0f, corr = 1.0f;
+    float sparkGR = 0.0f, lufs = -24.0f, lufsShort = -24.0f, lufsInt = -24.0f;
+    float corr = 1.0f;
     float inClip = 0.0f, outClip = 0.0f;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BTZAudioProcessorEditor)
