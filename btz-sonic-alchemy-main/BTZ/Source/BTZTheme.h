@@ -380,30 +380,30 @@ namespace Font {
     inline juce::String bodyFamily()    { return BTZTokens::Font::ui; }
     inline juce::String monoFamily()    { return BTZTokens::Font::mono; }
 
-    // Wes Anderson typography: geometric sans, wide tracking, all-caps labels
+    // Modern sleek typography: tight, clean, minimal
     inline juce::Font title()         { return juce::Font(displayFamily(), BTZTokens::Font::Size::sizeLg, juce::Font::bold); }
-    inline juce::Font subtitle()      { return juce::Font(displayFamily(), BTZTokens::Font::Size::sizeMd, juce::Font::bold); }
-    inline juce::Font sectionHeader() { return juce::Font(displayFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::bold); }
-    inline juce::Font label()         { return juce::Font(displayFamily(), BTZTokens::Font::Size::sizeXs, juce::Font::plain); }
+    inline juce::Font subtitle()      { return juce::Font(bodyFamily(), BTZTokens::Font::Size::sizeMd, juce::Font::plain); }
+    inline juce::Font sectionHeader() { return juce::Font(bodyFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::bold); }
+    inline juce::Font label()         { return juce::Font(bodyFamily(), BTZTokens::Font::Size::sizeXs, juce::Font::plain); }
     inline juce::Font value()         { return juce::Font(monoFamily(), BTZTokens::Font::Size::sizeXs, juce::Font::plain); }
     inline juce::Font tooltip()       { return juce::Font(bodyFamily(), BTZTokens::Font::Size::size2xs, juce::Font::plain); }
-    inline juce::Font tab()           { return juce::Font(displayFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::bold); }
+    inline juce::Font tab()           { return juce::Font(bodyFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::bold); }
     inline juce::Font meter()         { return juce::Font(monoFamily(), BTZTokens::Font::Size::size3xs, juce::Font::plain); }
     inline juce::Font micro()         { return juce::Font(bodyFamily(), 7.0f, juce::Font::plain); }
-    inline juce::Font brand()         { return juce::Font(serifFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::plain); }
-    inline juce::Font macroLabel()    { return juce::Font(displayFamily(), BTZTokens::Font::Size::sizeLg, juce::Font::bold); }
+    inline juce::Font brand()         { return juce::Font(displayFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::bold); }
+    inline juce::Font macroLabel()    { return juce::Font(displayFamily(), BTZTokens::Font::Size::sizeMd, juce::Font::bold); }
     inline juce::Font macroValue()    { return juce::Font(monoFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::plain); }
     inline juce::Font simpleValue()   { return juce::Font(monoFamily(), BTZTokens::Font::Size::sizeMd, juce::Font::bold); }
-    inline juce::Font simpleLabel()   { return juce::Font(displayFamily(), BTZTokens::Font::Size::sizeBase, juce::Font::bold); }
+    inline juce::Font simpleLabel()   { return juce::Font(bodyFamily(), BTZTokens::Font::Size::sizeBase, juce::Font::bold); }
 }
 
 namespace Geometry {
-    // Wes Anderson: almost square corners — vintage hardware
-    constexpr float outerRadius   = 0.0f;
-    constexpr float panelRadius   = BTZTokens::Radius::md;  // 4px — subtle
-    constexpr float controlRadius = BTZTokens::Radius::sm;  // 2px — barely there
-    constexpr float pillRadius    = 12.0f;
-    constexpr float glassRadius   = BTZTokens::Radius::md;
+    // Modern: smooth, generous rounding
+    constexpr float outerRadius   = BTZTokens::Radius::lg;  // 12px outer
+    constexpr float panelRadius   = BTZTokens::Radius::md;  // 8px panels
+    constexpr float controlRadius = BTZTokens::Radius::sm;  // 4px controls
+    constexpr float pillRadius    = 20.0f;
+    constexpr float glassRadius   = BTZTokens::Radius::md;  // 8px glass
 
     constexpr int knobLarge       = 74;
     constexpr int knobMedium      = 60;
@@ -450,18 +450,18 @@ namespace Effects {
         juce::Point<int> offset;
     };
 
-    // Wes Anderson: minimal shadows — flat is preferred, but subtle depth for knobs
-    inline ShadowSpec panelShadow()   { return { juce::Colour(0x10000000), 8, { 0, 2 } }; }
-    inline ShadowSpec controlShadow() { return { juce::Colour(0x12000000), 4, { 0, 1 } }; }
-    inline ShadowSpec innerShadow()   { return { juce::Colour(0x18000000), 2, { 0, 1 } }; }
-    inline ShadowSpec glassShadow()   { return { juce::Colour(0x10000000), 6, { 0, 2 } }; }
+    // Modern: soft, diffused shadows for contemporary depth
+    inline ShadowSpec panelShadow()   { return { juce::Colour(0x0C000000), 12, { 0, 4 } }; }
+    inline ShadowSpec controlShadow() { return { juce::Colour(0x0E000000), 6, { 0, 2 } }; }
+    inline ShadowSpec innerShadow()   { return { juce::Colour(0x14000000), 3, { 0, 1 } }; }
+    inline ShadowSpec glassShadow()   { return { juce::Colour(0x0A000000), 10, { 0, 4 } }; }
 
     inline juce::Colour knobGlow()      { return BTZColours::oak.withAlpha(BTZColours::oakSoftGlowAlpha); }
     inline juce::Colour knobHoverGlow() { return BTZColours::oak.withAlpha(BTZColours::hoverGlowAlpha); }
     inline juce::Colour knobActiveGlow(){ return BTZColours::oak.withAlpha(BTZColours::activeGlowAlpha); }
     inline juce::Colour meterGlow()     { return BTZColours::sage.withAlpha(0.10f); }
 
-    constexpr float meterCornerRadius = 1.5f;  // almost square
+    constexpr float meterCornerRadius = 3.0f;  // modern rounded
     constexpr float meterSegmentGap   = 1.0f;
     constexpr int   meterSegmentCount = 24;
 }
@@ -471,15 +471,15 @@ namespace KnobStyle {
     constexpr float bodyRadiusRatio   = 0.76f;
     constexpr float indicatorStart    = 0.24f;
     constexpr float indicatorEnd      = 0.60f;
-    constexpr float tickDotRadius     = 1.8f;   // smaller, more precise
+    constexpr float tickDotRadius     = 2.0f;   // modern, clean
     constexpr int   tickDotCount      = BTZTokens::Dim::tickDotCount;
     constexpr float startAngle        = 1.25f;  // * pi
     constexpr float endAngle          = 2.75f;  // * pi
 
-    // Vintage feel: flatter, less 3D
-    constexpr float innerShadowOpacity = 0.08f;
-    constexpr float rimLightOpacity    = 0.20f;
-    constexpr float convexGradientBias = 0.4f;
+    // Modern: smooth 3D with soft gradients
+    constexpr float innerShadowOpacity = 0.12f;
+    constexpr float rimLightOpacity    = 0.30f;
+    constexpr float convexGradientBias = 0.55f;
 }
 
 namespace ComponentID {
@@ -505,31 +505,31 @@ inline void drawDropShadow(juce::Graphics& g, juce::Rectangle<int> area, const E
     shadow.drawForRectangle(g, area);
 }
 
-// Draw a Wes Anderson-style framed panel: thin precise border, flat fill, minimal shadow
+// Draw a modern panel: soft shadow, warm fill, subtle border
 inline void drawFramedPanel(juce::Graphics& g, juce::Rectangle<float> area, float cornerRadius = Geometry::panelRadius) {
-    // Very subtle shadow
-    juce::DropShadow shadow(juce::Colour(0x10000000), 6, { 0, 2 });
+    // Soft diffused shadow
+    juce::DropShadow shadow(juce::Colour(0x0C000000), 12, { 0, 4 });
     shadow.drawForRectangle(g, area.toNearestInt());
 
-    // Flat cream fill
+    // Warm panel fill
     g.setColour(BTZColours::panel);
     g.fillRoundedRectangle(area, cornerRadius);
 
-    // Deliberate thin border — the Wes Anderson signature
+    // Subtle border — barely visible, modern restraint
     g.setColour(BTZColours::hairline);
     g.drawRoundedRectangle(area, cornerRadius, BTZTokens::Border::frame);
 }
 
-// Draw a frosted glass panel (Wes Anderson: more opaque, warmer)
+// Draw a frosted glass panel — modern, smooth, warm
 inline void drawGlassPanel(juce::Graphics& g, juce::Rectangle<float> area, float cornerRadius = Geometry::glassRadius) {
-    juce::DropShadow shadow(juce::Colour(0x10000000), 6, { 0, 2 });
+    juce::DropShadow shadow(juce::Colour(0x0A000000), 10, { 0, 4 });
     shadow.drawForRectangle(g, area.toNearestInt());
 
     g.setColour(BTZColours::glassMedium);
     g.fillRoundedRectangle(area, cornerRadius);
 
-    // Thin warm border
-    g.setColour(BTZColours::hairline.withAlpha(0.5f));
+    // Subtle warm border
+    g.setColour(BTZColours::hairline.withAlpha(0.4f));
     g.drawRoundedRectangle(area, cornerRadius, BTZTokens::Border::hairline);
 }
 
@@ -544,23 +544,22 @@ inline void drawRadialBackground(juce::Graphics& g, juce::Rectangle<int> area) {
     g.fillRect(area);
 }
 
-// Draw a Wes Anderson ornamental section rule (thin line with small gap)
-inline void drawSectionRule(juce::Graphics& g, float x, float y, float width, bool thick = false) {
-    g.setColour(thick ? BTZColours::hairline : BTZColours::rule);
-    float h = thick ? (float)BTZTokens::Dim::ruleThick : (float)BTZTokens::Dim::ruleThin;
-    g.fillRect(x, y, width, h);
+// Draw a minimal section divider — modern, barely visible
+inline void drawSectionRule(juce::Graphics& g, float x, float y, float width, bool /*thick*/ = false) {
+    g.setColour(BTZColours::rule);
+    g.fillRect(x, y, width, 1.0f);
 }
 
-// Draw subtle paper texture (very faint warm dots — aged paper feel)
+// Draw very subtle noise texture — modern grain, barely perceptible
 inline void drawNoiseTexture(juce::Graphics& g, juce::Rectangle<int> area, uint32_t seed = 42) {
-    g.setColour(juce::Colour(0x04000000));
+    g.setColour(juce::Colour(0x03000000));
     uint32_t s = seed;
-    for (int i = 0; i < 100; ++i) {
+    for (int i = 0; i < 60; ++i) {
         s = s * 1664525u + 1013904223u;
         float x = (float)(s % (uint32_t)area.getWidth());
         s = s * 1664525u + 1013904223u;
         float y = (float)(s % (uint32_t)area.getHeight());
-        g.fillEllipse(x, y, 1.0f, 1.0f);
+        g.fillEllipse(x, y, 0.8f, 0.8f);
     }
 }
 
