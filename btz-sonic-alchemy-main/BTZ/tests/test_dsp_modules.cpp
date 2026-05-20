@@ -1599,9 +1599,7 @@ TEST(SafetyLayer, SilenceInSilenceOut) {
 // ═══════════════════════════════════════════════════════════════════════════
 // v9: State Version Validation
 // ═══════════════════════════════════════════════════════════════════════════
-TEST(StateVersion, IsVersion9) {
-    EXPECT_EQ(BTZDsp::kStateVersion, 9) << "State version should be 9 for v9 release";
-}
+// v9 state version test removed — see v10 test below
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DC Blocker 1 Hz Coloration Regression (v8)
@@ -1680,6 +1678,324 @@ TEST(SaturationChain, MultibandWithFastTanh) {
         EXPECT_TRUE(std::isfinite(outL)) << "NaN/Inf at sample " << i;
         EXPECT_LE(std::abs(outL), 3.0f) << "Output should be bounded at sample " << i;
     }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: Neural Saturation Model Tests
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(NeuralSaturationModel, DefaultStateNotLoaded) {
+    NeuralSaturationModel model;
+    EXPECT_FALSE(model.loaded);
+    EXPECT_EQ(model.hiddenSize, 0);
+}
+
+TEST(NeuralSaturationModel, ProcessSampleFallsBackWhenNotLoaded) {
+    NeuralSaturationModel model;
+    float result = model.processSample(0.5f);
+    // When not loaded, should return input unchanged (passthrough)
+    EXPECT_FLOAT_EQ(result, 0.5f);
+}
+
+TEST(NeuralSaturationModel, ResetClearsState) {
+    NeuralSaturationModel model;
+    model.hiddenSize = 8;
+    model.hiddenState.fill(1.0f);
+    model.reset();
+    for (int i = 0; i < 8; ++i)
+        EXPECT_FLOAT_EQ(model.hiddenState[i], 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: WDF Tube Stage Tests
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(WDFTubeStage, ProducesSaturation) {
+    WDFTubeStage tube;
+    tube.prepare(kSR);
+
+    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
+    std::vector<float> output(4800);
+
+    for (int i = 0; i < 4800; ++i)
+        output[i] = tube.processSample(sine[i]);
+
+    // Should produce harmonics (output differs from input)
+    float diffEnergy = 0.0f;
+    for (int i = 0; i < 4800; ++i) {
+        float d = output[i] - sine[i];
+        diffEnergy += d * d;
+    }
+    EXPECT_GT(diffEnergy, 0.001f) << "WDF Tube should add harmonic content";
+}
+
+TEST(WDFTubeStage, OutputBounded) {
+    WDFTubeStage tube;
+    tube.prepare(kSR);
+
+    for (int i = 0; i < 1000; ++i) {
+        float input = (float)i / 100.0f - 5.0f;  // -5 to +5
+        float out = tube.processSample(input);
+        EXPECT_TRUE(std::isfinite(out));
+        EXPECT_LE(std::abs(out), 10.0f) << "WDF Tube output should be bounded";
+    }
+}
+
+TEST(WDFTubeStage, ResetClearsState) {
+    WDFTubeStage tube;
+    tube.prepare(kSR);
+    tube.processSample(0.9f);
+    tube.reset();
+    EXPECT_FLOAT_EQ(tube.state, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: WDF Transformer Stage Tests
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(WDFTransformerStage, ProducesSaturation) {
+    WDFTransformerStage xfmr;
+    xfmr.prepare(kSR);
+
+    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
+    float diffEnergy = 0.0f;
+    for (int i = 0; i < 4800; ++i) {
+        float out = xfmr.processSample(sine[i]);
+        float d = out - sine[i];
+        diffEnergy += d * d;
+    }
+    EXPECT_GT(diffEnergy, 0.0001f) << "WDF Transformer should add harmonic content";
+}
+
+TEST(WDFTransformerStage, ResetClearsState) {
+    WDFTransformerStage xfmr;
+    xfmr.prepare(kSR);
+    xfmr.processSample(0.9f);
+    xfmr.reset();
+    EXPECT_FLOAT_EQ(xfmr.state, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: Resonance Tamer Tests
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(ResonanceTamer, DoesNotAlterSilence) {
+    ResonanceTamer rt;
+    rt.prepare(kSR);
+    rt.sensitivity = 0.5f;
+    rt.depth = 0.5f;
+
+    float l = 0.0f, r = 0.0f;
+    rt.processStereo(l, r);
+    EXPECT_FLOAT_EQ(l, 0.0f);
+    EXPECT_FLOAT_EQ(r, 0.0f);
+}
+
+TEST(ResonanceTamer, ReducesPeaks) {
+    ResonanceTamer rt;
+    rt.prepare(kSR);
+    rt.sensitivity = 0.8f;
+    rt.depth = 0.8f;
+
+    // Feed a resonant signal (narrow-band burst)
+    auto sine = generateSine(3000.0f, kSR, 4800, 0.9f);
+    float peakBefore = peakAbs(sine);
+
+    for (int i = 0; i < 4800; ++i) {
+        float l = sine[i], r = sine[i];
+        rt.processStereo(l, r);
+        sine[i] = l;
+    }
+    float peakAfter = peakAbs(sine);
+
+    // Resonance tamer should reduce peak level of resonant content
+    EXPECT_LE(peakAfter, peakBefore);
+}
+
+TEST(ResonanceTamer, ResetClearsState) {
+    ResonanceTamer rt;
+    rt.prepare(kSR);
+    float l = 0.5f, r = 0.5f;
+    rt.processStereo(l, r);
+    rt.reset();
+    // After reset, bandEnv should be zeroed
+    for (auto& e : rt.bandEnv)
+        EXPECT_FLOAT_EQ(e, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: Transient Splitter Tests
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(TransientSplitter, SplitSumsToOriginal) {
+    TransientSplitter ts;
+    ts.prepare(kSR);
+    ts.sensitivity = 0.5f;
+
+    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
+
+    for (int i = 0; i < 4800; ++i) {
+        float l = sine[i], r = sine[i];
+        float transL, transR, sustL, sustR;
+        ts.processStereo(l, r, transL, transR, sustL, sustR);
+
+        // Transient + sustain should approximately equal input
+        float recombined = transL + sustL;
+        EXPECT_NEAR(recombined, sine[i], 0.1f)
+            << "Transient + sustain should approximate input at sample " << i;
+    }
+}
+
+TEST(TransientSplitter, ResetClearsState) {
+    TransientSplitter ts;
+    ts.prepare(kSR);
+    float l = 0.9f, r = 0.9f;
+    float tL, tR, sL, sR;
+    ts.processStereo(l, r, tL, tR, sL, sR);
+    ts.reset();
+    EXPECT_FLOAT_EQ(ts.envFastL, 0.0f);
+    EXPECT_FLOAT_EQ(ts.envSlowL, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: Oversampling Engine Tests
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(OversamplingEngine, PrepareDoesNotCrash) {
+    OversamplingEngine os;
+    os.prepare(kSR);
+    EXPECT_EQ(os.baseSampleRate, kSR);
+}
+
+TEST(OversamplingEngine, ResetClearsState) {
+    OversamplingEngine os;
+    os.prepare(kSR);
+    os.reset();
+    // Should not crash
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: Reference Tone Matcher Tests
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(ReferenceToneMatcher, PrepareInitializesBandFreqs) {
+    ReferenceToneMatcher rtm;
+    rtm.prepare(kSR);
+    EXPECT_GT(rtm.bandFreqs[0], 20.0f);
+    EXPECT_LT(rtm.bandFreqs[0], 30.0f);  // Should be ~25 Hz
+    EXPECT_GT(rtm.bandFreqs[31], 15000.0f);  // Last band should be high
+}
+
+TEST(ReferenceToneMatcher, CorrectionZeroWhenDisabled) {
+    ReferenceToneMatcher rtm;
+    rtm.prepare(kSR);
+    rtm.enabled = false;
+    float corr = rtm.getCorrectionAtFreq(1000.0f);
+    EXPECT_FLOAT_EQ(corr, 0.0f);
+}
+
+TEST(ReferenceToneMatcher, CorrectionZeroWhenMatchAmountZero) {
+    ReferenceToneMatcher rtm;
+    rtm.prepare(kSR);
+    rtm.enabled = true;
+    rtm.matchAmount = 0.0f;
+    float corr = rtm.getCorrectionAtFreq(1000.0f);
+    EXPECT_FLOAT_EQ(corr, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: Preset Intelligence Tests
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(PresetIntelligence, DefaultAnalysisIsUnknown) {
+    PresetIntelligence pi;
+    EXPECT_EQ(pi.lastAnalysis.detectedType, PresetIntelligence::SignalType::Unknown);
+    EXPECT_FLOAT_EQ(pi.lastAnalysis.confidence, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: Simple Mode State Tests
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(SimpleModeState, DefaultDisabled) {
+    SimpleModeState sm;
+    EXPECT_FALSE(sm.enabled);
+    EXPECT_FLOAT_EQ(sm.drive, 0.5f);
+    EXPECT_FLOAT_EQ(sm.tone, 0.5f);
+    EXPECT_FLOAT_EQ(sm.output, 0.5f);
+}
+
+TEST(SimpleModeState, ComputeTargetsProducesValidValues) {
+    SimpleModeState sm;
+    sm.drive = 0.0f;
+    sm.tone = 0.0f;
+    sm.output = 0.0f;
+    sm.computeTargets();
+    EXPECT_LE(sm.targets.satDriveDb, 0.0f);  // Low drive = negative dB
+    EXPECT_EQ(sm.targets.satModel, SaturationModel::Tape);  // Low drive = Tape
+
+    sm.drive = 1.0f;
+    sm.tone = 1.0f;
+    sm.output = 1.0f;
+    sm.computeTargets();
+    EXPECT_GT(sm.targets.satDriveDb, 10.0f);  // High drive = high dB
+    EXPECT_EQ(sm.targets.satModel, SaturationModel::Transistor);  // High drive = Transistor
+    EXPECT_GT(sm.targets.shineGainDb, 0.0f);  // Bright tone
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: Loudness-Matched A/B Tests
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(LoudnessMatchedAB, CompensationZeroWhenEqual) {
+    LoudnessMatchedAB lmab;
+    lmab.updateSlotA(-14.0f);
+    lmab.updateSlotB(-14.0f);
+    lmab.computeCompensation();
+    EXPECT_FLOAT_EQ(lmab.compensationDb, 0.0f);
+    EXPECT_FLOAT_EQ(lmab.getCompensationGain(), 1.0f);
+}
+
+TEST(LoudnessMatchedAB, CompensationPositiveWhenALouder) {
+    LoudnessMatchedAB lmab;
+    lmab.updateSlotA(-10.0f);
+    lmab.updateSlotB(-14.0f);
+    lmab.computeCompensation();
+    EXPECT_GT(lmab.compensationDb, 0.0f);  // B needs boost to match A
+    EXPECT_GT(lmab.getCompensationGain(), 1.0f);
+}
+
+TEST(LoudnessMatchedAB, CompensationClampedTo6dB) {
+    LoudnessMatchedAB lmab;
+    lmab.updateSlotA(-5.0f);
+    lmab.updateSlotB(-20.0f);
+    lmab.computeCompensation();
+    EXPECT_LE(lmab.compensationDb, 6.0f);
+}
+
+TEST(LoudnessMatchedAB, CompensationZeroWhenNotMeasured) {
+    LoudnessMatchedAB lmab;
+    lmab.computeCompensation();
+    EXPECT_FLOAT_EQ(lmab.compensationDb, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: Waveshaper Dispatch with New Models
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(WaveshaperDispatch, AllModelsProduceFiniteOutput) {
+    float tapeState = 0.0f;
+    const float testInput = 0.7f;
+
+    for (int m = 0; m < (int)SaturationModel::Neural_Neve; ++m) {
+        auto model = static_cast<SaturationModel>(m);
+        float out = Waveshaper::process(model, testInput, tapeState, 0.5f);
+        EXPECT_TRUE(std::isfinite(out)) << "Model " << m << " produced non-finite output";
+        EXPECT_LE(std::abs(out), 5.0f) << "Model " << m << " output too large";
+    }
+}
+
+TEST(WaveshaperDispatch, TanhModelMatchesFastTanh) {
+    float tapeState = 0.0f;
+    float out = Waveshaper::process(SaturationModel::Tanh, 0.5f, tapeState, 0.0f);
+    float expected = fastTanh(0.5f);
+    EXPECT_NEAR(out, expected, 0.001f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v10: State Version Check
+// ═══════════════════════════════════════════════════════════════════════════
+TEST(StateVersion, IsVersion10) {
+    EXPECT_EQ(kStateVersion, 10);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

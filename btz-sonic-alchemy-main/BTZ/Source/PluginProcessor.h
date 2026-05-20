@@ -1,23 +1,21 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.h  v9
+  Box Tone Zone (BTZ) — PluginProcessor.h  v10
   ────────────────────────────────────────────────────────────────────────
-  v9 (industry-gap closure):
-    • 5 saturation models (Tanh, Tube, Tape, Transistor, Transformer)
-    • Configurable multiband engine (1–6 bands)
-    • Mid/Side processing mode
-    • Undo/Redo state stack (64 levels)
-    • A/B comparison slots
-    • Preset system (save/load/browse)
-    • MIDI learn CC mapping
-    • LFO modulation sources
-    • EBU R128 loudness metering (momentary/short-term/integrated)
-    • Spectrum analyzer ring buffer
-    • Gain reduction history graph
-    • 8x/16x oversampling options
-    • State version bumped to 9
+  v10 (industry-transcending features):
+    • RTNeural learned saturation models (Neural_Neve, Neural_API, Neural_SSL, Neural_Custom)
+    • WDF circuit models (WDF_Tube, WDF_Transformer)
+    • Dynamic Resonance Taming (pre-saturation spectral peak suppression)
+    • Transient-Aware Saturation (envelope-split transient/sustain processing)
+    • Reference Tone Matching (spectral comparison + auto-EQ)
+    • SIMD Oversampling Engine (2x/4x/8x FIR antialiasing)
+    • Simple Mode (3-knob interface: Drive, Tone, Output)
+    • Preset Intelligence (input analysis + contextual preset suggestion)
+    • Loudness-Matched A/B (auto-compensated comparison)
+    • All v9 features retained: 5 original sat models, multiband, M/S, LFO,
+      EBU R128, undo/redo, A/B, MIDI learn, spectrum, GR history
   ────────────────────────────────────────────────────────────────────────
+  v9: 5 sat models, multiband, M/S, LFO, EBU R128, undo/redo, A/B, MIDI learn
   v8: removed ADAA, 1 Hz DC blocker, tightened TruePeakLimiter
-  v7: BypassCrossfader, full resetAll(), state migration v4–v9
 */
 #pragma once
 
@@ -66,7 +64,7 @@ public:
     bool hasEditor() const override { return true; }
 
     const juce::String getName() const override { return "Box Tone Zone (BTZ)"; }
-    bool acceptsMidi() const override { return true; }   // v9: MIDI learn
+    bool acceptsMidi() const override { return true; }
     bool producesMidi() const override { return false; }
     double getTailLengthSeconds() const override { return 0.0; }
 
@@ -82,21 +80,21 @@ public:
     juce::AudioProcessorValueTreeState& getAPVTS() { return apvts; }
     BTZMeterState& getMeters() { return meters; }
 
-    // ── v9: Undo/Redo ──
+    // ── Undo/Redo ──
     void pushUndoState(const juce::String& description = {});
     bool canUndo() const;
     bool canRedo() const;
     void undo();
     void redo();
 
-    // ── v9: A/B Comparison ──
+    // ── A/B Comparison ──
     void storeToSlotA();
     void storeToSlotB();
     void toggleAB();
     bool isSlotA() const;
     void copyAtoB();
 
-    // ── v9: Preset System ──
+    // ── Preset System ──
     bool loadPreset(const juce::File& file);
     bool savePreset(const juce::File& file, const juce::String& name,
                     const juce::String& category = {});
@@ -105,12 +103,31 @@ public:
     int getCurrentPresetIndex() const { return currentPresetIndex; }
     juce::String getCurrentPresetName() const { return currentPresetName; }
 
-    // ── v9: MIDI Learn ──
+    // ── MIDI Learn ──
     BTZDsp::MIDILearnState& getMIDILearn() { return midiLearn; }
 
-    // ── v9: Spectrum + GR History (UI reads these) ──
+    // ── Spectrum + GR History (UI reads these) ──
     BTZDsp::SpectrumBuffer& getSpectrumBuffer() { return spectrumBuffer; }
     BTZDsp::GainReductionHistory& getGRHistory() { return grHistory; }
+
+    // ── v10: Neural Model Loading ──
+    bool loadNeuralModel(BTZDsp::SaturationModel slot, const juce::File& jsonFile);
+    bool isNeuralModelLoaded(BTZDsp::SaturationModel slot) const;
+
+    // ── v10: Reference Tone Matching ──
+    BTZDsp::ReferenceToneMatcher& getToneMatcher() { return toneMatcher; }
+    void captureReferenceFromBuffer(const juce::AudioBuffer<float>& refBuffer, double refSR);
+
+    // ── v10: Preset Intelligence ──
+    BTZDsp::PresetIntelligence& getPresetIntelligence() { return presetIntelligence; }
+    void runPresetIntelligence();
+
+    // ── v10: Simple Mode ──
+    BTZDsp::SimpleModeState& getSimpleMode() { return simpleMode; }
+    void setSimpleModeEnabled(bool enabled);
+
+    // ── v10: Loudness-Matched A/B ──
+    BTZDsp::LoudnessMatchedAB& getLoudnessMatchedAB() { return loudnessMatchedAB; }
 
 private:
     // ── Parameter layout ──
@@ -125,52 +142,68 @@ private:
     BTZDsp::SmoothParam sDensity, sMotion, sEra, sMix, sDrive, sMaster;
     BTZDsp::SmoothParam sShine, sShineMix, sShineFreq, sShineQ;
     BTZDsp::SmoothParam sMacro0, sMacro1, sMacro2, sMacro3;
+    // v10: New parameter smoothers
+    BTZDsp::SmoothParam sResonanceSens, sResonanceDepth;
+    BTZDsp::SmoothParam sTransientSens, sTransientMix;
+    BTZDsp::SmoothParam sToneMatchAmount;
 
-    // ── DSP modules ──
+    // ── DSP modules (core) ──
     BTZDsp::SafetyLayer safetyPre, safetyPost;
     BTZDsp::EnvFollower peakEnvL, peakEnvR, rmsEnvL, rmsEnvR;
     BTZDsp::EnvFollower glueEnv;
     BTZDsp::SidechainHPF glueScHpf;
     BTZDsp::GlueCompressor glueComp;
-    BTZDsp::LinkwitzRileyCrossover crossover;  // Legacy single crossover for Boom
+    BTZDsp::LinkwitzRileyCrossover crossover;
     BTZDsp::TruePeakLimiter truePeakLimiter;
     BTZDsp::ShineProcessor shineProcessor;
     BTZDsp::AutoGainSmoother autoGainSmoother;
     BTZDsp::MacroInterpreter macroInterpreter;
     BTZDsp::BypassCrossfader bypassCrossfader;
 
-    // ── v9: New DSP modules ──
+    // ── v9: DSP modules ──
     BTZDsp::MultibandEngine multibandEngine;
     BTZDsp::MidSideEncoder midSideEncoder;
-    BTZDsp::LFO lfoModSources[4];  // Up to 4 LFO sources
+    BTZDsp::LFO lfoModSources[4];
     BTZDsp::LoudnessMeter loudnessMeter;
     BTZDsp::SpectrumBuffer spectrumBuffer;
     BTZDsp::GainReductionHistory grHistory;
 
-    // ── v9: State management ──
+    // ── v10: New DSP modules ──
+    BTZDsp::NeuralSaturationModel neuralNeve;
+    BTZDsp::NeuralSaturationModel neuralAPI;
+    BTZDsp::NeuralSaturationModel neuralSSL;
+    BTZDsp::NeuralSaturationModel neuralCustom;
+    BTZDsp::WDFTubeStage wdfTube;
+    BTZDsp::WDFTransformerStage wdfTransformer;
+    BTZDsp::ResonanceTamer resonanceTamer;
+    BTZDsp::TransientSplitter transientSplitter;
+    BTZDsp::OversamplingEngine oversamplingEngine;
+    BTZDsp::ReferenceToneMatcher toneMatcher;
+    BTZDsp::PresetIntelligence presetIntelligence;
+    BTZDsp::SimpleModeState simpleMode;
+    BTZDsp::LoudnessMatchedAB loudnessMatchedAB;
+    BTZDsp::MeterBallistics inputMeterBallistics;
+    BTZDsp::MeterBallistics outputMeterBallistics;
+
+    // ── State management ──
     BTZDsp::UndoStack undoStack;
     BTZDsp::ABState abState;
     BTZDsp::MIDILearnState midiLearn;
 
-    // ── v9: Preset state ──
+    // ── Preset state ──
     int currentPresetIndex = -1;
     juce::String currentPresetName;
 
     // ── DSP state ──
     float hpStateL = 0.0f, hpStateR = 0.0f;
     float sideLowState = 0.0f, sideLowCoeff = 0.0f;
-
     float cachedDriveGain = 1.0f;
     float lastDriveDb = 0.0f;
     float lastCrestRatio = 3.0f;
-    float motionPhase = 0.0f;  // v9: Motion LFO phase accumulator
-
+    float motionPhase = 0.0f;
     float macroValues[BTZDsp::MacroInterpreter::kNumMacros] = {};
-
     float lastGlueScHpfFreq = 60.0f;
     double glueScHpfSampleRate = 44100.0;
-
-    // v9: Per-channel tape hysteresis state (for fullband mode)
     float tapeStateL = 0.0f, tapeStateR = 0.0f;
 
     // Silence detection
@@ -181,7 +214,6 @@ private:
     bool prepared = false;
     double lastPreparedSR = 0.0;
     int lastPreparedBlockSize = 0;
-
     double currentSampleRate = 44100.0;
     int maxPreparedBlockSize = 0;
     int currentBlockSize = 512;
@@ -205,6 +237,7 @@ private:
     void processLinearPost(float* dataL, float* dataR, int numSamples);
 
     void processMIDILearn(juce::MidiBuffer& midi);
+    void processNeuralSaturation(float& l, float& r, BTZDsp::SaturationModel model);
 
     void updateMeters(const float* inL, const float* inR,
                       const float* outL, const float* outR,
