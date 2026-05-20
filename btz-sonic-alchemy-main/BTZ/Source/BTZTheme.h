@@ -1,529 +1,311 @@
 /*
-  Box Tone Zone (BTZ) — BTZTheme.h  v9
-  ────────────────────────────────────────────────────────────────────────
-  v9 (Modern Light Premium):
-    • Light warm canvas — cream/beige, airy, contemporary
-    • Sage green + warm orange as primary accents (original DNA)
-    • Modern execution: tight radius (3-4px), dense typography, precise
-    • NOT toyish: small uppercase labels, professional density
-    • NOT dated: no skeuomorphism, no heavy shadows, no gradients
-    • Inspired by: Linear, Stripe, Apple HIG — but warm-toned
-    • Knobs: clean flat with subtle depth, not metallic or glossy
-    • Separation: hairline rules + subtle background tints, not borders
-    • Timeless and immediately identifiable
-
+  Box Tone Zone (BTZ) — BTZTheme.h  v11
+  ──────────────────────────────────────────────────────────────────────────
   SINGLE SOURCE OF TRUTH for every visual constant.
+
+  Aesthetic: Premium light, warm identity, modern precision.
+    • Warm cream canvas — never cold white, never dark
+    • Sage green primary accent, warm orange secondary
+    • Tight 3-4px radii, dense professional typography
+    • Clean flat knobs with colored arcs — no skeuomorphism
+    • Separation via luminance shifts, not heavy borders
+    • Monospace values, uppercase labels, controlled density
+    • Immediately identifiable warm palette
+
   If a hex value appears in paint() that isn't from this header, it's a bug.
-  ────────────────────────────────────────────────────────────────────────
+  ──────────────────────────────────────────────────────────────────────────
 */
 #pragma once
 
 #include <JuceHeader.h>
 
-// ═══════════════════════════════════════════════════════════════════════════
-// 1. BTZColours — Modern Light Warm Palette
-// ═══════════════════════════════════════════════════════════════════════════
-namespace BTZColours {
-
-    // ── Background tier (warm light — cream/beige, never cold white) ──
-    static const juce::Colour canvas        { 0xFFF6F3EE };  // primary — warm cream
-    static const juce::Colour canvasSubtle  { 0xFFF0ECE6 };  // slightly warmer for sections
-    static const juce::Colour panel         { 0xFFEBE7E0 };  // raised panel — light tan
-    static const juce::Colour panelRaised   { 0xFFE4DFD8 };  // elevated surface
-    static const juce::Colour well          { 0xFFDDD8D0 };  // inset/well — slightly darker
-    static const juce::Colour wellDeep      { 0xFFD4CEC5 };  // deepest inset
-    static const juce::Colour hairline      { 0xFFD0C9C0 };  // subtle separation
-    static const juce::Colour rule          { 0xFFE0DAD2 };  // barely visible divider
-
-    // ── Ink & typography (dark on light — never pure black) ──
-    static const juce::Colour text          { 0xFF2C2824 };  // primary text — warm dark
-    static const juce::Colour textSecondary { 0xFF6B6358 };  // secondary — muted brown
-    static const juce::Colour textTertiary  { 0xFF9A9088 };  // dim labels
-    static const juce::Colour textDisabled  { 0xFFC0B8AE };  // disabled state
-    static const juce::Colour textInverse   { 0xFFF6F3EE };  // text on dark surfaces
-
-    // ── Knob body (clean, flat, subtle depth — modern, not metallic) ──
-    static const juce::Colour knobBody      { 0xFFFFFFFF };  // clean white face
-    static const juce::Colour knobRing      { 0xFFE8E3DC };  // outer ring — subtle
-    static const juce::Colour knobShadow    { 0x18000000 };  // very subtle drop shadow
-    static const juce::Colour knobTrack     { 0xFFE0DAD2 };  // unfilled arc track
-    static const juce::Colour knobPointer   { 0xFF2C2824 };  // indicator line — dark
-
-    // ── Primary accent: Warm Orange (the original BTZ identity) ──
-    static const juce::Colour oak           { 0xFFD4854A };  // primary — warm orange
-    static const juce::Colour oakBright     { 0xFFE09558 };  // active/hover
-    static const juce::Colour oakDim        { 0xFFB87040 };  // dimmed
-    static const juce::Colour oakDark       { 0xFF9A5C34 };  // dark variant
-    static const juce::Colour oakLight      { 0xFFF0B888 };  // light variant
-    static const juce::Colour oakSubtle     { 0xFFFBF0E4 };  // tinted background
-
-    // ── Secondary accent: Sage Green (the original BTZ identity) ──
-    static const juce::Colour sage          { 0xFF7A9B82 };  // secondary — sage green
-    static const juce::Colour sageBright    { 0xFF8AAE92 };  // active/hover
-    static const juce::Colour sageDim       { 0xFF628070 };  // dimmed
-    static const juce::Colour sageDark      { 0xFF4A6454 };  // dark variant
-    static const juce::Colour sageLight     { 0xFFB8D4BE };  // light variant
-    static const juce::Colour sageSubtle    { 0xFFEEF5F0 };  // tinted background
-
-    // ── Tertiary accent: Warm Red/Clay (warnings, GR) ──
-    static const juce::Colour terracotta    { 0xFFC05A48 };  // warm red — alerts/GR
-    static const juce::Colour terracottaDim { 0xFF9A4838 };  // dimmed
-    static const juce::Colour terracottaLight { 0xFFE8A090 }; // light variant
-    static const juce::Colour terracottaSubtle { 0xFFFDF2EE }; // tinted bg
-
-    // ── Accent 4: Teal (utility, focus states) ──
-    static const juce::Colour teal          { 0xFF5A8A8C };  // muted teal
-    static const juce::Colour tealBright    { 0xFF6A9EA0 };  // active
-    static const juce::Colour tealDim       { 0xFF487072 };  // dimmed
-
-    // ── Accent 5: Warm Gold (highlights, special) ──
-    static const juce::Colour mustard       { 0xFFD4A84C };  // warm gold
-    static const juce::Colour mustardBright { 0xFFE0B85C };  // active
-    static const juce::Colour mustardDim    { 0xFFB89040 };  // dimmed
-
-    // ── Glassmorphism (light mode — frosted white) ──
-    static const juce::Colour glassLight    { 0xB0FFFFFF };  // 69% white overlay
-    static const juce::Colour glassMedium   { 0x90FFFFFF };  // 56% white overlay
-    static const juce::Colour glassBorder   { 0x40FFFFFF };  // 25% white border
-    static const juce::Colour glassHighlight{ 0x60FFFFFF };  // top edge
-    static const juce::Colour glassShadow   { 0x10000000 };  // subtle bottom shadow
-
-    // ── Harmonic overtone colors (warm palette) ──
-    static const juce::Colour harmonic1     { 0xFFD4854A };  // fundamental — orange
-    static const juce::Colour harmonic2     { 0xFFD4A84C };  // 2nd — gold
-    static const juce::Colour harmonic3     { 0xFFC05A48 };  // 3rd — clay
-    static const juce::Colour harmonic4     { 0xFFE09558 };  // 4th — bright orange
-    static const juce::Colour harmonic5     { 0xFF7A9B82 };  // 5th — sage
-    static const juce::Colour harmonic6     { 0xFF5A8A8C };  // 6th — teal
-    static const juce::Colour harmonic7     { 0xFF8AAE92 };  // 7th — bright sage
-    static const juce::Colour harmonic8     { 0xFFB87040 };  // 8th — dim orange
-
-    inline juce::Colour harmonicColour(int index) noexcept {
-        static const juce::Colour table[] = {
-            harmonic1, harmonic2, harmonic3, harmonic4,
-            harmonic5, harmonic6, harmonic7, harmonic8
-        };
-        return table[juce::jlimit(0, 7, index)];
-    }
-
-    // ── State colors ──
-    static const juce::Colour stateSafe     { 0xFF7A9B82 };  // sage = safe
-    static const juce::Colour stateWarn     { 0xFFD4A84C };  // gold = warning
-    static const juce::Colour stateDanger   { 0xFFC05A48 };  // clay = danger
-    static const juce::Colour stateClip     { 0xFFB83828 };  // red = clip
-
-    // ── Meter zones ──
-    static const juce::Colour meterBg       { 0xFFE8E3DC };  // track background
-    static const juce::Colour meterOptimal  { 0xFF7A9B82 };  // sage = optimal
-    static const juce::Colour meterHot      { 0xFFD4A84C };  // gold = hot
-    static const juce::Colour meterClip     { 0xFFC05A48 };  // clay = clip
-
-    // ── Glow/focus alpha values (subtle on light) ──
-    constexpr float oakGlowAlpha       = 0.12f;
-    constexpr float oakSoftGlowAlpha   = 0.06f;
-    constexpr float sageGlowAlpha      = 0.10f;
-    constexpr float hoverGlowAlpha     = 0.08f;
-    constexpr float activeGlowAlpha    = 0.16f;
-
-    // Legacy aliases
-    static const juce::Colour& amber     = oak;
-    static const juce::Colour& amberDim  = oakDim;
-    static const juce::Colour& amberDark = oakDark;
-    static const juce::Colour& amberBright = oakBright;
-    static const juce::Colour& coral     = terracotta;
-    static const juce::Colour& coralDim  = terracottaDim;
-    static const juce::Colour& cyan      = sage;
-    static const juce::Colour& cyanDim   = sageDim;
-    static const juce::Colour& emerald   = sageBright;
-    constexpr float amberGlowAlpha     = oakGlowAlpha;
-    constexpr float amberSoftGlowAlpha = oakSoftGlowAlpha;
-    constexpr float coralGlowAlpha     = 0.10f;
-    constexpr float cyanGlowAlpha      = sageGlowAlpha;
-
-    // ── Module accent mapping ──
-    enum class Module { BTZ, SPARK, SHINE, TONE, MOTION, BLOOM, Utility };
-
-    inline juce::Colour accentFor(Module m) noexcept {
-        switch (m) {
-            case Module::BTZ:     return oak;
-            case Module::SPARK:   return terracotta;
-            case Module::SHINE:   return sage;
-            case Module::TONE:    return teal;
-            case Module::MOTION:  return mustard;
-            case Module::BLOOM:   return oakLight;
-            case Module::Utility: return textSecondary;
-        }
-        return oak;
-    }
-
-    inline juce::Colour accentDimFor(Module m) noexcept {
-        switch (m) {
-            case Module::BTZ:     return oakDim;
-            case Module::SPARK:   return terracottaDim;
-            case Module::SHINE:   return sageDim;
-            case Module::TONE:    return tealDim;
-            case Module::MOTION:  return mustardDim;
-            default:              return textTertiary;
-        }
-    }
-}
+namespace btz {
 
 // ═══════════════════════════════════════════════════════════════════════════
-// 2. BTZTokens — spacing, radius, border, typography, timing, dimensions
+// Palette
 // ═══════════════════════════════════════════════════════════════════════════
-namespace BTZTokens {
 
-    namespace Space {
-        constexpr int xs    = 3;
-        constexpr int sm    = 6;
-        constexpr int md    = 10;
-        constexpr int lg    = 14;
-        constexpr int xl    = 18;
-        constexpr int xxl   = 24;
-        constexpr int sec   = 28;
-        constexpr int secMd = 36;
-        constexpr int secLg = 48;
-        constexpr int page  = 56;
-    }
+namespace palette {
+    // Surfaces (warm light — cream/beige)
+    inline constexpr uint32_t canvas       = 0xFFF5F2ED;
+    inline constexpr uint32_t surface      = 0xFFEDE9E2;
+    inline constexpr uint32_t surfaceAlt   = 0xFFE5E0D8;
+    inline constexpr uint32_t well         = 0xFFDAD5CC;
+    inline constexpr uint32_t border       = 0xFFCCC6BC;
+    inline constexpr uint32_t borderSubtle = 0xFFE0DAD2;
 
-    namespace Radius {
-        // Modern: tight but not sharp — 3-4px feels contemporary
-        constexpr float none    = 0.0f;
-        constexpr float sm      = 3.0f;   // controls, buttons
-        constexpr float md      = 4.0f;   // panels
-        constexpr float lg      = 6.0f;   // larger panels
-        constexpr float xl      = 8.0f;   // modals, dropdowns
-        constexpr float pill    = 9999.0f;
-    }
+    // Text (warm charcoal hierarchy)
+    inline constexpr uint32_t ink          = 0xFF2C2A27;
+    inline constexpr uint32_t inkMuted     = 0xFF5C5750;
+    inline constexpr uint32_t inkFaint     = 0xFF9A9088;
+    inline constexpr uint32_t inkDisabled  = 0xFFC0B8AE;
 
-    namespace Border {
-        constexpr float hairline = 0.5f;
-        constexpr float frame    = 1.0f;
-        constexpr float focus    = 1.5f;
-        constexpr float accent   = 1.5f;
-        constexpr float glass    = 0.5f;
-    }
+    // Sage green (primary accent)
+    inline constexpr uint32_t sage         = 0xFF7E9B8E;
+    inline constexpr uint32_t sageHover    = 0xFF8AAE92;
+    inline constexpr uint32_t sagePressed  = 0xFF5E7B6E;
+    inline constexpr uint32_t sageFaint    = 0xFFEEF5F0;
 
-    namespace Font {
-        // Modern, clean: Inter Tight for everything, IBM Plex Mono for values
-        static const juce::String display = "Inter Tight";
-        static const juce::String serif   = "Inter Tight";
-        static const juce::String ui      = "Inter Tight";
-        static const juce::String mono    = "IBM Plex Mono";
+    // Warm orange (secondary accent)
+    inline constexpr uint32_t orange       = 0xFFD4854A;
+    inline constexpr uint32_t orangeHover  = 0xFFE09558;
+    inline constexpr uint32_t orangePressed= 0xFFB87040;
+    inline constexpr uint32_t orangeFaint  = 0xFFFBF0E4;
 
-        namespace Size {
-            constexpr float size3xl  = 36.0f;
-            constexpr float size2xl  = 26.0f;
-            constexpr float sizeXl   = 20.0f;
-            constexpr float sizeLg   = 15.0f;
-            constexpr float sizeMd   = 12.0f;
-            constexpr float sizeBase = 11.0f;
-            constexpr float sizeSm   = 10.0f;
-            constexpr float sizeXs   = 9.0f;
-            constexpr float size2xs  = 8.0f;
-            constexpr float size3xs  = 7.0f;
-        }
+    // Tertiary: clay/terracotta (warnings, GR)
+    inline constexpr uint32_t clay         = 0xFFC05A48;
+    inline constexpr uint32_t clayFaint    = 0xFFFDF2EE;
 
-        namespace Tracking {
-            constexpr float tight  = -0.01f;
-            constexpr float body   = 0.0f;
-            constexpr float label  = 0.08f;   // uppercase labels
-            constexpr float wide   = 0.12f;   // section headers
-            constexpr float ultra  = 0.16f;   // brand
-        }
-    }
+    // Utility: gold (highlights, meters)
+    inline constexpr uint32_t gold         = 0xFFD4A84C;
+    inline constexpr uint32_t goldFaint    = 0xFFFFF8E8;
 
-    namespace Animation {
-        constexpr int instant     = 0;
-        constexpr int microFast   = 50;
-        constexpr int fast        = 100;
-        constexpr int base        = 180;
-        constexpr int slow        = 350;
-        constexpr int dramatic    = 500;
-        constexpr int tooltip     = 400;
+    // Utility: teal (modulation, focus)
+    inline constexpr uint32_t teal         = 0xFF5A8A8C;
+    inline constexpr uint32_t tealFaint    = 0xFFECF5F5;
 
-        constexpr float easeOutExpo    = 0.16f;
-        constexpr float easeInOutCubic = 0.65f;
-        constexpr float springDamping  = 0.7f;
-        constexpr float springStiffness = 300.0f;
+    // Knob
+    inline constexpr uint32_t knobFace     = 0xFFFFFEFC;
+    inline constexpr uint32_t knobTrack    = 0xFFE0DAD2;
+    inline constexpr uint32_t knobShadow   = 0x14000000;
 
-        constexpr int meterFps        = 60;
-        constexpr int spectrumFps     = 30;
-        constexpr int harmonicFps     = 60;
-        constexpr int idleFps         = 15;
-    }
+    // Meters
+    inline constexpr uint32_t meterSafe    = 0xFF7E9B8E;
+    inline constexpr uint32_t meterCaution = 0xFFD4A84C;
+    inline constexpr uint32_t meterClip    = 0xFFC05A48;
+    inline constexpr uint32_t meterTrack   = 0xFFE8E3DC;
 
-    namespace Glass {
-        constexpr float blurRadius     = 12.0f;
-        constexpr float panelOpacity   = 0.70f;
-        constexpr float borderOpacity  = 0.25f;
-        constexpr float shadowBlur     = 6.0f;
-        constexpr float innerHighlight = 0.60f;
-        constexpr float noiseOpacity   = 0.01f;
-    }
-
-    namespace Accessibility {
-        constexpr float minContrastRatio = 4.5f;
-        constexpr float largeTextContrast = 3.0f;
-        constexpr int   minTouchTarget   = 44;
-        constexpr int   focusRingWidth   = 2;
-        static const juce::Colour focusRing { 0xFF5A8A8C };
-    }
-
-    namespace Dim {
-        constexpr int macroKnobDefault = 48;
-        constexpr int macroKnobMin     = 38;
-        constexpr int macroKnobMax     = 64;
-        constexpr int utilityKnobDefault = 36;
-        constexpr int brandLineHeight  = 32;
-        constexpr int outputGuardWidth = 100;
-        constexpr int tickDotCount     = 11;
-        constexpr float tickDotSpanDegrees = 240.0f;
-        constexpr float haloStartAngleDegrees = 225.0f;
-        constexpr float haloSweepDegrees = 270.0f;
-        constexpr int indicatorWidth   = 2;
-        constexpr int indicatorHeight  = 10;
-
-        constexpr int simpleKnobSize   = 88;
-        constexpr int simpleKnobGap    = 36;
-
-        constexpr int harmonicBarWidth = 4;
-        constexpr int harmonicBarGap   = 2;
-        constexpr int harmonicDisplayHeight = 120;
-        constexpr int harmonicMaxBars  = 16;
-
-        constexpr int presetPanelWidth = 220;
-        constexpr int presetRowHeight  = 26;
-
-        constexpr int ruleThick        = 1;
-        constexpr int ruleThin         = 1;
-        constexpr int sectionRuleGap   = 6;
-    }
-
-    namespace Opacity {
-        constexpr float idle       = 1.0f;
-        constexpr float hover      = 1.0f;
-        constexpr float disabled   = 0.35f;
-        constexpr float bypassed   = 0.45f;
-        constexpr float background = 0.85f;
-        constexpr float glassPanel = 0.92f;
-        constexpr float ghostTrace = 0.20f;
-    }
-
-    namespace Window {
-        constexpr int defaultWidth  = 1200;
-        constexpr int defaultHeight = 700;
-        constexpr int minWidth      = 900;
-        constexpr int minHeight     = 540;
-        constexpr int maxWidth      = 2400;
-        constexpr int maxHeight     = 1400;
-        constexpr float minScale    = 0.5f;
-        constexpr float maxScale    = 2.0f;
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// 3. BTZTheme:: — Legacy accessor namespace
-// ═══════════════════════════════════════════════════════════════════════════
-namespace BTZTheme {
-
-namespace Color {
-    inline juce::Colour backgroundRoot()        { return BTZColours::canvas; }
-    inline juce::Colour backgroundCenter()      { return BTZColours::canvas; }
-    inline juce::Colour backgroundPanel()       { return BTZColours::panel; }
-    inline juce::Colour backgroundPanelRaised() { return BTZColours::panelRaised; }
-    inline juce::Colour backgroundInset()       { return BTZColours::well; }
-    inline juce::Colour strokeSubtle()          { return BTZColours::rule; }
-    inline juce::Colour strokeStrong()          { return BTZColours::hairline; }
-    inline juce::Colour textPrimary()           { return BTZColours::text; }
-    inline juce::Colour textSecondary()         { return BTZColours::textSecondary; }
-    inline juce::Colour textDisabled()          { return BTZColours::textDisabled; }
-    inline juce::Colour accentPrimaryAmber()    { return BTZColours::oak; }
-    inline juce::Colour accentBright()          { return BTZColours::oakBright; }
-    inline juce::Colour accentSecondaryChampagne() { return BTZColours::oakLight; }
-    inline juce::Colour accentGlow()            { return BTZColours::oak.withAlpha(BTZColours::oakGlowAlpha); }
-    inline juce::Colour accentDim()             { return BTZColours::oakDim; }
-    inline juce::Colour meterSafe()             { return BTZColours::meterBg; }
-    inline juce::Colour meterWarn()             { return BTZColours::meterOptimal; }
-    inline juce::Colour meterHot()              { return BTZColours::meterHot; }
-    inline juce::Colour meterClip()             { return BTZColours::meterClip; }
-    inline juce::Colour bypassOn()              { return BTZColours::oak; }
-    inline juce::Colour bypassOff()             { return BTZColours::well; }
-    inline juce::Colour hover()                 { return BTZColours::panelRaised; }
-    inline juce::Colour focus()                 { return BTZColours::panel; }
-    inline juce::Colour selected()              { return BTZColours::oak; }
-    inline juce::Colour disabled()              { return BTZColours::rule; }
-    inline juce::Colour grMeter()               { return BTZColours::terracotta; }
-}
-
-namespace Font {
-    inline juce::String displayFamily() { return BTZTokens::Font::display; }
-    inline juce::String serifFamily()   { return BTZTokens::Font::serif; }
-    inline juce::String bodyFamily()    { return BTZTokens::Font::ui; }
-    inline juce::String monoFamily()    { return BTZTokens::Font::mono; }
-
-    inline juce::Font title()         { return juce::Font(displayFamily(), BTZTokens::Font::Size::sizeLg, juce::Font::bold); }
-    inline juce::Font subtitle()      { return juce::Font(bodyFamily(), BTZTokens::Font::Size::sizeMd, juce::Font::plain); }
-    inline juce::Font sectionHeader() { return juce::Font(bodyFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::bold); }
-    inline juce::Font label()         { return juce::Font(bodyFamily(), BTZTokens::Font::Size::size2xs, juce::Font::plain); }
-    inline juce::Font value()         { return juce::Font(monoFamily(), BTZTokens::Font::Size::sizeXs, juce::Font::plain); }
-    inline juce::Font tooltip()       { return juce::Font(bodyFamily(), BTZTokens::Font::Size::size2xs, juce::Font::plain); }
-    inline juce::Font tab()           { return juce::Font(bodyFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::bold); }
-    inline juce::Font meter()         { return juce::Font(monoFamily(), BTZTokens::Font::Size::size3xs, juce::Font::plain); }
-    inline juce::Font micro()         { return juce::Font(bodyFamily(), 7.0f, juce::Font::plain); }
-    inline juce::Font brand()         { return juce::Font(displayFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::bold); }
-    inline juce::Font macroLabel()    { return juce::Font(bodyFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::bold); }
-    inline juce::Font macroValue()    { return juce::Font(monoFamily(), BTZTokens::Font::Size::sizeXs, juce::Font::plain); }
-    inline juce::Font simpleValue()   { return juce::Font(monoFamily(), BTZTokens::Font::Size::sizeMd, juce::Font::bold); }
-    inline juce::Font simpleLabel()   { return juce::Font(bodyFamily(), BTZTokens::Font::Size::sizeSm, juce::Font::bold); }
-}
-
-namespace Geometry {
-    constexpr float outerRadius   = BTZTokens::Radius::md;
-    constexpr float panelRadius   = BTZTokens::Radius::md;
-    constexpr float controlRadius = BTZTokens::Radius::sm;
-    constexpr float pillRadius    = 12.0f;
-    constexpr float glassRadius   = BTZTokens::Radius::md;
-
-    constexpr int knobLarge       = 52;
-    constexpr int knobMedium      = 42;
-    constexpr int knobSmall       = 32;
-    constexpr int knobMacro       = BTZTokens::Dim::macroKnobDefault;
-    constexpr int knobSimple      = BTZTokens::Dim::simpleKnobSize;
-
-    constexpr int sliderHeight    = 22;
-    constexpr int sliderTrackH    = 3;
-
-    constexpr int spaceXS         = BTZTokens::Space::xs;
-    constexpr int spaceSM         = BTZTokens::Space::sm;
-    constexpr int spaceMD         = BTZTokens::Space::md;
-    constexpr int spaceLG         = BTZTokens::Space::lg;
-    constexpr int spaceXL         = BTZTokens::Space::xxl;
-    constexpr int spaceXXL        = BTZTokens::Space::sec;
-
-    constexpr int padPanel        = BTZTokens::Space::lg;
-    constexpr int padSection      = BTZTokens::Space::md;
-    constexpr int padContent      = BTZTokens::Space::xl;
-
-    constexpr float borderThin    = BTZTokens::Border::hairline;
-    constexpr float borderNormal  = BTZTokens::Border::frame;
-    constexpr float borderThick   = BTZTokens::Border::accent;
-    constexpr float borderGlass   = BTZTokens::Border::glass;
-
-    constexpr int windowWidth     = BTZTokens::Window::defaultWidth;
-    constexpr int windowHeight    = BTZTokens::Window::defaultHeight;
-
-    constexpr int headerHeight    = BTZTokens::Dim::brandLineHeight;
-    constexpr int meterStripHeight = 56;
-
-    constexpr int tabWidth        = 72;
-    constexpr int tabGap          = BTZTokens::Space::sm;
-    constexpr int tabHeight       = 24;
-
-    constexpr int knobLabelHeight = 14;
-}
-
-namespace Effects {
-    struct ShadowSpec {
-        juce::Colour colour;
-        int radius;
-        juce::Point<int> offset;
+    // Harmonics (8-colour cycle)
+    inline constexpr uint32_t harm[8] = {
+        0xFFD4854A, 0xFFD4A84C, 0xFFC05A48, 0xFFE09558,
+        0xFF7E9B8E, 0xFF5A8A8C, 0xFF8AAE92, 0xFFB87040
     };
-
-    // Modern light: very subtle shadows — just enough to create layers
-    inline ShadowSpec panelShadow()   { return { juce::Colour(0x0C000000), 8, { 0, 2 } }; }
-    inline ShadowSpec controlShadow() { return { juce::Colour(0x0A000000), 3, { 0, 1 } }; }
-    inline ShadowSpec innerShadow()   { return { juce::Colour(0x08000000), 2, { 0, 1 } }; }
-    inline ShadowSpec glassShadow()   { return { juce::Colour(0x0E000000), 6, { 0, 2 } }; }
-
-    inline juce::Colour knobGlow()      { return BTZColours::oak.withAlpha(BTZColours::oakSoftGlowAlpha); }
-    inline juce::Colour knobHoverGlow() { return BTZColours::oak.withAlpha(BTZColours::hoverGlowAlpha); }
-    inline juce::Colour knobActiveGlow(){ return BTZColours::oak.withAlpha(BTZColours::activeGlowAlpha); }
-    inline juce::Colour meterGlow()     { return BTZColours::sage.withAlpha(0.06f); }
-
-    constexpr float meterCornerRadius = 2.0f;
-    constexpr float meterSegmentGap   = 1.0f;
-    constexpr int   meterSegmentCount = 28;
 }
 
-namespace KnobStyle {
-    // Modern flat knob: clean white face, colored arc, thin indicator
-    constexpr float arcThicknessRatio = 0.05f;   // thin arc
-    constexpr float bodyRadiusRatio   = 0.70f;
-    constexpr float indicatorStart    = 0.30f;
-    constexpr float indicatorEnd      = 0.58f;
-    constexpr float tickDotRadius     = 1.0f;    // tiny dots
-    constexpr int   tickDotCount      = BTZTokens::Dim::tickDotCount;
-    constexpr float startAngle        = 1.25f;
-    constexpr float endAngle          = 2.75f;
+// ═══════════════════════════════════════════════════════════════════════════
+// Typography
+// ═══════════════════════════════════════════════════════════════════════════
 
-    constexpr float innerShadowOpacity = 0.05f;  // very subtle
-    constexpr float rimLightOpacity    = 0.0f;   // no rim — flat modern
-    constexpr float convexGradientBias = 0.0f;   // flat
+namespace type {
+    // Families
+    inline const char* sans()  { return "Inter"; }
+    inline const char* mono()  { return "JetBrains Mono"; }
+
+    // Scale (px)
+    inline constexpr float brand  = 20.0f;
+    inline constexpr float h1     = 14.0f;
+    inline constexpr float h2     = 12.0f;
+    inline constexpr float body   = 11.0f;
+    inline constexpr float label  = 9.5f;
+    inline constexpr float micro  = 8.5f;
+    inline constexpr float value  = 10.0f;  // monospace values
+
+    // Tracking
+    inline constexpr float trackLabel = 0.08f;  // uppercase labels
+    inline constexpr float trackBody  = 0.0f;
 }
 
-namespace ComponentID {
-    constexpr int Knob       = 1;
-    constexpr int Fader      = 2;
-    constexpr int Toggle     = 3;
-    constexpr int Meter      = 4;
-    constexpr int PresetNav  = 5;
-    constexpr int HeatMap    = 6;
-    constexpr int XYPad      = 7;
-    constexpr int ModLane    = 8;
-    constexpr int RoutingSlot = 9;
-    constexpr int WetDry     = 10;
-    constexpr int HarmonicViz = 11;
-    constexpr int GlassPanel  = 12;
-    constexpr int SimpleKnob  = 13;
-    constexpr int DirectManip = 14;
-    constexpr int Tooltip     = 15;
+// ═══════════════════════════════════════════════════════════════════════════
+// Spacing & Layout
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace space {
+    inline constexpr int xxs = 2;
+    inline constexpr int xs  = 4;
+    inline constexpr int sm  = 6;
+    inline constexpr int md  = 10;
+    inline constexpr int lg  = 14;
+    inline constexpr int xl  = 20;
+    inline constexpr int xxl = 28;
 }
 
-inline void drawDropShadow(juce::Graphics& g, juce::Rectangle<int> area, const Effects::ShadowSpec& spec) {
-    juce::DropShadow shadow(spec.colour, spec.radius, spec.offset);
-    shadow.drawForRectangle(g, area);
+namespace layout {
+    inline constexpr int windowW     = 1120;
+    inline constexpr int windowH     = 700;
+    inline constexpr int minW        = 840;
+    inline constexpr int minH        = 520;
+
+    inline constexpr int headerH     = 36;
+    inline constexpr int footerH     = 28;
+    inline constexpr int tabH        = 26;
+
+    inline constexpr int knobXL      = 96;   // Simple Mode
+    inline constexpr int knobLG      = 56;   // Character knobs
+    inline constexpr int knobMD      = 44;   // Macro knobs
+    inline constexpr int knobSM      = 34;   // Utility knobs
+
+    inline constexpr int meterW      = 5;
+    inline constexpr int meterGap    = 2;
+    inline constexpr int buttonH     = 24;
 }
 
-// Draw a modern panel: subtle background tint + very light shadow
-inline void drawFramedPanel(juce::Graphics& g, juce::Rectangle<float> area, float cornerRadius = Geometry::panelRadius) {
-    // Very subtle shadow
-    juce::DropShadow shadow(juce::Colour(0x0C000000), 6, { 0, 1 });
-    shadow.drawForRectangle(g, area.toNearestInt());
-
-    // Panel fill
-    g.setColour(BTZColours::panel);
-    g.fillRoundedRectangle(area, cornerRadius);
+namespace radius {
+    inline constexpr float sm  = 3.0f;
+    inline constexpr float md  = 4.0f;
+    inline constexpr float lg  = 6.0f;
+    inline constexpr float pill = 999.0f;
 }
 
-// Draw a frosted glass panel — light mode
-inline void drawGlassPanel(juce::Graphics& g, juce::Rectangle<float> area, float cornerRadius = Geometry::glassRadius) {
-    juce::DropShadow shadow(juce::Colour(0x0A000000), 4, { 0, 1 });
-    shadow.drawForRectangle(g, area.toNearestInt());
+// ═══════════════════════════════════════════════════════════════════════════
+// Knob Rendering
+// ═══════════════════════════════════════════════════════════════════════════
 
-    g.setColour(BTZColours::glassLight);
-    g.fillRoundedRectangle(area, cornerRadius);
-
-    // Hairline border
-    g.setColour(BTZColours::hairline);
-    g.drawRoundedRectangle(area, cornerRadius, 0.5f);
+namespace knob {
+    inline constexpr float arcWidth      = 3.0f;
+    inline constexpr float arcGapRad     = 0.45f;  // gap at bottom (radians)
+    inline constexpr float pointerStart  = 0.32f;  // fraction of radius
+    inline constexpr float pointerEnd    = 0.58f;
+    inline constexpr float pointerWidth  = 1.8f;
+    inline constexpr float shadowOffset  = 1.0f;
+    inline constexpr float shadowRadius  = 2.0f;
 }
 
-// Draw flat warm background — no gradient, clean
-inline void drawRadialBackground(juce::Graphics& g, juce::Rectangle<int> area) {
-    g.setColour(BTZColours::canvas);
+// ═══════════════════════════════════════════════════════════════════════════
+// Animation
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace anim {
+    inline constexpr int fps          = 30;
+    inline constexpr float meterDecay = 0.15f;  // dB per frame
+    inline constexpr int hoverMs      = 100;
+    inline constexpr int fadeMs       = 180;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Component IDs (for accent colour routing)
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace id {
+    inline constexpr int drive     = 1001;
+    inline constexpr int mix       = 1002;
+    inline constexpr int output    = 1003;
+    inline constexpr int punch     = 1004;
+    inline constexpr int warmth    = 1005;
+    inline constexpr int boom      = 1006;
+    inline constexpr int glue      = 1007;
+    inline constexpr int air       = 1008;
+    inline constexpr int width     = 1009;
+    inline constexpr int density   = 1010;
+    inline constexpr int motion    = 1011;
+    inline constexpr int era       = 1012;
+    inline constexpr int intensity = 1013;
+    inline constexpr int tone      = 1014;
+    inline constexpr int resTame   = 1015;
+    inline constexpr int transient = 1016;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Helpers
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Accent colour for a given component ID
+inline juce::Colour accentFor(int componentID) noexcept {
+    switch (componentID) {
+        case id::drive:     return juce::Colour(palette::orange);
+        case id::mix:       return juce::Colour(palette::sage);
+        case id::output:    return juce::Colour(palette::sage);
+        case id::punch:     return juce::Colour(palette::orange);
+        case id::warmth:    return juce::Colour(palette::orange);
+        case id::boom:      return juce::Colour(palette::orange);
+        case id::glue:      return juce::Colour(palette::sage);
+        case id::air:       return juce::Colour(palette::sage);
+        case id::width:     return juce::Colour(palette::teal);
+        case id::density:   return juce::Colour(palette::gold);
+        case id::motion:    return juce::Colour(palette::teal);
+        case id::era:       return juce::Colour(palette::gold);
+        case id::intensity: return juce::Colour(palette::gold);
+        case id::tone:      return juce::Colour(palette::sage);
+        case id::resTame:   return juce::Colour(palette::teal);
+        case id::transient: return juce::Colour(palette::orange);
+        default:            return juce::Colour(palette::sage);
+    }
+}
+
+// Harmonic colour by index (wraps at 8)
+inline juce::Colour harmonicColour(int idx) noexcept {
+    return juce::Colour(palette::harm[idx & 7]);
+}
+
+// ─── Drawing Helpers ─────────────────────────────────────────────────────
+
+inline void paintKnob(juce::Graphics& g, juce::Rectangle<float> bounds,
+                      float normValue, int componentID, bool hovered = false) {
+    const auto accent = accentFor(componentID);
+    const float cx = bounds.getCentreX();
+    const float cy = bounds.getCentreY();
+    const float r  = bounds.getWidth() * 0.5f - knob::arcWidth;
+
+    const float startAngle = juce::MathConstants<float>::pi + knob::arcGapRad;
+    const float endAngle   = 3.0f * juce::MathConstants<float>::pi - knob::arcGapRad;
+
+    // Shadow
+    g.setColour(juce::Colour(palette::knobShadow));
+    g.fillEllipse(bounds.translated(0.0f, knob::shadowOffset).reduced(knob::arcWidth));
+
+    // Face
+    g.setColour(juce::Colour(palette::knobFace));
+    g.fillEllipse(bounds.reduced(knob::arcWidth + 1.0f));
+
+    // Track arc
+    juce::Path track;
+    track.addCentredArc(cx, cy, r, r, 0.0f, startAngle, endAngle, true);
+    g.setColour(juce::Colour(palette::knobTrack));
+    g.strokePath(track, juce::PathStrokeType(knob::arcWidth,
+        juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+
+    // Value arc
+    const float valueAngle = startAngle + normValue * (endAngle - startAngle);
+    if (normValue > 0.002f) {
+        juce::Path arc;
+        arc.addCentredArc(cx, cy, r, r, 0.0f, startAngle, valueAngle, true);
+        g.setColour(hovered ? accent.brighter(0.12f) : accent);
+        g.strokePath(arc, juce::PathStrokeType(knob::arcWidth,
+            juce::PathStrokeType::curved, juce::PathStrokeType::rounded));
+    }
+
+    // Pointer
+    const float innerR = r * knob::pointerStart;
+    const float outerR = r * knob::pointerEnd;
+    const float angle  = valueAngle - juce::MathConstants<float>::halfPi;
+    g.setColour(juce::Colour(palette::ink));
+    g.drawLine(cx + innerR * std::cos(angle), cy + innerR * std::sin(angle),
+               cx + outerR * std::cos(angle), cy + outerR * std::sin(angle),
+               knob::pointerWidth);
+}
+
+inline void paintMeter(juce::Graphics& g, juce::Rectangle<int> bounds,
+                       float normLevel, bool isGR = false) {
+    g.setColour(juce::Colour(palette::meterTrack));
+    g.fillRoundedRectangle(bounds.toFloat(), radius::sm);
+
+    if (normLevel < 0.002f) return;
+
+    const int fillH = static_cast<int>(bounds.getHeight() * normLevel);
+    auto fill = bounds.removeFromBottom(fillH);
+
+    juce::Colour c;
+    if (isGR)             c = juce::Colour(palette::orange);
+    else if (normLevel > 0.92f) c = juce::Colour(palette::meterClip);
+    else if (normLevel > 0.72f) c = juce::Colour(palette::meterCaution);
+    else                  c = juce::Colour(palette::meterSafe);
+
+    g.setColour(c);
+    g.fillRoundedRectangle(fill.toFloat(), radius::sm);
+}
+
+inline void paintBackground(juce::Graphics& g, juce::Rectangle<int> area) {
+    g.setColour(juce::Colour(palette::canvas));
     g.fillRect(area);
 }
 
-// Draw a minimal section divider
-inline void drawSectionRule(juce::Graphics& g, float x, float y, float width, bool /*thick*/ = false) {
-    g.setColour(BTZColours::hairline);
-    g.fillRect(x, y, width, 1.0f);
+inline void paintPanel(juce::Graphics& g, juce::Rectangle<float> area) {
+    g.setColour(juce::Colour(palette::surface));
+    g.fillRoundedRectangle(area, radius::md);
 }
 
-// No noise texture for modern light — clean surfaces
-inline void drawNoiseTexture(juce::Graphics& /*g*/, juce::Rectangle<int> /*area*/, uint32_t /*seed*/ = 42) {
-    // Intentionally empty — modern light theme uses clean flat surfaces
+inline void paintRule(juce::Graphics& g, float x, float y, float w) {
+    g.setColour(juce::Colour(palette::borderSubtle));
+    g.fillRect(x, y, w, 1.0f);
 }
 
-} // namespace BTZTheme
+} // namespace btz

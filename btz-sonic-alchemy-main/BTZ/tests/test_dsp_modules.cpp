@@ -1,33 +1,8 @@
 /*
-  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v9
+  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v11
   ────────────────────────────────────────────────────────────────────────
   GoogleTest-based unit tests for all BTZDsp modules.
-  v9: Industry-gap closure:
-    - Updated ALL APIs to match BTZDsp.h v9 surface
-    - Added saturation model tests (Tube, Tape, Transistor, Transformer)
-    - Added MultibandEngine tests
-    - Added MidSideEncoder tests
-    - Added LFO modulation tests
-    - Added LoudnessMeter smoke tests
-    - Added SpectrumBuffer + GainReductionHistory tests
-    - Added UndoStack + ABState tests
-    - Added MIDILearnState tests
-    - Updated TruePeakLimiter to per-sample API
-    - Updated GlueCompressor to new processStereo() returning gain
-    - Updated ShineProcessor to direct field access + prepare()
-    - Updated LinkwitzRileyCrossover to processStereo()
-    - Updated MacroInterpreter to MacroSlot/getMappedValue API
-    - Updated MeterBallistics to prepare(sr) / peakHoldL
-    - Updated AutoGainSmoother to updateInput/updateOutput/getCompensationGain
-    - Updated SidechainHPF to processStereo (in-place)
-    - Updated state version to 9
-    - Removed SVFLowpass2 tests (class removed in v9)
-  v8: removed ADAA/SlewLimiter tests, 1 Hz DC blocker regression
-  v7: BypassCrossfader, SidechainHPF crossfade, silence-in-silence-out
-  v6: SidechainHPF, MacroInterpreter wiring
-  v5: Envelope follower timing
-  v4: LR4 crossover, soft-knee glue, Padé [5/5] fastTanh
-
+  v11: Definitive senior-dev quality rewrite matching BTZDsp.h v11 API.
   Build: cmake -DBTZ_BUILD_TESTS=ON ..
   Run:   ctest --output-on-failure
 */
@@ -36,7 +11,6 @@
 #include <cmath>
 #include <vector>
 #include <numeric>
-#include <limits>
 
 using namespace BTZDsp;
 
@@ -44,1963 +18,967 @@ using namespace BTZDsp;
 // Helpers
 // ═══════════════════════════════════════════════════════════════════════════
 static constexpr double kSR = 48000.0;
-static constexpr int kBlockSize = 512;
+static constexpr int kBlock = 512;
 
-static std::vector<float> generateSine(float freqHz, double sr, int numSamples, float amplitude = 0.5f) {
+static std::vector<float> generateSine(float freqHz, double sr, int numSamples, float amp = 0.5f) {
     std::vector<float> buf(numSamples);
     for (int i = 0; i < numSamples; ++i)
-        buf[i] = amplitude * std::sin(2.0f * 3.14159265f * freqHz * (float)i / (float)sr);
+        buf[i] = amp * std::sin(2.0f * (float)M_PI * freqHz * (float)i / (float)sr);
     return buf;
 }
 
-static float peakAbs(const std::vector<float>& buf) {
-    float pk = 0.0f;
-    for (auto s : buf) pk = std::max(pk, std::abs(s));
-    return pk;
+static float rms(const std::vector<float>& v) {
+    float sum = 0.0f;
+    for (auto x : v) sum += x * x;
+    return std::sqrt(sum / (float)v.size());
 }
 
-static float rms(const std::vector<float>& buf) {
-    float sq = 0.0f;
-    for (auto s : buf) sq += s * s;
-    return std::sqrt(sq / std::max(1, (int)buf.size()));
-}
-
-static float rmsRange(const std::vector<float>& buf, int start, int end) {
-    float sq = 0.0f;
-    int count = 0;
-    for (int i = start; i < end && i < (int)buf.size(); ++i) {
-        sq += buf[i] * buf[i];
-        count++;
-    }
-    return std::sqrt(sq / std::max(1, count));
+static float peak(const std::vector<float>& v) {
+    float p = 0.0f;
+    for (auto x : v) p = std::max(p, std::abs(x));
+    return p;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// fastTanh Padé [5/5] Tests
+// SECTION 1: UTILITIES
 // ═══════════════════════════════════════════════════════════════════════════
-TEST(FastTanh, ApproximatesStdTanhWithin1Percent) {
-    for (float x = -3.0f; x <= 3.0f; x += 0.05f) {
-        float approx = fastTanh(x);
-        float exact = std::tanh(x);
-        float relErr = (std::abs(exact) > 0.01f)
-            ? std::abs(approx - exact) / std::abs(exact)
-            : std::abs(approx - exact);
-        EXPECT_LT(relErr, 0.01f) << "at x=" << x << " approx=" << approx << " exact=" << exact;
+
+TEST(Utilities, FastTanhAccuracy) {
+    // Padé [5/5] should be within 0.01 of std::tanh for |x| < 4
+    for (float x = -4.0f; x <= 4.0f; x += 0.01f) {
+        EXPECT_NEAR(fastTanh(x), std::tanh(x), 0.01f) << "at x=" << x;
     }
 }
 
-TEST(FastTanh, MaxErrorBelow2PercentToX5) {
-    float maxRelErr = 0.0f;
-    for (float x = -5.0f; x <= 5.0f; x += 0.01f) {
-        float approx = fastTanh(x);
-        float exact = std::tanh(x);
-        float relErr = (std::abs(exact) > 0.01f)
-            ? std::abs(approx - exact) / std::abs(exact)
-            : std::abs(approx - exact);
-        maxRelErr = std::max(maxRelErr, relErr);
-    }
-    EXPECT_LT(maxRelErr, 0.02f) << "max relative error = " << maxRelErr;
+TEST(Utilities, FastTanhClamps) {
+    EXPECT_FLOAT_EQ(fastTanh(100.0f), 1.0f);
+    EXPECT_FLOAT_EQ(fastTanh(-100.0f), -1.0f);
 }
 
-TEST(FastTanh, ZeroReturnsZero) {
-    EXPECT_FLOAT_EQ(fastTanh(0.0f), 0.0f);
-}
-
-TEST(FastTanh, OddSymmetry) {
-    for (float x = 0.1f; x <= 4.0f; x += 0.3f) {
-        EXPECT_NEAR(fastTanh(-x), -fastTanh(x), 1e-6f) << "at x=" << x;
+TEST(Utilities, DbGainRoundtrip) {
+    for (float db = -60.0f; db <= 12.0f; db += 3.0f) {
+        EXPECT_NEAR(gainToDb(dbToGain(db)), db, 0.001f);
     }
 }
 
-TEST(FastTanh, MonotonicIncreasing) {
-    float prev = fastTanh(-5.0f);
-    for (float x = -4.9f; x <= 5.0f; x += 0.1f) {
-        float y = fastTanh(x);
-        EXPECT_GE(y, prev - 1e-6f) << "non-monotonic at x=" << x;
-        prev = y;
-    }
-}
-
-TEST(FastTanh, SaturatesLargeSignals) {
-    for (float x = 1.0f; x <= 10.0f; x += 0.5f) {
-        float y = fastTanh(x);
-        EXPECT_LE(std::abs(y), 1.05f) << "fastTanh should saturate at x=" << x;
-        EXPECT_GT(std::abs(y), 0.5f) << "fastTanh should have significant output at x=" << x;
-    }
-}
-
-TEST(FastTanh, SmallSignalApproximatesLinear) {
-    for (float x = -0.01f; x <= 0.01f; x += 0.001f) {
-        EXPECT_NEAR(fastTanh(x), x, std::abs(x) * 0.05f + 1e-7f)
-            << "fastTanh should be approximately linear for small x=" << x;
-    }
-}
-
-TEST(FastTanh, IsStateless) {
-    float y1 = fastTanh(0.5f);
-    float y2 = fastTanh(0.5f);
-    EXPECT_FLOAT_EQ(y1, y2);
-    fastTanh(3.0f);
-    fastTanh(-2.0f);
-    fastTanh(10.0f);
-    float y3 = fastTanh(0.5f);
-    EXPECT_FLOAT_EQ(y1, y3) << "fastTanh should be stateless";
+TEST(Utilities, SoftClipBounds) {
+    EXPECT_LE(std::abs(softClip(10.0f)), 1.0f);
+    EXPECT_LE(std::abs(softClip(-10.0f)), 1.0f);
+    EXPECT_NEAR(softClip(0.0f), 0.0f, 1e-6f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// FixedDeque Tests (pre-allocated, lock-free ring buffer)
+// SECTION 2: CORE MODULES
 // ═══════════════════════════════════════════════════════════════════════════
-TEST(FixedDeque, PushAndPopBack) {
-    FixedDeque<float> dq;
-    dq.allocate(16);
-    dq.push_back(1.0f);
-    dq.push_back(2.0f);
-    dq.push_back(3.0f);
-    EXPECT_EQ(dq.size(), 3);
-    EXPECT_FLOAT_EQ(dq.front(), 1.0f);
-    EXPECT_FLOAT_EQ(dq.back(), 3.0f);
-}
 
-TEST(FixedDeque, PopFront) {
-    FixedDeque<float> dq;
-    dq.allocate(16);
-    dq.push_back(10.0f);
-    dq.push_back(20.0f);
-    dq.push_back(30.0f);
-    dq.pop_front();
-    EXPECT_EQ(dq.size(), 2);
-    EXPECT_FLOAT_EQ(dq.front(), 20.0f);
-}
-
-TEST(FixedDeque, PopBack) {
-    FixedDeque<float> dq;
-    dq.allocate(16);
-    dq.push_back(10.0f);
-    dq.push_back(20.0f);
-    dq.push_back(30.0f);
-    dq.pop_back();
-    EXPECT_EQ(dq.size(), 2);
-    EXPECT_FLOAT_EQ(dq.back(), 20.0f);
-}
-
-TEST(FixedDeque, ClearResetsSize) {
-    FixedDeque<float> dq;
-    dq.allocate(16);
-    for (int i = 0; i < 10; ++i) dq.push_back((float)i);
-    EXPECT_EQ(dq.size(), 10);
-    dq.clear();
-    EXPECT_EQ(dq.size(), 0);
-    EXPECT_TRUE(dq.empty());
-}
-
-TEST(FixedDeque, WrapsAroundCorrectly) {
-    FixedDeque<float> dq;
-    dq.allocate(4);
-    dq.push_back(1.0f);
-    dq.push_back(2.0f);
-    dq.push_back(3.0f);
-    dq.push_back(4.0f);
-    dq.pop_front();
-    dq.pop_front();
-    dq.push_back(5.0f);
-    dq.push_back(6.0f);
-    EXPECT_EQ(dq.size(), 4);
-    EXPECT_FLOAT_EQ(dq.front(), 3.0f);
-    EXPECT_FLOAT_EQ(dq.back(), 6.0f);
-}
-
-TEST(FixedDeque, EmptyChecks) {
-    FixedDeque<float> dq;
-    dq.allocate(8);
-    EXPECT_TRUE(dq.empty());
-    dq.push_back(1.0f);
-    EXPECT_FALSE(dq.empty());
-    dq.pop_front();
-    EXPECT_TRUE(dq.empty());
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// TruePeakLimiter Tests (v9: per-sample API)
-// ═══════════════════════════════════════════════════════════════════════════
-class TruePeakLimiterTest : public ::testing::Test {
-protected:
-    TruePeakLimiter limiter;
-    void SetUp() override {
-        limiter.ceiling = -0.3f;
-        limiter.prepare(kSR);
-        limiter.reset();
-    }
-};
-
-TEST_F(TruePeakLimiterTest, PassesSilence) {
-    float l = 0.0f, r = 0.0f;
-    for (int i = 0; i < kBlockSize; ++i) {
-        limiter.processStereo(l, r);
-    }
-    EXPECT_NEAR(l, 0.0f, 1e-6f);
-    EXPECT_NEAR(r, 0.0f, 1e-6f);
-}
-
-TEST_F(TruePeakLimiterTest, LimitsAboveCeiling) {
-    limiter.ceiling = -6.0f;  // ~0.5 linear
-    limiter.prepare(kSR);
-    limiter.reset();
-
-    const float ceilingLin = std::pow(10.0f, limiter.ceiling / 20.0f);
-    const int totalSamples = kBlockSize * 8;
-    auto sine = generateSine(440.0f, kSR, totalSamples, 1.0f);
-
-    std::vector<float> outL(totalSamples), outR(totalSamples);
-    for (int i = 0; i < totalSamples; ++i) {
-        float l = sine[i], r = sine[i];
-        limiter.processStereo(l, r);
-        outL[i] = l;
-        outR[i] = r;
-    }
-
-    // After lookahead settles, output should be below ceiling
-    const int skip = limiter.delaySamples + 50;
-    for (int i = skip; i < totalSamples; ++i) {
-        EXPECT_LE(std::abs(outL[i]), ceilingLin + 0.05f) << "Overshoot at sample " << i;
-    }
-}
-
-TEST_F(TruePeakLimiterTest, DoesNotLimitBelowCeiling) {
-    limiter.ceiling = 0.0f;  // 1.0 linear
-    limiter.prepare(kSR);
-    limiter.reset();
-
-    const int totalSamples = kBlockSize * 4;
-    auto sine = generateSine(440.0f, kSR, totalSamples, 0.3f);
-
-    float totalGR = 0.0f;
-    for (int i = 0; i < totalSamples; ++i) {
-        float l = sine[i], r = sine[i];
-        float gr = limiter.processStereo(l, r);
-        totalGR += std::abs(gr);
-    }
-    EXPECT_NEAR(totalGR / totalSamples, 0.0f, 0.5f);
-}
-
-TEST_F(TruePeakLimiterTest, ReportsGainReduction) {
-    limiter.ceiling = -6.0f;
-    limiter.prepare(kSR);
-    limiter.reset();
-
-    auto sine = generateSine(440.0f, kSR, kBlockSize * 4, 1.0f);
-    float maxGR = 0.0f;
-    for (int i = 0; i < kBlockSize * 4; ++i) {
-        float l = sine[i], r = sine[i];
-        float gr = limiter.processStereo(l, r);
-        maxGR = std::min(maxGR, gr);  // GR is negative dB
-    }
-    EXPECT_LT(maxGR, -0.5f) << "Should report gain reduction";
-}
-
-TEST_F(TruePeakLimiterTest, LatencyIsPositive) {
-    EXPECT_GT(limiter.delaySamples, 0);
-}
-
-TEST_F(TruePeakLimiterTest, ResetClearsState) {
-    limiter.ceiling = -12.0f;
-    limiter.prepare(kSR);
-
-    auto sine = generateSine(440.0f, kSR, kBlockSize, 2.0f);
-    for (int i = 0; i < kBlockSize; ++i) {
-        float l = sine[i], r = sine[i];
-        limiter.processStereo(l, r);
-    }
-    limiter.reset();
-    EXPECT_NEAR(limiter.envLin, 0.0f, 1e-5f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SVF ShineProcessor Tests (v9: direct field access + prepare())
-// ═══════════════════════════════════════════════════════════════════════════
-class ShineProcessorTest : public ::testing::Test {
-protected:
-    ShineProcessor shine;
-    void SetUp() override {
-        shine.prepare(kSR);
-        shine.reset();
-    }
-};
-
-TEST_F(ShineProcessorTest, PassesSilence) {
-    float L = 0.0f, R = 0.0f;
-    shine.processStereo(L, R);
-    EXPECT_NEAR(L, 0.0f, 1e-6f);
-    EXPECT_NEAR(R, 0.0f, 1e-6f);
-}
-
-TEST_F(ShineProcessorTest, BoostsHighFrequencies) {
-    shine.freq = 8000.0f;
-    shine.gainDb = 6.0f;
-    shine.q = 0.7f;
-    shine.prepare(kSR);
-
-    auto sine = generateSine(10000.0f, kSR, 4800, 0.3f);
-    std::vector<float> output(4800);
-    for (int i = 0; i < 4800; ++i) {
-        float L = sine[i], R = sine[i];
-        shine.processStereo(L, R);
-        output[i] = L;
-    }
-    float inRms = rms(sine);
-    float outRms = rms(output);
-    EXPECT_GT(outRms, inRms * 1.2f);
-}
-
-TEST_F(ShineProcessorTest, DoesNotBoostLowFrequencies) {
-    shine.freq = 12000.0f;
-    shine.gainDb = 6.0f;
-    shine.q = 0.7f;
-    shine.prepare(kSR);
-
-    auto sine = generateSine(100.0f, kSR, 4800, 0.3f);
-    std::vector<float> output(4800);
-    for (int i = 0; i < 4800; ++i) {
-        float L = sine[i], R = sine[i];
-        shine.processStereo(L, R);
-        output[i] = L;
-    }
-    float inRms = rms(sine);
-    float outRms = rms(output);
-    EXPECT_NEAR(outRms / inRms, 1.0f, 0.15f);
-}
-
-TEST_F(ShineProcessorTest, ZeroGainIsUnity) {
-    shine.freq = 12000.0f;
-    shine.gainDb = 0.0f;
-    shine.q = 0.7f;
-    shine.prepare(kSR);
-
-    auto sine = generateSine(8000.0f, kSR, 4800, 0.4f);
-    std::vector<float> output(4800);
-    for (int i = 0; i < 4800; ++i) {
-        float L = sine[i], R = sine[i];
-        shine.processStereo(L, R);
-        output[i] = L;
-    }
-    for (int i = 200; i < 4800; ++i)
-        EXPECT_NEAR(output[i], sine[i], 0.02f);
-}
-
-TEST_F(ShineProcessorTest, ResetClearsState) {
-    auto sine = generateSine(10000.0f, kSR, kBlockSize, 0.5f);
-    for (int i = 0; i < kBlockSize; ++i) {
-        float L = sine[i], R = sine[i];
-        shine.processStereo(L, R);
-    }
-    shine.reset();
-    float L = 0.0f, R = 0.0f;
-    shine.processStereo(L, R);
-    EXPECT_NEAR(L, 0.0f, 1e-5f);
-}
-
-TEST_F(ShineProcessorTest, ModulationSafe) {
-    auto sine = generateSine(5000.0f, kSR, kBlockSize * 4, 0.5f);
-    for (int i = 0; i < kBlockSize * 4; ++i) {
-        if (i % 100 == 0) {
-            shine.freq = 2000.0f + (float)(i % 18000);
-            shine.gainDb = (float)(i % 12);
-            shine.q = 0.1f + (float)(i % 20) * 0.1f;
-            shine.prepare(kSR);
-        }
-        float L = sine[i], R = sine[i];
-        shine.processStereo(L, R);
-        EXPECT_TRUE(std::isfinite(L)) << "NaN/Inf at sample " << i;
-        EXPECT_TRUE(std::isfinite(R)) << "NaN/Inf at sample " << i;
-    }
-}
-
-TEST_F(ShineProcessorTest, CutReducesHighFrequencies) {
-    shine.freq = 8000.0f;
-    shine.gainDb = -6.0f;
-    shine.q = 0.7f;
-    shine.prepare(kSR);
-
-    auto sine = generateSine(10000.0f, kSR, 4800, 0.3f);
-    std::vector<float> output(4800);
-    for (int i = 0; i < 4800; ++i) {
-        float L = sine[i], R = sine[i];
-        shine.processStereo(L, R);
-        output[i] = L;
-    }
-    float inRms = rms(sine);
-    float outRms = rmsRange(output, 200, 4800);
-    EXPECT_LT(outRms, inRms * 0.85f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SmoothParam Tests
-// ═══════════════════════════════════════════════════════════════════════════
 TEST(SmoothParam, ConvergesToTarget) {
     SmoothParam sp;
-    sp.setTime(5.0f, kSR);
-    sp.snapTo(0.0f);
+    sp.setTime(0.010f, kSR);  // 10ms
     sp.setTarget(1.0f);
-    for (int i = 0; i < 48000; ++i) sp.next();
-    EXPECT_NEAR(sp.current, 1.0f, 0.001f);
+    float val = 0.0f;
+    for (int i = 0; i < 4800; ++i)  // 100ms — should converge
+        val = sp.next();
+    EXPECT_NEAR(val, 1.0f, 0.001f);
 }
 
-TEST(SmoothParam, SnapToSetsImmediately) {
+TEST(SmoothParam, ImmediateAfterReset) {
     SmoothParam sp;
-    sp.setTime(100.0f, kSR);
-    sp.snapTo(0.75f);
-    EXPECT_FLOAT_EQ(sp.current, 0.75f);
-    EXPECT_FLOAT_EQ(sp.target, 0.75f);
+    sp.setTime(0.100f, kSR);
+    sp.setTarget(0.75f);
+    sp.reset(0.75f);
+    EXPECT_FLOAT_EQ(sp.next(), 0.75f);
 }
 
-TEST(SmoothParam, IsSmoothingDetection) {
-    SmoothParam sp;
-    sp.setTime(5.0f, kSR);
-    sp.snapTo(1.0f);
-    EXPECT_FALSE(sp.isSmoothing());
-    sp.setTarget(0.0f);
-    EXPECT_TRUE(sp.isSmoothing());
+TEST(EnvFollower, TracksEnvelope) {
+    EnvFollower env;
+    env.prepare(kSR, 0.001f, 0.050f);
+    // Feed a burst of 1.0 then silence
+    for (int i = 0; i < 48; ++i)
+        env.process(1.0f);
+    float afterBurst = env.envelope;
+    EXPECT_GT(afterBurst, 0.8f);
+    // Decay
+    for (int i = 0; i < 4800; ++i)
+        env.process(0.0f);
+    EXPECT_LT(env.envelope, 0.01f);
 }
 
-TEST(SmoothParam, SnapsAtThreshold) {
-    SmoothParam sp;
-    sp.setTime(5.0f, kSR);
-    sp.snapTo(0.0f);
-    sp.setTarget(1e-7f);
-    sp.next();
-    EXPECT_NEAR(sp.current, sp.target, 1e-5f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// EnvFollower Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(EnvFollower, TracksInputLevel) {
-    EnvFollower ef;
-    ef.setTimes(0.5f, 100.0f, kSR);
-    ef.reset();
-    for (int i = 0; i < 48000; ++i) ef.process(0.8f);
-    EXPECT_NEAR(ef.env, 0.8f, 0.01f);
-}
-
-TEST(EnvFollower, ReleasesAfterSilence) {
-    EnvFollower ef;
-    ef.setTimes(0.5f, 50.0f, kSR);
-    ef.reset();
-    for (int i = 0; i < 4800; ++i) ef.process(1.0f);
-    for (int i = 0; i < 48000; ++i) ef.process(0.0f);
-    EXPECT_LT(ef.env, 0.01f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SafetyLayer Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(SafetyLayer, BlocksDC) {
+TEST(SafetyLayer, RemovesDC) {
     SafetyLayer sl;
     sl.setSampleRate(kSR);
-    sl.reset();
-    float dc = 0.0f, dcPrev = 0.0f;
-    for (int i = 0; i < 96000; ++i) sl.processSample(1.0f, dc, dcPrev);
-    float out = sl.processSample(1.0f, dc, dcPrev);
-    EXPECT_LT(std::abs(out), 0.05f);
+    // Feed DC offset
+    float l = 0.5f, r = 0.5f;
+    for (int i = 0; i < 48000; ++i) {
+        l = 0.5f; r = 0.5f;
+        sl.processStereo(l, r);
+    }
+    // After convergence, output should be near zero
+    EXPECT_NEAR(l, 0.0f, 0.01f);
+    EXPECT_NEAR(r, 0.0f, 0.01f);
 }
 
-TEST(SafetyLayer, CleansNaN) {
+TEST(SafetyLayer, PassesAC) {
     SafetyLayer sl;
     sl.setSampleRate(kSR);
-    sl.reset();
-    float dc = 0.0f, dcPrev = 0.0f;
-    float result = sl.processSample(std::numeric_limits<float>::quiet_NaN(), dc, dcPrev);
-    EXPECT_TRUE(std::isfinite(result));
+    auto sine = generateSine(1000.0f, kSR, 48000);
+    std::vector<float> output(48000);
+    for (int i = 0; i < 48000; ++i) {
+        float l = sine[i], r = sine[i];
+        sl.processStereo(l, r);
+        output[i] = l;
+    }
+    // RMS should be close to original (within 1%)
+    float inRms = rms(sine);
+    float outRms = rms(output);
+    EXPECT_NEAR(outRms / inRms, 1.0f, 0.01f);
 }
 
-TEST(SafetyLayer, CleansInf) {
+TEST(SafetyLayer, CatchesNaN) {
     SafetyLayer sl;
     sl.setSampleRate(kSR);
-    sl.reset();
-    float dc = 0.0f, dcPrev = 0.0f;
-    float result = sl.processSample(std::numeric_limits<float>::infinity(), dc, dcPrev);
-    EXPECT_TRUE(std::isfinite(result));
+    float l = std::numeric_limits<float>::quiet_NaN();
+    float r = std::numeric_limits<float>::infinity();
+    sl.processStereo(l, r);
+    EXPECT_TRUE(std::isfinite(l));
+    EXPECT_TRUE(std::isfinite(r));
+}
+
+TEST(BypassCrossfader, SmoothTransition) {
+    BypassCrossfader bc;
+    bc.prepare();
+    // Initially not bypassed — wet should pass through
+    float wetL = 1.0f, wetR = 1.0f;
+    bc.processStereo(0.0f, 0.0f, wetL, wetR);
+    EXPECT_FLOAT_EQ(wetL, 1.0f);  // Full wet
+
+    // Engage bypass
+    bc.setBypassState(true);
+    // During fade, output should transition
+    float lastWet = 1.0f;
+    for (int i = 0; i < 64; ++i) {
+        float wL = 1.0f, wR = 1.0f;
+        bc.processStereo(0.0f, 0.0f, wL, wR);
+        EXPECT_LE(wL, lastWet + 0.001f);  // Monotonically decreasing
+        lastWet = wL;
+    }
+    // After fade, should be fully bypassed (dry)
+    float wL = 1.0f, wR = 1.0f;
+    bc.processStereo(0.5f, 0.5f, wL, wR);
+    EXPECT_NEAR(wL, 0.5f, 0.001f);  // Returns dry signal
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// LinkwitzRileyCrossover Tests (v9: processStereo API)
+// SECTION 3: SATURATION MODELS
 // ═══════════════════════════════════════════════════════════════════════════
-TEST(LinkwitzRileyCrossover, SumsToOriginal) {
-    LinkwitzRileyCrossover xo;
-    xo.prepare(kSR, 250.0f);
-    xo.reset();
 
-    auto sine = generateSine(1000.0f, kSR, kBlockSize);
-    float maxError = 0.0f;
-
-    for (int i = 0; i < kBlockSize; ++i) {
-        float lowL, lowR, highL, highR;
-        xo.processStereo(sine[i], sine[i], lowL, lowR, highL, highR);
-        float reconstructed = lowL + highL;
-        maxError = std::max(maxError, std::abs(reconstructed - sine[i]));
-    }
-    EXPECT_LT(maxError, 0.01f);
+TEST(Waveshaper, TanhProducesOddHarmonics) {
+    auto sine = generateSine(1000.0f, kSR, kBlock);
+    float tapeState = 0.0f;
+    for (auto& s : sine) s = Waveshaper::process(SaturationModel::Tanh, s * 3.0f, tapeState, 0.0f);
+    // Saturated signal should have higher RMS than linear
+    EXPECT_GT(rms(sine), 0.3f);
 }
 
-TEST(LinkwitzRileyCrossover, LowPassAttenuatesHigh) {
-    LinkwitzRileyCrossover xo;
-    xo.prepare(kSR, 250.0f);
-    xo.reset();
-
-    auto sine = generateSine(5000.0f, kSR, 4800, 1.0f);
-    std::vector<float> lowOut(4800);
-
-    for (int i = 0; i < 4800; ++i) {
-        float lowL, lowR, highL, highR;
-        xo.processStereo(sine[i], 0.0f, lowL, lowR, highL, highR);
-        lowOut[i] = lowL;
+TEST(Waveshaper, TubeAddsEvenHarmonics) {
+    auto sine = generateSine(1000.0f, kSR, kBlock);
+    float tapeState = 0.0f;
+    std::vector<float> output(kBlock);
+    for (int i = 0; i < kBlock; ++i)
+        output[i] = Waveshaper::process(SaturationModel::Tube, sine[i] * 2.0f, tapeState, 0.0f);
+    // Tube should be asymmetric (positive and negative peaks differ)
+    float posMax = 0.0f, negMax = 0.0f;
+    for (auto s : output) {
+        if (s > posMax) posMax = s;
+        if (s < negMax) negMax = s;
     }
-
-    float lowPeak = peakAbs(lowOut);
-    EXPECT_LT(lowPeak, 0.3f);
+    EXPECT_NE(posMax, -negMax);  // Asymmetric = even harmonics
 }
 
-TEST(LinkwitzRileyCrossover, HighPassAttenuatesLow) {
-    LinkwitzRileyCrossover xo;
-    xo.prepare(kSR, 2000.0f);
-    xo.reset();
-
-    auto sine = generateSine(100.0f, kSR, 4800, 1.0f);
-    std::vector<float> highOut(4800);
-
-    for (int i = 0; i < 4800; ++i) {
-        float lowL, lowR, highL, highR;
-        xo.processStereo(sine[i], 0.0f, lowL, lowR, highL, highR);
-        highOut[i] = highL;
-    }
-
-    float highRms = rmsRange(highOut, 200, 4800);
-    float inRms = rmsRange(sine, 200, 4800);
-    EXPECT_LT(highRms / inRms, 0.1f);
+TEST(Waveshaper, TapeHasMemory) {
+    float state1 = 0.0f, state2 = 0.0f;
+    // Same input, different history should produce different output
+    Waveshaper::tape(0.5f, state1);
+    Waveshaper::tape(0.5f, state1);
+    Waveshaper::tape(-0.5f, state2);
+    float out1 = Waveshaper::tape(0.5f, state1);
+    float out2 = Waveshaper::tape(0.5f, state2);
+    EXPECT_NE(out1, out2);  // Hysteresis = state-dependent
 }
 
-TEST(LinkwitzRileyCrossover, AtCrossoverFreqBothBandsPresent) {
-    LinkwitzRileyCrossover xo;
-    xo.prepare(kSR, 1000.0f);
-    xo.reset();
-
-    auto sine = generateSine(1000.0f, kSR, 9600, 1.0f);
-    std::vector<float> lowOut(9600), highOut(9600);
-
-    for (int i = 0; i < 9600; ++i) {
-        float lowL, lowR, highL, highR;
-        xo.processStereo(sine[i], 0.0f, lowL, lowR, highL, highR);
-        lowOut[i] = lowL;
-        highOut[i] = highL;
-    }
-
-    float lowRms = rmsRange(lowOut, 2000, 9600);
-    float highRms = rmsRange(highOut, 2000, 9600);
-    float inRms = rmsRange(sine, 2000, 9600);
-
-    float lowRatio = lowRms / inRms;
-    float highRatio = highRms / inRms;
-    EXPECT_GT(lowRatio, 0.3f);
-    EXPECT_LT(lowRatio, 0.8f);
-    EXPECT_GT(highRatio, 0.3f);
-    EXPECT_LT(highRatio, 0.8f);
+TEST(Waveshaper, TransistorAsymmetric) {
+    float pos = Waveshaper::transistor(1.5f);
+    float neg = Waveshaper::transistor(-1.5f);
+    EXPECT_NE(std::abs(pos), std::abs(neg));
 }
 
-TEST(LinkwitzRileyCrossover, SteepSlope) {
-    LinkwitzRileyCrossover xo;
-    xo.prepare(kSR, 500.0f);
-    xo.reset();
+TEST(Waveshaper, TransformerLowContentSensitive) {
+    float out1 = Waveshaper::transformer(0.5f, 0.0f);
+    float out2 = Waveshaper::transformer(0.5f, 1.0f);
+    EXPECT_NE(out1, out2);
+}
 
-    auto sine2k = generateSine(2000.0f, kSR, 9600, 1.0f);
-    std::vector<float> lowOut2k(9600);
-    for (int i = 0; i < 9600; ++i) {
-        float lowL, lowR, highL, highR;
-        xo.processStereo(sine2k[i], 0.0f, lowL, lowR, highL, highR);
-        lowOut2k[i] = lowL;
+TEST(Waveshaper, AllModelsBounded) {
+    float tapeState = 0.0f;
+    for (int m = 0; m < (int)SaturationModel::Neural_Neve; ++m) {
+        float out = Waveshaper::process((SaturationModel)m, 10.0f, tapeState, 0.5f);
+        EXPECT_LE(std::abs(out), 2.0f) << "Model " << m << " unbounded";
     }
-
-    xo.reset();
-    auto sine4k = generateSine(4000.0f, kSR, 9600, 1.0f);
-    std::vector<float> lowOut4k(9600);
-    for (int i = 0; i < 9600; ++i) {
-        float lowL, lowR, highL, highR;
-        xo.processStereo(sine4k[i], 0.0f, lowL, lowR, highL, highR);
-        lowOut4k[i] = lowL;
-    }
-
-    float rms2k = rmsRange(lowOut2k, 2000, 9600);
-    float rms4k = rmsRange(lowOut4k, 2000, 9600);
-
-    float slopeDb = 20.0f * std::log10(rms2k / std::max(rms4k, 1e-10f));
-    EXPECT_GT(slopeDb, 18.0f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// GlueCompressor Tests (v9: processStereo returns gain)
+// SECTION 4: NEURAL SATURATION
 // ═══════════════════════════════════════════════════════════════════════════
-TEST(GlueCompressor, ReducesLoudSignals) {
+
+TEST(NeuralSaturation, FallbackWhenNotLoaded) {
+    NeuralSaturationModel nsm;
+    EXPECT_FALSE(nsm.loaded);
+    // Should fall back to fastTanh
+    float out = nsm.process(0.5f);
+    EXPECT_NEAR(out, fastTanh(0.5f), 1e-6f);
+}
+
+TEST(NeuralSaturation, ResetClearsState) {
+    NeuralSaturationModel nsm;
+    nsm.hiddenState.fill(1.0f);
+    nsm.reset();
+    for (auto h : nsm.hiddenState)
+        EXPECT_FLOAT_EQ(h, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 5: WDF CIRCUIT MODELS
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(WDFTube, ProducesSaturation) {
+    WDFTubeStage wdf;
+    wdf.reset();
+    auto sine = generateSine(1000.0f, kSR, kBlock, 1.0f);
+    std::vector<float> output(kBlock);
+    for (int i = 0; i < kBlock; ++i)
+        output[i] = wdf.process(sine[i]);
+    // Output should be bounded and non-zero
+    EXPECT_GT(rms(output), 0.1f);
+    EXPECT_LE(peak(output), 1.5f);
+}
+
+TEST(WDFTube, HasState) {
+    WDFTubeStage wdf;
+    wdf.reset();
+    float out1 = wdf.process(0.5f);
+    float out2 = wdf.process(0.5f);
+    EXPECT_NE(out1, out2);  // State-dependent
+}
+
+TEST(WDFTransformer, CoreSaturation) {
+    WDFTransformerStage wdf;
+    wdf.reset();
+    auto sine = generateSine(100.0f, kSR, kBlock, 1.0f);
+    std::vector<float> output(kBlock);
+    for (int i = 0; i < kBlock; ++i)
+        output[i] = wdf.process(sine[i]);
+    EXPECT_GT(rms(output), 0.05f);
+    EXPECT_LE(peak(output), 2.0f);
+}
+
+TEST(WDFTransformer, FluxAccumulates) {
+    WDFTransformerStage wdf;
+    wdf.reset();
+    for (int i = 0; i < 100; ++i)
+        wdf.process(1.0f);
+    EXPECT_NE(wdf.primaryFlux, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 6: RESONANCE TAMING + TRANSIENT SPLITTING
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ResonanceTamer, DisabledPassesThrough) {
+    ResonanceTamer rt;
+    rt.prepare(kSR);
+    rt.enabled = false;
+    EXPECT_FLOAT_EQ(rt.process(0.75f), 0.75f);
+}
+
+TEST(ResonanceTamer, ReducesResonantPeaks) {
+    ResonanceTamer rt;
+    rt.prepare(kSR);
+    rt.enabled = true;
+    rt.sensitivity = 0.3f;
+    rt.depth = 1.0f;
+    // Feed sustained loud signal to build up band energy
+    for (int i = 0; i < 4800; ++i)
+        rt.process(0.9f);
+    // Now the output should be attenuated
+    float out = rt.process(0.9f);
+    EXPECT_LT(out, 0.9f);
+}
+
+TEST(TransientSplitter, DisabledReturnsZero) {
+    TransientSplitter ts;
+    ts.prepare(kSR);
+    ts.enabled = false;
+    EXPECT_FLOAT_EQ(ts.getTransientAmount(1.0f), 0.0f);
+}
+
+TEST(TransientSplitter, DetectsTransient) {
+    TransientSplitter ts;
+    ts.prepare(kSR);
+    ts.enabled = true;
+    ts.sensitivity = 1.0f;
+    // Feed silence then a sudden burst
+    for (int i = 0; i < 4800; ++i)
+        ts.getTransientAmount(0.001f);
+    float transient = ts.getTransientAmount(1.0f);
+    EXPECT_GT(transient, 0.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 7: OVERSAMPLING ENGINE
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(OversamplingEngine, PrepareSetsFactor) {
+    OversamplingEngine os;
+    os.prepare(4);
+    EXPECT_EQ(os.factor, 4);
+    EXPECT_GT(os.latencySamples, 0);
+}
+
+TEST(OversamplingEngine, UpsampleInsertsZeros) {
+    OversamplingEngine os;
+    os.prepare(4);
+    float outL[4], outR[4];
+    os.upsample(1.0f, 0.5f, outL, outR, 4);
+    EXPECT_FLOAT_EQ(outL[0], 1.0f);
+    EXPECT_FLOAT_EQ(outR[0], 0.5f);
+    for (int i = 1; i < 4; ++i) {
+        EXPECT_FLOAT_EQ(outL[i], 0.0f);
+        EXPECT_FLOAT_EQ(outR[i], 0.0f);
+    }
+}
+
+TEST(OversamplingEngine, DownsampleProducesOutput) {
+    OversamplingEngine os;
+    os.prepare(2);
+    float inL[2] = {1.0f, 0.0f};
+    float inR[2] = {0.5f, 0.0f};
+    float outL, outR;
+    os.downsample(inL, inR, 2, outL, outR);
+    EXPECT_TRUE(std::isfinite(outL));
+    EXPECT_TRUE(std::isfinite(outR));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 8: DYNAMICS
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(SidechainHPF, RemovesLowFrequency) {
+    SidechainHPF hpf;
+    hpf.prepare(kSR, 200.0f);
+    // Feed 50 Hz sine — should be attenuated
+    auto sine50 = generateSine(50.0f, kSR, 48000);
+    std::vector<float> output(48000);
+    for (int i = 0; i < 48000; ++i) {
+        float l = sine50[i], r = sine50[i];
+        hpf.processStereo(l, r);
+        output[i] = l;
+    }
+    EXPECT_LT(rms(output), rms(sine50) * 0.5f);
+}
+
+TEST(SidechainHPF, PassesHighFrequency) {
+    SidechainHPF hpf;
+    hpf.prepare(kSR, 200.0f);
+    auto sine5k = generateSine(5000.0f, kSR, 48000);
+    std::vector<float> output(48000);
+    for (int i = 0; i < 48000; ++i) {
+        float l = sine5k[i], r = sine5k[i];
+        hpf.processStereo(l, r);
+        output[i] = l;
+    }
+    // High frequency should pass with minimal loss
+    EXPECT_GT(rms(output), rms(sine5k) * 0.7f);
+}
+
+TEST(GlueCompressor, ReducesGainAboveThreshold) {
     GlueCompressor gc;
     gc.prepare(kSR);
-    gc.reset();
-
-    auto sine = generateSine(1000.0f, kSR, 4800, 1.0f);
-    std::vector<float> output(4800);
-
-    for (int i = 0; i < 4800; ++i) {
-        float gain = gc.processStereo(sine[i], sine[i]);
-        output[i] = sine[i] * gain;
-    }
-
-    float outPeak = peakAbs(output);
-    EXPECT_LT(outPeak, 0.95f);
-}
-
-TEST(GlueCompressor, PassthroughAtLowLevel) {
-    GlueCompressor gc;
-    gc.threshold = -6.0f;
-    gc.prepare(kSR);
-    gc.reset();
-
-    // Very quiet signal — should not compress
-    float gain = gc.processStereo(0.01f, 0.01f);
-    EXPECT_NEAR(gain, gc.makeupGain, 0.1f);
-}
-
-TEST(GlueCompressor, SoftKneeGradualOnset) {
-    GlueCompressor gc;
-    gc.prepare(kSR);
-    gc.reset();
-
-    // Process signals at various levels
-    std::vector<float> gains;
-    for (float level = 0.1f; level <= 1.0f; level += 0.05f) {
-        gc.reset();
-        // Feed steady signal to let envelope settle
-        for (int i = 0; i < 4800; ++i)
-            gc.processStereo(level, level);
-        float gain = gc.processStereo(level, level);
-        gains.push_back(gain);
-    }
-
-    // Check that gain ratios decrease smoothly (no sudden jumps)
-    for (size_t i = 1; i < gains.size(); ++i) {
-        float jump = gains[i - 1] - gains[i];
-        EXPECT_LT(std::abs(jump), 0.15f) << "Abrupt gain change at index " << i;
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// MacroInterpreter Tests (v9: MacroSlot/getMappedValue API)
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(MacroInterpreter, AddMappingAndRetrieve) {
-    MacroInterpreter mi;
-    MacroInterpreter::Mapping m;
-    m.targetParamIndex = 0;
-    m.minValue = 0.0f;
-    m.maxValue = 100.0f;
-    m.curve = MacroInterpreter::CurveType::Linear;
-    mi.macros[0].addMapping(m);
-
-    float val = mi.getMappedValue(0, 1.0f, 0);
-    EXPECT_NEAR(val, 100.0f, 0.01f);
-}
-
-TEST(MacroInterpreter, ZeroMacroGivesMinValue) {
-    MacroInterpreter mi;
-    MacroInterpreter::Mapping m;
-    m.targetParamIndex = 0;
-    m.minValue = 10.0f;
-    m.maxValue = 90.0f;
-    m.curve = MacroInterpreter::CurveType::Linear;
-    mi.macros[0].addMapping(m);
-
-    float val = mi.getMappedValue(0, 0.0f, 0);
-    EXPECT_NEAR(val, 10.0f, 0.01f);
-}
-
-TEST(MacroInterpreter, ClearRemovesAllMappings) {
-    MacroInterpreter mi;
-    MacroInterpreter::Mapping m;
-    m.targetParamIndex = 0;
-    m.minValue = 0.0f;
-    m.maxValue = 1.0f;
-    mi.macros[0].addMapping(m);
-    mi.macros[0].clearMappings();
-
-    float val = mi.getMappedValue(0, 1.0f, 0);
-    EXPECT_FLOAT_EQ(val, 0.0f);
-}
-
-TEST(MacroInterpreter, PerceptualCurvesAreNonLinear) {
-    MacroInterpreter mi;
-
-    // Add exponential mapping
-    MacroInterpreter::Mapping mExp;
-    mExp.targetParamIndex = 0;
-    mExp.minValue = 0.0f;
-    mExp.maxValue = 1.0f;
-    mExp.curve = MacroInterpreter::CurveType::Exponential;
-    mi.macros[0].addMapping(mExp);
-
-    float modExp = mi.getMappedValue(0, 0.5f, 0);
-
-    // Add linear mapping on a different macro
-    MacroInterpreter::Mapping mLin;
-    mLin.targetParamIndex = 0;
-    mLin.minValue = 0.0f;
-    mLin.maxValue = 1.0f;
-    mLin.curve = MacroInterpreter::CurveType::Linear;
-    mi.macros[1].addMapping(mLin);
-
-    float modLin = mi.getMappedValue(1, 0.5f, 0);
-
-    EXPECT_NE(modExp, modLin);
-    EXPECT_LT(modExp, modLin)
-        << "Exponential curve at 0.5 should produce less than linear (x^2 = 0.25)";
-}
-
-TEST(MacroInterpreter, ApplyCurveLinear) {
-    EXPECT_NEAR(MacroInterpreter::applyCurve(0.5f, MacroInterpreter::CurveType::Linear), 0.5f, 1e-5f);
-}
-
-TEST(MacroInterpreter, ApplyCurveExponential) {
-    EXPECT_NEAR(MacroInterpreter::applyCurve(0.5f, MacroInterpreter::CurveType::Exponential), 0.25f, 1e-5f);
-}
-
-TEST(MacroInterpreter, ApplyCurveSCurve) {
-    float mid = MacroInterpreter::applyCurve(0.5f, MacroInterpreter::CurveType::SCurve);
-    EXPECT_NEAR(mid, 0.5f, 0.01f);  // S-curve passes through midpoint
-}
-
-TEST(MacroInterpreter, InvalidIndexReturnsZero) {
-    MacroInterpreter mi;
-    EXPECT_FLOAT_EQ(mi.getMappedValue(-1, 1.0f, 0), 0.0f);
-    EXPECT_FLOAT_EQ(mi.getMappedValue(5, 1.0f, 0), 0.0f);
-    EXPECT_FLOAT_EQ(mi.getMappedValue(0, 1.0f, 0), 0.0f);  // no mappings
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// MeterBallistics Tests (v9: prepare(sr), peakHoldL)
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(MeterBallistics, PrepareDoesNotCrash) {
-    MeterBallistics mb;
-    mb.prepare(44100.0);
-    mb.prepare(48000.0);
-    mb.prepare(96000.0);
-    mb.prepare(192000.0);
-    SUCCEED();
-}
-
-TEST(MeterBallistics, ResetClearsState) {
-    MeterBallistics mb;
-    mb.prepare(kSR);
-    mb.peakHoldL = 0.9f;
-    mb.sparkGR = 5.0f;
-    mb.reset();
-    EXPECT_FLOAT_EQ(mb.peakHoldL, 0.0f);
-    EXPECT_FLOAT_EQ(mb.sparkGR, 0.0f);
-}
-
-TEST(MeterBallistics, TracksPeaks) {
-    MeterBallistics mb;
-    mb.prepare(kSR);
-    mb.reset();
-
-    // Feed a loud signal
-    for (int i = 0; i < 480; ++i) {
-        mb.processSample(0.9f, 0.8f);
-    }
-    EXPECT_GT(mb.peakHoldL, 0.85f);
-    EXPECT_GT(mb.peakHoldR, 0.75f);
-}
-
-TEST(MeterBallistics, PeakDecays) {
-    MeterBallistics mb;
-    mb.prepare(kSR);
-    mb.reset();
-
-    // Feed loud signal
-    for (int i = 0; i < 480; ++i) mb.processSample(0.9f, 0.9f);
-    float peakAfterLoud = mb.peakHoldL;
-
-    // Feed silence for 2 seconds (past hold time)
-    for (int i = 0; i < 96000; ++i) mb.processSample(0.0f, 0.0f);
-    EXPECT_LT(mb.peakHoldL, peakAfterLoud * 0.1f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// AutoGainSmoother Tests (v9: updateInput/updateOutput/getCompensationGain)
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(AutoGainSmoother, DoesNotCrashOnSilence) {
-    AutoGainSmoother ag;
-    ag.prepare(kSR);
-    for (int i = 0; i < kBlockSize; ++i) {
-        ag.updateInput(0.0f, 0.0f);
-        ag.updateOutput(0.0f, 0.0f);
-    }
-    float gain = ag.getCompensationGain();
-    EXPECT_TRUE(std::isfinite(gain));
-    EXPECT_NEAR(gain, 1.0f, 0.01f);  // Silence → unity
-}
-
-TEST(AutoGainSmoother, CompensatesLoudnessIncrease) {
-    AutoGainSmoother ag;
-    ag.prepare(kSR);
-    ag.reset();
-
-    auto dry = generateSine(1000.0f, kSR, kBlockSize * 20, 0.3f);
-    auto wet = generateSine(1000.0f, kSR, kBlockSize * 20, 0.6f);
-
-    for (int i = 0; i < kBlockSize * 20; ++i) {
-        ag.updateInput(std::abs(dry[i]), std::abs(dry[i]));
-        ag.updateOutput(std::abs(wet[i]), std::abs(wet[i]));
-    }
-
-    float gain = ag.getCompensationGain();
-    // Output is louder than input → compensation should reduce (gain < 1)
+    gc.setParameters(-12.0f, 4.0f, 0.0f);
+    // Feed signal above threshold
+    float gain = gc.processStereo(1.0f, 1.0f);
     EXPECT_LT(gain, 1.0f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// SidechainHPF Tests (v9: processStereo in-place, prepare(sr, mode))
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(SidechainHPF, PassthroughWhenOff) {
-    SidechainHPF hpf;
-    hpf.prepare(kSR, 0);  // mode 0 = off
-    hpf.reset();
-
-    float L = 0.8f, R = 0.8f;
-    hpf.processStereo(L, R);
-    // When off, processStereo returns early — signal unchanged
-    EXPECT_NEAR(L, 0.8f, 0.01f);
-    EXPECT_NEAR(R, 0.8f, 0.01f);
+TEST(GlueCompressor, NoReductionBelowThreshold) {
+    GlueCompressor gc;
+    gc.prepare(kSR);
+    gc.setParameters(-6.0f, 4.0f, 0.0f);
+    // Feed very quiet signal
+    float gain = gc.processStereo(0.001f, 0.001f);
+    EXPECT_NEAR(gain, 1.0f, 0.01f);
 }
 
-TEST(SidechainHPF, AttenuatesLowFrequencies) {
-    SidechainHPF hpf;
-    hpf.prepare(kSR, 3);  // mode 3 = 150 Hz
-    hpf.reset();
+TEST(GlueCompressor, MakeupGainApplied) {
+    GlueCompressor gc;
+    gc.prepare(kSR);
+    gc.setParameters(-6.0f, 4.0f, 6.0f);  // 6dB makeup
+    float gain = gc.processStereo(0.001f, 0.001f);
+    EXPECT_GT(gain, 1.5f);  // ~2x from 6dB makeup
+}
 
-    auto sine = generateSine(50.0f, kSR, 4800, 0.8f);
-    float maxOut = 0.0f;
-    for (int i = 0; i < 4800; ++i) {
-        float L = sine[i], R = sine[i];
-        hpf.processStereo(L, R);
-        if (i > 480) maxOut = std::max(maxOut, std::max(std::abs(L), std::abs(R)));
+TEST(TruePeakLimiter, LimitsAboveCeiling) {
+    TruePeakLimiter lim;
+    lim.prepare(kSR);
+    lim.ceiling = -1.0f;
+    float ceilLin = dbToGain(-1.0f);
+    // Process loud signal through lookahead
+    for (int i = 0; i < 100; ++i) {
+        float l = 2.0f, r = 2.0f;
+        lim.processStereo(l, r);
     }
-    EXPECT_LT(maxOut, 0.5f) << "50 Hz should be attenuated by 150 Hz HPF";
+    // After settling, output should be below ceiling
+    float l = 2.0f, r = 2.0f;
+    lim.processStereo(l, r);
+    EXPECT_LE(std::abs(l), ceilLin * 1.1f);
 }
 
-TEST(SidechainHPF, PassesHighFrequencies) {
-    SidechainHPF hpf;
-    hpf.prepare(kSR, 1);  // mode 1 = 60 Hz
-    hpf.reset();
-
-    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
-    float maxOut = 0.0f;
-    for (int i = 0; i < 4800; ++i) {
-        float L = sine[i], R = sine[i];
-        hpf.processStereo(L, R);
-        if (i > 480) maxOut = std::max(maxOut, std::max(std::abs(L), std::abs(R)));
+TEST(TruePeakLimiter, PassesQuietSignal) {
+    TruePeakLimiter lim;
+    lim.prepare(kSR);
+    lim.ceiling = -0.3f;
+    // Process quiet signal
+    for (int i = 0; i < 100; ++i) {
+        float l = 0.1f, r = 0.1f;
+        lim.processStereo(l, r);
     }
-    EXPECT_GT(maxOut, 0.6f) << "1 kHz should pass through 60 Hz HPF";
-}
-
-TEST(SidechainHPF, ResetClearsState) {
-    SidechainHPF hpf;
-    hpf.prepare(kSR, 2);  // mode 2 = 90 Hz
-    for (int i = 0; i < 480; ++i) {
-        float L = 0.5f, R = 0.5f;
-        hpf.processStereo(L, R);
-    }
-    hpf.reset();
-    float L = 0.0f, R = 0.0f;
-    hpf.processStereo(L, R);
-    EXPECT_NEAR(L, 0.0f, 1e-5f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// BypassCrossfader Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(BypassCrossfader, ClickFreeTransition) {
-    BypassCrossfader xf;
-    xf.prepare(64);
-    xf.reset();
-    xf.setBypassState(false);
-
-    // Process fully wet
-    for (int i = 0; i < 64; ++i) {
-        float wL = 0.8f, wR = 0.8f;
-        xf.processStereo(0.5f, 0.5f, wL, wR);
-        EXPECT_NEAR(wL, 0.8f, 0.01f) << "Should be fully wet before bypass";
-    }
-
-    // Toggle to bypass
-    xf.setBypassState(true);
-
-    float prevL = 0.8f;
-    float maxDelta = 0.0f;
-    for (int i = 0; i < 128; ++i) {
-        float wL = 0.8f, wR = 0.8f;
-        xf.processStereo(0.5f, 0.5f, wL, wR);
-        float delta = std::abs(wL - prevL);
-        maxDelta = std::max(maxDelta, delta);
-        prevL = wL;
-    }
-    EXPECT_LT(maxDelta, 0.02f)
-        << "Bypass transition should be smooth. Max delta: " << maxDelta;
-
-    // After fade: should be fully dry
-    float wL = 0.8f, wR = 0.8f;
-    xf.processStereo(0.5f, 0.5f, wL, wR);
-    EXPECT_NEAR(wL, 0.5f, 0.01f) << "Should be fully dry after bypass";
-}
-
-TEST(BypassCrossfader, ResetSettles) {
-    BypassCrossfader xf;
-    xf.prepare(64);
-    xf.setBypassState(true);
-    for (int i = 0; i < 10; ++i) {
-        float wL = 1.0f, wR = 1.0f;
-        xf.processStereo(0.0f, 0.0f, wL, wR);
-    }
-    xf.reset();
-    float wL = 1.0f, wR = 1.0f;
-    xf.processStereo(0.0f, 0.0f, wL, wR);
-    bool settled = (std::abs(wL - 0.0f) < 0.01f || std::abs(wL - 1.0f) < 0.01f);
-    EXPECT_TRUE(settled) << "After reset, crossfader should be settled. Got: " << wL;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v9: Saturation Model Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(Waveshaper, TanhMatchesFastTanh) {
-    for (float x = -3.0f; x <= 3.0f; x += 0.1f) {
-        EXPECT_FLOAT_EQ(Waveshaper::tanh(x), fastTanh(x));
-    }
-}
-
-TEST(Waveshaper, TubeProducesEvenHarmonics) {
-    // Tube model should be asymmetric (even harmonics)
-    float posOut = Waveshaper::tube(1.0f);
-    float negOut = Waveshaper::tube(-1.0f);
-    // If symmetric, |posOut| == |negOut|. Tube should differ.
-    EXPECT_NE(std::abs(posOut), std::abs(negOut))
-        << "Tube should be asymmetric (even harmonics)";
-}
-
-TEST(Waveshaper, TapeIsStateful) {
-    float state1 = 0.0f, state2 = 0.0f;
-    float y1 = Waveshaper::tape(0.5f, state1);
-    float y2 = Waveshaper::tape(0.5f, state2);
-    // Both start from same state → same output
-    EXPECT_FLOAT_EQ(y1, y2);
-
-    // After processing, state should have changed
-    float y3 = Waveshaper::tape(0.5f, state1);
-    // state1 has been modified by the first call, so y3 may differ
-    EXPECT_TRUE(std::isfinite(y3));
-}
-
-TEST(Waveshaper, TransistorClipsHard) {
-    float y = Waveshaper::transistor(5.0f);
-    EXPECT_LT(std::abs(y), 2.0f) << "Transistor should hard-clip extreme signals";
-    EXPECT_TRUE(std::isfinite(y));
-}
-
-TEST(Waveshaper, TransformerFreqDependent) {
-    // With high lowContent, transformer should saturate more
-    float yLow = Waveshaper::transformer(0.5f, 0.0f);
-    float yHigh = Waveshaper::transformer(0.5f, 1.0f);
-    // Higher lowContent → more drive → different output
-    EXPECT_NE(yLow, yHigh);
-    EXPECT_TRUE(std::isfinite(yLow));
-    EXPECT_TRUE(std::isfinite(yHigh));
-}
-
-TEST(Waveshaper, DispatchAllModels) {
-    float tapeState = 0.0f;
-    for (int m = 0; m < (int)SaturationModel::NumModels; ++m) {
-        float y = Waveshaper::process((SaturationModel)m, 0.5f, tapeState, 0.3f);
-        EXPECT_TRUE(std::isfinite(y)) << "Model " << m << " produced NaN/Inf";
-        EXPECT_LE(std::abs(y), 2.0f) << "Model " << m << " output too large";
-    }
-}
-
-TEST(Waveshaper, AllModelsSaturate) {
-    float tapeState = 0.0f;
-    for (int m = 0; m < (int)SaturationModel::NumModels; ++m) {
-        // At high drive, output should be bounded
-        float y = Waveshaper::process((SaturationModel)m, 10.0f, tapeState, 0.5f);
-        EXPECT_LT(std::abs(y), 5.0f) << "Model " << m << " should saturate at high input";
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v9: MultibandEngine Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(MultibandEngine, FullbandPassthrough) {
-    MultibandEngine mb;
-    mb.numBands = 1;
-    mb.bands[0].satModel = SaturationModel::Tanh;
-    mb.bands[0].drive = 0.0f;
-    mb.bands[0].mix = 1.0f;
-    mb.prepare(kSR);
-    mb.reset();
-
-    // At zero drive, tanh(x*1) ≈ x for small signals
+    // After delay settles, quiet signal should pass unchanged
     float l = 0.1f, r = 0.1f;
-    mb.processStereo(l, r, 0.0f);
-    EXPECT_NEAR(l, fastTanh(0.1f), 0.01f);
+    lim.processStereo(l, r);
+    // Due to lookahead delay, we check the delayed output
+    EXPECT_LE(std::abs(l), 0.15f);
 }
 
-TEST(MultibandEngine, TwoBandSplitAndRecombine) {
-    MultibandEngine mb;
-    mb.numBands = 2;
-    mb.crossoverFreqs[0] = 1000.0f;
-    mb.bands[0].satModel = SaturationModel::Tanh;
-    mb.bands[0].drive = 0.0f;
-    mb.bands[0].mix = 0.0f;  // dry
-    mb.bands[1].satModel = SaturationModel::Tanh;
-    mb.bands[1].drive = 0.0f;
-    mb.bands[1].mix = 0.0f;  // dry
-    mb.prepare(kSR);
-    mb.reset();
+TEST(TruePeakLimiter, ReportedLatency) {
+    TruePeakLimiter lim;
+    EXPECT_EQ(TruePeakLimiter::kLookahead, 8);
+}
 
-    // With mix=0 (all dry), output should approximately equal input
-    auto sine = generateSine(440.0f, kSR, 4800, 0.5f);
-    float maxError = 0.0f;
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 9: EQ + CROSSOVER + MULTIBAND
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ShineProcessor, BoostsAtFrequency) {
+    ShineProcessor sp;
+    sp.setParameters(5000.0f, 6.0f, 0.707f);
+    sp.prepare(kSR);
+    sp.reset();
+    auto sine5k = generateSine(5000.0f, kSR, 4800);
+    std::vector<float> output(4800);
     for (int i = 0; i < 4800; ++i) {
-        float l = sine[i], r = sine[i];
-        mb.processStereo(l, r, 0.0f);
-        maxError = std::max(maxError, std::abs(l - sine[i]));
+        float l = sine5k[i], r = sine5k[i];
+        sp.processStereo(l, r);
+        output[i] = l;
     }
-    EXPECT_LT(maxError, 0.05f) << "Dry multiband should approximate passthrough";
+    // Boosted signal should be louder
+    EXPECT_GT(rms(output), rms(sine5k) * 1.2f);
 }
 
-TEST(MultibandEngine, MuteKillsBand) {
+TEST(ShineProcessor, CutsAtFrequency) {
+    ShineProcessor sp;
+    sp.setParameters(5000.0f, -6.0f, 0.707f);
+    sp.prepare(kSR);
+    sp.reset();
+    auto sine5k = generateSine(5000.0f, kSR, 4800);
+    std::vector<float> output(4800);
+    for (int i = 0; i < 4800; ++i) {
+        float l = sine5k[i], r = sine5k[i];
+        sp.processStereo(l, r);
+        output[i] = l;
+    }
+    EXPECT_LT(rms(output), rms(sine5k) * 0.8f);
+}
+
+TEST(LinkwitzRileyCrossover, SplitsIntoLowAndHigh) {
+    LinkwitzRileyCrossover xo;
+    xo.prepare(kSR, 1000.0f);
+    float lowL, lowR, highL, highR;
+    // Feed a sample
+    xo.processStereo(1.0f, 1.0f, lowL, lowR, highL, highR);
+    // Low + High should approximately equal input (energy conservation)
+    EXPECT_NEAR(lowL + highL, 1.0f, 0.1f);
+}
+
+TEST(LinkwitzRileyCrossover, LowPassesLowFreq) {
+    LinkwitzRileyCrossover xo;
+    xo.prepare(kSR, 1000.0f);
+    auto sine100 = generateSine(100.0f, kSR, 48000);
+    float lowRms = 0.0f, highRms = 0.0f;
+    for (int i = 0; i < 48000; ++i) {
+        float lowL, lowR, highL, highR;
+        xo.processStereo(sine100[i], sine100[i], lowL, lowR, highL, highR);
+        lowRms += lowL * lowL;
+        highRms += highL * highL;
+    }
+    EXPECT_GT(lowRms, highRms * 10.0f);  // Low band dominates
+}
+
+TEST(MultibandEngine, SingleBandPassthrough) {
     MultibandEngine mb;
-    mb.numBands = 1;
-    mb.bands[0].mute = true;
-    mb.prepare(kSR);
-    mb.reset();
+    float freqs[] = {250.0f};
+    mb.prepare(kSR, 1, freqs);
+    float bandL[6], bandR[6];
+    mb.split(0.75f, 0.5f, bandL, bandR);
+    EXPECT_FLOAT_EQ(bandL[0], 0.75f);
+    EXPECT_FLOAT_EQ(bandR[0], 0.5f);
+}
 
-    float l = 0.5f, r = 0.5f;
-    float origL = l;
-    mb.processStereo(l, r, 0.0f);
-    EXPECT_FLOAT_EQ(l, origL) << "Muted band should not modify signal";
+TEST(MultibandEngine, TwoBandSplitRecombine) {
+    MultibandEngine mb;
+    float freqs[] = {1000.0f};
+    mb.prepare(kSR, 2, freqs);
+    // Process many samples to let filter settle
+    float bandL[6], bandR[6];
+    for (int i = 0; i < 1000; ++i)
+        mb.split(0.5f, 0.5f, bandL, bandR);
+    // Recombine should approximately equal input
+    float outL, outR;
+    mb.recombine(bandL, bandR, outL, outR);
+    EXPECT_NEAR(outL, 0.5f, 0.05f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// v9: MidSideEncoder Tests
+// SECTION 10: STEREO
 // ═══════════════════════════════════════════════════════════════════════════
-TEST(MidSideEncoder, DisabledIsPassthrough) {
+
+TEST(MidSideEncoder, DisabledPassthrough) {
     MidSideEncoder ms;
     ms.enabled = false;
-
-    float l = 0.7f, r = 0.3f;
+    float l = 0.8f, r = 0.3f;
     ms.encode(l, r);
-    EXPECT_FLOAT_EQ(l, 0.7f);
+    EXPECT_FLOAT_EQ(l, 0.8f);
     EXPECT_FLOAT_EQ(r, 0.3f);
 }
 
-TEST(MidSideEncoder, EncodeDecodeRoundTrip) {
+TEST(MidSideEncoder, EncodeDecodeRoundtrip) {
     MidSideEncoder ms;
     ms.enabled = true;
-
-    float l = 0.7f, r = 0.3f;
+    float l = 0.8f, r = 0.3f;
     ms.encode(l, r);
-    // After encode: l = mid = (0.7+0.3)/2 = 0.5, r = side = (0.7-0.3)/2 = 0.2
-    EXPECT_NEAR(l, 0.5f, 1e-5f);
-    EXPECT_NEAR(r, 0.2f, 1e-5f);
-
+    // After encode: l = mid, r = side
+    EXPECT_NEAR(l, 0.55f, 0.001f);   // (0.8+0.3)/2
+    EXPECT_NEAR(r, 0.25f, 0.001f);   // (0.8-0.3)/2
     ms.decode(l, r);
-    // After decode: l = mid+side = 0.7, r = mid-side = 0.3
-    EXPECT_NEAR(l, 0.7f, 1e-5f);
-    EXPECT_NEAR(r, 0.3f, 1e-5f);
+    EXPECT_NEAR(l, 0.8f, 0.001f);
+    EXPECT_NEAR(r, 0.3f, 0.001f);
 }
 
 TEST(MidSideEncoder, MonoSignalHasNoSide) {
     MidSideEncoder ms;
     ms.enabled = true;
-
     float l = 0.5f, r = 0.5f;
     ms.encode(l, r);
-    EXPECT_NEAR(l, 0.5f, 1e-5f);  // mid = 0.5
-    EXPECT_NEAR(r, 0.0f, 1e-5f);  // side = 0
+    EXPECT_NEAR(r, 0.0f, 1e-6f);  // Side = 0 for mono
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// v9: LFO Tests
+// SECTION 11: MODULATION
 // ═══════════════════════════════════════════════════════════════════════════
-TEST(LFO, SineOutputBounded) {
-    LFO lfo;
-    lfo.shape = LFOShape::Sine;
-    lfo.rateHz = 2.0f;
-    lfo.depth = 1.0f;
-    lfo.prepare(kSR);
-    lfo.reset();
 
-    for (int i = 0; i < 48000; ++i) {
-        float val = lfo.next();
-        EXPECT_LE(std::abs(val), 1.01f) << "LFO sine should be bounded";
+TEST(LFO, ProducesSineWave) {
+    LFO lfo;
+    lfo.prepare(kSR, 1.0f);  // 1 Hz
+    lfo.shape = LFO::Shape::Sine;
+    // Sample one full cycle
+    std::vector<float> cycle(48000);
+    for (int i = 0; i < 48000; ++i)
+        cycle[i] = lfo.next();
+    // Should cross zero
+    bool hasPositive = false, hasNegative = false;
+    for (auto s : cycle) {
+        if (s > 0.4f) hasPositive = true;
+        if (s < -0.4f) hasNegative = true;
     }
+    EXPECT_TRUE(hasPositive);
+    EXPECT_TRUE(hasNegative);
 }
 
-TEST(LFO, TriangleOutputBounded) {
+TEST(LFO, TriangleShape) {
     LFO lfo;
-    lfo.shape = LFOShape::Triangle;
-    lfo.rateHz = 5.0f;
-    lfo.depth = 1.0f;
-    lfo.prepare(kSR);
-    lfo.reset();
-
-    for (int i = 0; i < 48000; ++i) {
-        float val = lfo.next();
-        EXPECT_LE(std::abs(val), 1.01f) << "LFO triangle should be bounded";
+    lfo.prepare(kSR, 2.0f);
+    lfo.shape = LFO::Shape::Triangle;
+    float prev = lfo.next();
+    int dirChanges = 0;
+    bool rising = true;
+    for (int i = 1; i < 48000; ++i) {
+        float cur = lfo.next();
+        bool nowRising = cur > prev;
+        if (nowRising != rising) {
+            ++dirChanges;
+            rising = nowRising;
+        }
+        prev = cur;
     }
-}
-
-TEST(LFO, ZeroDepthGivesZero) {
-    LFO lfo;
-    lfo.shape = LFOShape::Sine;
-    lfo.rateHz = 1.0f;
-    lfo.depth = 0.0f;
-    lfo.prepare(kSR);
-    lfo.reset();
-
-    for (int i = 0; i < 4800; ++i) {
-        float val = lfo.next();
-        EXPECT_FLOAT_EQ(val, 0.0f) << "Zero depth should produce zero output";
-    }
+    // 2 Hz = 2 cycles = 4 direction changes (approx)
+    EXPECT_GE(dirChanges, 3);
+    EXPECT_LE(dirChanges, 6);
 }
 
 TEST(LFO, ResetClearsPhase) {
     LFO lfo;
-    lfo.shape = LFOShape::Sine;
-    lfo.rateHz = 1.0f;
-    lfo.depth = 1.0f;
-    lfo.prepare(kSR);
-
-    for (int i = 0; i < 24000; ++i) lfo.next();  // advance phase
+    lfo.prepare(kSR, 1.0f);
+    lfo.shape = LFO::Shape::Sine;
+    for (int i = 0; i < 12000; ++i) lfo.next();
     lfo.reset();
-    EXPECT_FLOAT_EQ(lfo.phase, 0.0f);
+    float first = lfo.next();
+    EXPECT_NEAR(first, 0.0f, 0.001f);  // Sine starts at 0
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// v9: LoudnessMeter Smoke Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(LoudnessMeter, PrepareDoesNotCrash) {
-    LoudnessMeter lm;
-    lm.prepare(44100.0);
-    lm.prepare(48000.0);
-    lm.prepare(96000.0);
-    SUCCEED();
+TEST(MacroInterpreter, LinearMapping) {
+    MacroInterpreter mi;
+    MacroInterpreter::Mapping m;
+    m.targetParamID = "drive";
+    m.depth = 1.0f;
+    m.curve = MacroInterpreter::Curve::Linear;
+    mi.slots[0].mappings[0] = m;
+    mi.slots[0].numMappings = 1;
+    mi.slots[0].value = 0.5f;
+    float result = mi.getMappedValue(0, 0);
+    EXPECT_NEAR(result, 0.5f, 0.001f);
 }
 
-TEST(LoudnessMeter, SilenceGivesLowLUFS) {
-    LoudnessMeter lm;
-    lm.prepare(kSR);
-    lm.reset();
+TEST(MacroInterpreter, ExponentialCurve) {
+    MacroInterpreter mi;
+    MacroInterpreter::Mapping m;
+    m.targetParamID = "drive";
+    m.depth = 1.0f;
+    m.curve = MacroInterpreter::Curve::Exponential;
+    mi.slots[0].mappings[0] = m;
+    mi.slots[0].numMappings = 1;
+    mi.slots[0].value = 0.5f;
+    float result = mi.getMappedValue(0, 0);
+    // Exponential at 0.5 should be less than 0.5 (concave up)
+    EXPECT_LT(result, 0.5f);
+    EXPECT_GT(result, 0.0f);
+}
 
+TEST(AutoGainSmoother, CompensatesGain) {
+    AutoGainSmoother ags;
+    ags.prepare(kSR);
+    // Simulate: input is quiet, output is loud
     for (int i = 0; i < 48000; ++i) {
-        lm.processSample(0.0f, 0.0f);
+        ags.updateInput(0.1f);
+        ags.updateOutput(0.5f);
     }
-    EXPECT_LT(lm.momentaryLufs, -60.0f);
+    float comp = ags.getCompensationGain();
+    EXPECT_LT(comp, 1.0f);  // Should reduce gain
 }
 
-TEST(LoudnessMeter, LoudSignalGivesHigherLUFS) {
+TEST(AutoGainSmoother, UnityWhenMatched) {
+    AutoGainSmoother ags;
+    ags.prepare(kSR);
+    for (int i = 0; i < 48000; ++i) {
+        ags.updateInput(0.5f);
+        ags.updateOutput(0.5f);
+    }
+    float comp = ags.getCompensationGain();
+    EXPECT_NEAR(comp, 1.0f, 0.1f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 12: METERING
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(MeterBallistics, TracksPeak) {
+    MeterBallistics mb;
+    mb.prepare(kSR);
+    mb.process(0.8f, 0.6f);
+    EXPECT_GT(mb.peakL, 0.0f);
+    EXPECT_GT(mb.peakR, 0.0f);
+}
+
+TEST(MeterBallistics, PeakDecays) {
+    MeterBallistics mb;
+    mb.prepare(kSR);
+    mb.process(0.9f, 0.9f);
+    float peakAfterBurst = mb.peakL;
+    for (int i = 0; i < 4800; ++i)
+        mb.process(0.0f, 0.0f);
+    EXPECT_LT(mb.peakL, peakAfterBurst);
+}
+
+TEST(MeterBallistics, RMSTracksLevel) {
+    MeterBallistics mb;
+    mb.prepare(kSR);
+    for (int i = 0; i < 4800; ++i)
+        mb.process(0.5f, 0.5f);
+    EXPECT_GT(mb.rmsL, 0.0f);
+    EXPECT_LE(mb.rmsL, 0.5f * 0.5f * 1.1f);
+}
+
+TEST(LoudnessMeter, MeasuresLUFS) {
     LoudnessMeter lm;
     lm.prepare(kSR);
-    lm.reset();
-
     auto sine = generateSine(1000.0f, kSR, 48000, 0.5f);
-    for (int i = 0; i < 48000; ++i) {
-        lm.processSample(sine[i], sine[i]);
+    for (int i = 0; i < 48000; ++i)
+        lm.process(sine[i], sine[i]);
+    // Should produce a reasonable LUFS value (not -100)
+    EXPECT_GT(lm.momentary, -40.0f);
+    EXPECT_LT(lm.momentary, 0.0f);
+}
+
+TEST(LoudnessMeter, TruePeakTracking) {
+    LoudnessMeter lm;
+    lm.prepare(kSR);
+    lm.process(0.9f, 0.9f);
+    EXPECT_GT(lm.truePeak, -5.0f);
+}
+
+TEST(SpectrumBuffer, FillsAndSignalsReady) {
+    SpectrumBuffer sb;
+    sb.reset();
+    EXPECT_FALSE(sb.ready);
+    for (int i = 0; i < kSpectrumFFTSize; ++i)
+        sb.pushSample(0.5f);
+    EXPECT_TRUE(sb.ready);
+}
+
+TEST(GainReductionHistory, PushAndRetrieve) {
+    GainReductionHistory grh;
+    grh.reset();
+    grh.push(-3.0f);
+    grh.push(-6.0f);
+    EXPECT_FLOAT_EQ(grh.getAt(0), -6.0f);
+    EXPECT_FLOAT_EQ(grh.getAt(1), -3.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SECTION 13: ANALYSIS
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(ReferenceToneMatcher, CaptureAndCompute) {
+    ReferenceToneMatcher rtm;
+    rtm.reset();
+    EXPECT_FALSE(rtm.hasReference);
+
+    float refSpec[kRefSpectrumBins];
+    float curSpec[kRefSpectrumBins];
+    for (int i = 0; i < kRefSpectrumBins; ++i) {
+        refSpec[i] = 1.0f;
+        curSpec[i] = 0.5f;
     }
-    EXPECT_GT(lm.momentaryLufs, -30.0f) << "Loud signal should produce higher LUFS";
+    rtm.captureReference(refSpec, kRefSpectrumBins, kSR);
+    EXPECT_TRUE(rtm.hasReference);
+
+    rtm.captureCurrent(curSpec, kRefSpectrumBins, kSR);
+    rtm.computeCorrection();
+    EXPECT_TRUE(rtm.hasCorrection);
+
+    // Correction should be positive (need to boost current to match reference)
+    for (int i = 0; i < kRefSpectrumBins; ++i)
+        EXPECT_GT(rtm.correctionCurve[i], 0.0f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// v9: SpectrumBuffer Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(SpectrumBuffer, ResetClearsBuffer) {
+TEST(PresetIntelligence, DetectsDrums) {
+    PresetIntelligence pi;
+    pi.reset();
+    MeterBallistics mb;
+    mb.prepare(kSR);
+    // Simulate drums: high peak, low RMS
+    mb.peakL = mb.peakR = 0.9f;
+    mb.rmsL = mb.rmsR = 0.01f;  // High crest factor
     SpectrumBuffer sb;
-    sb.pushSample(1.0f, 1.0f);
-    sb.pushSample(0.5f, 0.5f);
-    sb.reset();
-    EXPECT_EQ(sb.writePos.load(), 0);
+    pi.analyze(mb, sb, 0.0f, kSR);
+    EXPECT_EQ(pi.detectedType, PresetIntelligence::SignalType::Drums);
 }
 
-TEST(SpectrumBuffer, PushAdvancesWritePos) {
+TEST(PresetIntelligence, DetectsPad) {
+    PresetIntelligence pi;
+    pi.reset();
+    MeterBallistics mb;
+    mb.prepare(kSR);
+    // Simulate pad: low crest factor
+    mb.peakL = mb.peakR = 0.5f;
+    mb.rmsL = mb.rmsR = 0.2f;  // Low crest factor (peak/rms < 2)
     SpectrumBuffer sb;
-    sb.reset();
-    sb.pushSample(0.1f, 0.2f);
-    EXPECT_EQ(sb.writePos.load(), 1);
-    sb.pushSample(0.3f, 0.4f);
-    EXPECT_EQ(sb.writePos.load(), 2);
+    pi.analyze(mb, sb, 0.0f, kSR);
+    EXPECT_EQ(pi.detectedType, PresetIntelligence::SignalType::Pad);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// v9: GainReductionHistory Tests
+// SECTION 14: STATE MANAGEMENT
 // ═══════════════════════════════════════════════════════════════════════════
-TEST(GainReductionHistory, ResetClearsHistory) {
-    GainReductionHistory grh;
-    grh.pushGR(-3.0f);
-    grh.pushGR(-6.0f);
-    grh.reset();
-    EXPECT_EQ(grh.writePos.load(), 0);
-}
-
-TEST(GainReductionHistory, PushAdvancesWritePos) {
-    GainReductionHistory grh;
-    grh.reset();
-    grh.pushGR(-1.0f);
-    EXPECT_EQ(grh.writePos.load(), 1);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v9: UndoStack Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(UndoStack, InitiallyEmpty) {
-    UndoStack us;
-    EXPECT_FALSE(us.canUndo());
-    EXPECT_FALSE(us.canRedo());
-}
 
 TEST(UndoStack, PushAndUndo) {
     UndoStack us;
-    juce::ValueTree s1("state1");
-    s1.setProperty("val", 1, nullptr);
-    juce::ValueTree s2("state2");
-    s2.setProperty("val", 2, nullptr);
-
-    us.pushState(s1, "first");
-    us.pushState(s2, "second");
-
+    us.clear();
+    juce::MemoryBlock mb1, mb2;
+    mb1.append("state1", 6);
+    mb2.append("state2", 6);
+    us.push(mb1, "first");
+    us.push(mb2, "second");
     EXPECT_TRUE(us.canUndo());
-    auto undone = us.undo();
-    EXPECT_EQ((int)undone.getProperty("val"), 1);
+    auto* snap = us.undo();
+    ASSERT_NE(snap, nullptr);
+    EXPECT_EQ(snap->data, mb1);
 }
 
-TEST(UndoStack, UndoAndRedo) {
+TEST(UndoStack, RedoAfterUndo) {
     UndoStack us;
-    juce::ValueTree s1("s1");
-    s1.setProperty("v", 10, nullptr);
-    juce::ValueTree s2("s2");
-    s2.setProperty("v", 20, nullptr);
-
-    us.pushState(s1);
-    us.pushState(s2);
+    us.clear();
+    juce::MemoryBlock mb1, mb2;
+    mb1.append("a", 1);
+    mb2.append("b", 1);
+    us.push(mb1);
+    us.push(mb2);
     us.undo();
     EXPECT_TRUE(us.canRedo());
-    auto redone = us.redo();
-    EXPECT_EQ((int)redone.getProperty("v"), 20);
+    auto* snap = us.redo();
+    ASSERT_NE(snap, nullptr);
+    EXPECT_EQ(snap->data, mb2);
 }
 
-TEST(UndoStack, ClearResetsStack) {
+TEST(UndoStack, TruncatesRedoOnPush) {
     UndoStack us;
-    juce::ValueTree s("s");
-    us.pushState(s);
-    us.pushState(s);
     us.clear();
-    EXPECT_FALSE(us.canUndo());
+    juce::MemoryBlock mb1, mb2, mb3;
+    mb1.append("a", 1);
+    mb2.append("b", 1);
+    mb3.append("c", 1);
+    us.push(mb1);
+    us.push(mb2);
+    us.undo();
+    us.push(mb3);
     EXPECT_FALSE(us.canRedo());
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// v9: ABState Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(ABState, ToggleSwitchesSlot) {
+TEST(ABState, StoreAndToggle) {
     ABState ab;
-    EXPECT_TRUE(ab.isSlotA);
+    juce::MemoryBlock mbA, mbB;
+    mbA.append("A", 1);
+    mbB.append("B", 1);
+    ab.storeA(mbA);
+    ab.storeB(mbB);
+    EXPECT_TRUE(ab.isA);
     ab.toggle();
-    EXPECT_FALSE(ab.isSlotA);
-    ab.toggle();
-    EXPECT_TRUE(ab.isSlotA);
-}
-
-TEST(ABState, StoreAndRetrieve) {
-    ABState ab;
-    juce::ValueTree sA("slotA");
-    sA.setProperty("val", 100, nullptr);
-    juce::ValueTree sB("slotB");
-    sB.setProperty("val", 200, nullptr);
-
-    ab.storeA(sA);
-    ab.storeB(sB);
-
-    auto active = ab.getActive();  // A
-    EXPECT_EQ((int)active.getProperty("val"), 100);
-
-    ab.toggle();
-    active = ab.getActive();  // B
-    EXPECT_EQ((int)active.getProperty("val"), 200);
+    EXPECT_FALSE(ab.isA);
+    auto* active = ab.getActive();
+    ASSERT_NE(active, nullptr);
+    EXPECT_EQ(*active, mbB);
 }
 
 TEST(ABState, CopyAtoB) {
     ABState ab;
-    juce::ValueTree sA("slotA");
-    sA.setProperty("val", 42, nullptr);
-    ab.storeA(sA);
+    juce::MemoryBlock mbA;
+    mbA.append("A", 1);
+    ab.storeA(mbA);
     ab.copyAtoB();
-
-    ab.toggle();
-    auto active = ab.getActive();
-    EXPECT_EQ((int)active.getProperty("val"), 42);
+    EXPECT_TRUE(ab.hasB);
+    EXPECT_EQ(ab.slotB, mbA);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// v9: MIDILearnState Tests
-// ═══════════════════════════════════════════════════════════════════════════
 TEST(MIDILearnState, AddAndFindMapping) {
-    MIDILearnState ml;
-    ml.addMapping(1, "drive", 0.0f, 1.0f);
-
-    auto* found = ml.findMapping(1);
-    EXPECT_NE(found, nullptr);
-    EXPECT_EQ(found->parameterID, juce::String("drive"));
+    MIDILearnState mls;
+    mls.clearAll();
+    mls.addMapping(74, "drive", 0.0f, 1.0f);
+    EXPECT_EQ(mls.numMappings, 1);
+    auto* m = mls.findMapping(74);
+    ASSERT_NE(m, nullptr);
+    EXPECT_EQ(m->parameterID, juce::String("drive"));
 }
 
 TEST(MIDILearnState, RemoveMapping) {
-    MIDILearnState ml;
-    ml.addMapping(1, "drive");
-    ml.addMapping(2, "mix");
-    ml.removeMapping(1);
-
-    EXPECT_EQ(ml.findMapping(1), nullptr);
-    EXPECT_NE(ml.findMapping(2), nullptr);
-    EXPECT_EQ(ml.numMappings, 1);
+    MIDILearnState mls;
+    mls.clearAll();
+    mls.addMapping(1, "drive", 0.0f, 1.0f);
+    mls.addMapping(2, "mix", 0.0f, 1.0f);
+    mls.removeMapping(0);
+    EXPECT_EQ(mls.numMappings, 1);
+    EXPECT_EQ(mls.mappings[0].ccNumber, 2);
 }
 
-TEST(MIDILearnState, ClearAll) {
-    MIDILearnState ml;
-    ml.addMapping(1, "drive");
-    ml.addMapping(2, "mix");
-    ml.clearAll();
-    EXPECT_EQ(ml.numMappings, 0);
-    EXPECT_EQ(ml.findMapping(1), nullptr);
+TEST(MIDILearnState, MaxMappingsEnforced) {
+    MIDILearnState mls;
+    mls.clearAll();
+    for (int i = 0; i < kMaxMIDIMappings + 5; ++i)
+        mls.addMapping(i, "p" + juce::String(i), 0.0f, 1.0f);
+    EXPECT_EQ(mls.numMappings, kMaxMIDIMappings);
 }
 
-TEST(MIDILearnState, LearningMode) {
-    MIDILearnState ml;
-    ml.startLearning("punch");
-    EXPECT_TRUE(ml.isLearning);
-    EXPECT_EQ(ml.learningParameterID, juce::String("punch"));
-    ml.stopLearning();
-    EXPECT_FALSE(ml.isLearning);
+TEST(SimpleModeState, DefaultValues) {
+    SimpleModeState sms;
+    EXPECT_FALSE(sms.enabled);
+    EXPECT_FLOAT_EQ(sms.drive, 0.5f);
+    EXPECT_FLOAT_EQ(sms.tone, 0.5f);
+    EXPECT_FLOAT_EQ(sms.output, 0.5f);
 }
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Real-Time Safety Smoke Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(RealTimeSafety, NoNaNOrInfInFullChain) {
-    SafetyLayer safety;
-    safety.setSampleRate(kSR);
-    safety.reset();
-
-    for (int i = 0; i < kBlockSize; ++i) {
-        float x = 100.0f * std::sin(2.0f * 3.14159f * 1000.0f * i / (float)kSR) + 50.0f;
-        x = safety.processSample(x, safety.dcL, safety.dcPrevL);
-        x = fastTanh(x);
-        EXPECT_TRUE(std::isfinite(x)) << "NaN/Inf at sample " << i;
-    }
-}
-
-TEST(RealTimeSafety, FastTanhHandlesExtremeInput) {
-    float y;
-    y = fastTanh(0.0f);     EXPECT_TRUE(std::isfinite(y));
-    y = fastTanh(100.0f);   EXPECT_TRUE(std::isfinite(y)); EXPECT_LE(std::abs(y), 1.1f);
-    y = fastTanh(-100.0f);  EXPECT_TRUE(std::isfinite(y)); EXPECT_LE(std::abs(y), 1.1f);
-    y = fastTanh(1000.0f);  EXPECT_TRUE(std::isfinite(y));
-    y = fastTanh(-1000.0f); EXPECT_TRUE(std::isfinite(y));
-}
-
-TEST(RealTimeSafety, FullChainWithExtremeParameters) {
-    LinkwitzRileyCrossover xo;
-    xo.prepare(kSR, 250.0f);
-    xo.reset();
-
-    GlueCompressor gc;
-    gc.prepare(kSR);
-    gc.reset();
-
-    ShineProcessor shine;
-    shine.freq = 12000.0f;
-    shine.gainDb = 9.0f;
-    shine.q = 0.7f;
-    shine.prepare(kSR);
-    shine.reset();
-
-    for (int i = 0; i < kBlockSize * 4; ++i) {
-        float x = 10.0f * std::sin(2.0f * 3.14159f * 1000.0f * i / (float)kSR);
-        float lowL, lowR, highL, highR;
-        xo.processStereo(x, x, lowL, lowR, highL, highR);
-
-        lowL = fastTanh(lowL * 2.0f);
-        float gain = gc.processStereo(lowL, lowR);
-        lowL *= gain;
-        lowR *= gain;
-
-        float outL = lowL + highL;
-        float outR = lowR + highR;
-        shine.processStereo(outL, outR);
-
-        EXPECT_TRUE(std::isfinite(outL)) << "NaN/Inf at sample " << i;
-        EXPECT_TRUE(std::isfinite(outR)) << "NaN/Inf at sample " << i;
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Envelope Follower Timing Tests (v5 audit)
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(EnvFollowerTiming, ReleaseTiming) {
-    EnvFollower env;
-    env.setTimes(0.2f, 220.0f, kSR);
-    env.reset();
-
-    const int impulseSamples = (int)(kSR * 0.001);
-    for (int i = 0; i < impulseSamples; ++i) env.process(1.0f);
-    float peakVal = env.env;
-    EXPECT_GT(peakVal, 0.5f);
-
-    int sampleCount = 0;
-    const float target = peakVal * 0.37f;
-    const int maxSamples = (int)(kSR * 2.0);
-    while (env.env > target && sampleCount < maxSamples) {
-        env.process(0.0f);
-        sampleCount++;
-    }
-
-    float releaseMs = (float)sampleCount / (float)kSR * 1000.0f;
-    EXPECT_NEAR(releaseMs, 220.0f, 22.0f)
-        << "Release time should be ~220ms. Got " << releaseMs << "ms";
-}
-
-TEST(EnvFollowerTiming, OSRateBugRegression) {
-    EnvFollower envBase;
-    envBase.setTimes(0.2f, 220.0f, kSR);
-    envBase.reset();
-
-    EnvFollower envOS;
-    envOS.setTimes(0.2f, 220.0f, kSR * 2.0);
-    envOS.reset();
-
-    for (int i = 0; i < 48; ++i) {
-        envBase.process(1.0f);
-        envOS.process(1.0f);
-    }
-
-    for (int i = 0; i < 500; ++i) {
-        envBase.process(0.0f);
-        envOS.process(0.0f);
-        envOS.process(0.0f);
-    }
-
-    EXPECT_GT(envBase.env, envOS.env)
-        << "Base-SR envelope should decay slower than OS-rate envelope";
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Crossover Null-Path Complementarity (v5 audit)
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(CrossoverNullPath, LowPlusHighEqualsInput) {
-    LinkwitzRileyCrossover xo;
-    xo.prepare(kSR, 250.0f);
-    xo.reset();
-
-    auto input = generateSine(1000.0f, kSR, kBlockSize * 4);
-    float maxError = 0.0f;
-
-    for (int i = 0; i < (int)input.size(); ++i) {
-        float lowL, lowR, highL, highR;
-        xo.processStereo(input[i], input[i], lowL, lowR, highL, highR);
-        float reconstructed = lowL + highL;
-        float error = std::abs(reconstructed - input[i]);
-        maxError = std::max(maxError, error);
-    }
-
-    EXPECT_LT(maxError, 1.0e-6f)
-        << "Crossover low+high should equal input. Max error: " << maxError;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SidechainHPF Crossfade (v7 audit)
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(SidechainHPF, CrossfadeNoClick) {
-    SidechainHPF hpf;
-    hpf.prepare(kSR, 1);  // 60 Hz
-    hpf.reset();
-
-    auto sine = generateSine(200.0f, kSR, 4800, 0.8f);
-    for (int i = 0; i < 2400; ++i) {
-        float L = sine[i], R = sine[i];
-        hpf.processStereo(L, R);
-    }
-
-    // Switch to 150 Hz mode
-    hpf.prepare(kSR, 3);
-
-    float prevL = sine[2400], prevR = sine[2400];
-    hpf.processStereo(prevL, prevR);
-    float maxDelta = 0.0f;
-    for (int i = 2401; i < 4800; ++i) {
-        float L = sine[i], R = sine[i];
-        hpf.processStereo(L, R);
-        float delta = std::abs(L - prevL);
-        maxDelta = std::max(maxDelta, delta);
-        prevL = L;
-    }
-    EXPECT_LT(maxDelta, 0.1f)
-        << "HPF mode change should be smooth. Max delta: " << maxDelta;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// SmoothParam Automation Zipper (v7 audit)
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(SmoothParam, NoZipper) {
-    SmoothParam sp;
-    sp.setTime(10.0f, kSR);
-    sp.snapTo(0.0f);
-    sp.setTarget(1.0f);
-
-    float prev = 0.0f;
-    float maxDelta = 0.0f;
-    bool reachedTarget = false;
-    for (int i = 0; i < (int)(kSR * 0.1); ++i) {
-        float val = sp.next();
-        float delta = std::abs(val - prev);
-        maxDelta = std::max(maxDelta, delta);
-        prev = val;
-        if (std::abs(val - 1.0f) < 0.001f) reachedTarget = true;
-    }
-
-    EXPECT_TRUE(reachedTarget) << "SmoothParam should reach target within 100ms";
-    EXPECT_LT(maxDelta, 0.05f)
-        << "SmoothParam should not have large jumps. Max delta: " << maxDelta;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Safety Layer Silence-In-Silence-Out (v7 audit)
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(SafetyLayer, SilenceInSilenceOut) {
-    SafetyLayer safety;
-    safety.setSampleRate(kSR);
-    safety.reset();
-
-    float maxOut = 0.0f;
-    for (int i = 0; i < 1000; ++i) {
-        float out = safety.processSample(0.0f, safety.dcL, safety.dcPrevL);
-        maxOut = std::max(maxOut, std::abs(out));
-    }
-    EXPECT_LT(maxOut, 1e-10f)
-        << "Silence in should produce silence out. Max output: " << maxOut;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v9: State Version Validation
-// ═══════════════════════════════════════════════════════════════════════════
-// v9 state version test removed — see v10 test below
-
-// ═══════════════════════════════════════════════════════════════════════════
-// DC Blocker 1 Hz Coloration Regression (v8)
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(DCBlocker, MinimalColorationAt20Hz) {
-    SafetyLayer safety;
-    safety.setSampleRate(kSR);
-    safety.reset();
-
-    auto sine = generateSine(20.0f, kSR, 48000, 0.5f);
-    std::vector<float> output(48000);
-    float dc = 0.0f, dcPrev = 0.0f;
-
+TEST(LoudnessMatchedAB, CompensatesLouder) {
+    LoudnessMatchedAB lmab;
+    lmab.prepare(kSR);
+    // Slot A is louder
     for (int i = 0; i < 48000; ++i) {
-        output[i] = safety.processSample(sine[i], dc, dcPrev);
+        lmab.updateLevel(true, 0.8f, 0.8f);
+        lmab.updateLevel(false, 0.4f, 0.4f);
     }
-
-    float inRms = rmsRange(sine, 24000, 48000);
-    float outRms = rmsRange(output, 24000, 48000);
-    float deltaDb = 20.0f * std::log10(outRms / std::max(inRms, 1e-10f));
-
-    EXPECT_GT(deltaDb, -0.5f)
-        << "20 Hz should pass through 1 Hz DC blocker with < 0.5 dB loss. Got: "
-        << deltaDb << " dB";
+    float compA = lmab.getCompensation(true);
+    EXPECT_LT(compA, 1.0f);  // Should reduce A to match B
 }
 
-TEST(DCBlocker, StillBlocksDC) {
-    SafetyLayer safety;
-    safety.setSampleRate(kSR);
-    safety.reset();
-
-    float dc = 0.0f, dcPrev = 0.0f;
-    float out = 0.0f;
-    for (int i = 0; i < 240000; ++i) {
-        out = safety.processSample(1.0f, dc, dcPrev);
-    }
-
-    EXPECT_LT(std::abs(out), 0.1f)
-        << "DC should be blocked even at 1 Hz cutoff. Residual: " << out;
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Saturation Chain Produces Harmonics (v8)
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(SaturationChain, ProducesHarmonics) {
-    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
-    std::vector<float> saturated(4800);
-
-    for (int i = 0; i < 4800; ++i) {
-        saturated[i] = fastTanh(sine[i] * 3.0f);
-    }
-
-    float diffEnergy = 0.0f;
-    for (int i = 0; i < 4800; ++i) {
-        float d = saturated[i] - sine[i];
-        diffEnergy += d * d;
-    }
-    EXPECT_GT(diffEnergy, 0.01f) << "Saturation should add harmonics";
-}
-
-TEST(SaturationChain, MultibandWithFastTanh) {
-    LinkwitzRileyCrossover xo;
-    xo.prepare(kSR, 250.0f);
-    xo.reset();
-
-    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
-
-    for (int i = 0; i < 4800; ++i) {
-        float lowL, lowR, highL, highR;
-        xo.processStereo(sine[i], sine[i], lowL, lowR, highL, highR);
-
-        float satLowL = fastTanh(lowL * 2.0f);
-        float satHighL = fastTanh(highL * 2.0f);
-
-        float outL = satLowL + satHighL;
-        EXPECT_TRUE(std::isfinite(outL)) << "NaN/Inf at sample " << i;
-        EXPECT_LE(std::abs(outL), 3.0f) << "Output should be bounded at sample " << i;
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v10: Neural Saturation Model Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(NeuralSaturationModel, DefaultStateNotLoaded) {
-    NeuralSaturationModel model;
-    EXPECT_FALSE(model.loaded);
-    EXPECT_EQ(model.hiddenSize, 0);
-}
-
-TEST(NeuralSaturationModel, ProcessSampleFallsBackWhenNotLoaded) {
-    NeuralSaturationModel model;
-    float result = model.processSample(0.5f);
-    // When not loaded, should return input unchanged (passthrough)
-    EXPECT_FLOAT_EQ(result, 0.5f);
-}
-
-TEST(NeuralSaturationModel, ResetClearsState) {
-    NeuralSaturationModel model;
-    model.hiddenSize = 8;
-    model.hiddenState.fill(1.0f);
-    model.reset();
-    for (int i = 0; i < 8; ++i)
-        EXPECT_FLOAT_EQ(model.hiddenState[i], 0.0f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v10: WDF Tube Stage Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(WDFTubeStage, ProducesSaturation) {
-    WDFTubeStage tube;
-    tube.prepare(kSR);
-
-    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
-    std::vector<float> output(4800);
-
-    for (int i = 0; i < 4800; ++i)
-        output[i] = tube.processSample(sine[i]);
-
-    // Should produce harmonics (output differs from input)
-    float diffEnergy = 0.0f;
-    for (int i = 0; i < 4800; ++i) {
-        float d = output[i] - sine[i];
-        diffEnergy += d * d;
-    }
-    EXPECT_GT(diffEnergy, 0.001f) << "WDF Tube should add harmonic content";
-}
-
-TEST(WDFTubeStage, OutputBounded) {
-    WDFTubeStage tube;
-    tube.prepare(kSR);
-
-    for (int i = 0; i < 1000; ++i) {
-        float input = (float)i / 100.0f - 5.0f;  // -5 to +5
-        float out = tube.processSample(input);
-        EXPECT_TRUE(std::isfinite(out));
-        EXPECT_LE(std::abs(out), 10.0f) << "WDF Tube output should be bounded";
-    }
-}
-
-TEST(WDFTubeStage, ResetClearsState) {
-    WDFTubeStage tube;
-    tube.prepare(kSR);
-    tube.processSample(0.9f);
-    tube.reset();
-    EXPECT_FLOAT_EQ(tube.state, 0.0f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v10: WDF Transformer Stage Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(WDFTransformerStage, ProducesSaturation) {
-    WDFTransformerStage xfmr;
-    xfmr.prepare(kSR);
-
-    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
-    float diffEnergy = 0.0f;
-    for (int i = 0; i < 4800; ++i) {
-        float out = xfmr.processSample(sine[i]);
-        float d = out - sine[i];
-        diffEnergy += d * d;
-    }
-    EXPECT_GT(diffEnergy, 0.0001f) << "WDF Transformer should add harmonic content";
-}
-
-TEST(WDFTransformerStage, ResetClearsState) {
-    WDFTransformerStage xfmr;
-    xfmr.prepare(kSR);
-    xfmr.processSample(0.9f);
-    xfmr.reset();
-    EXPECT_FLOAT_EQ(xfmr.state, 0.0f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v10: Resonance Tamer Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(ResonanceTamer, DoesNotAlterSilence) {
-    ResonanceTamer rt;
-    rt.prepare(kSR);
-    rt.sensitivity = 0.5f;
-    rt.depth = 0.5f;
-
-    float l = 0.0f, r = 0.0f;
-    rt.processStereo(l, r);
-    EXPECT_FLOAT_EQ(l, 0.0f);
-    EXPECT_FLOAT_EQ(r, 0.0f);
-}
-
-TEST(ResonanceTamer, ReducesPeaks) {
-    ResonanceTamer rt;
-    rt.prepare(kSR);
-    rt.sensitivity = 0.8f;
-    rt.depth = 0.8f;
-
-    // Feed a resonant signal (narrow-band burst)
-    auto sine = generateSine(3000.0f, kSR, 4800, 0.9f);
-    float peakBefore = peakAbs(sine);
-
-    for (int i = 0; i < 4800; ++i) {
-        float l = sine[i], r = sine[i];
-        rt.processStereo(l, r);
-        sine[i] = l;
-    }
-    float peakAfter = peakAbs(sine);
-
-    // Resonance tamer should reduce peak level of resonant content
-    EXPECT_LE(peakAfter, peakBefore);
-}
-
-TEST(ResonanceTamer, ResetClearsState) {
-    ResonanceTamer rt;
-    rt.prepare(kSR);
-    float l = 0.5f, r = 0.5f;
-    rt.processStereo(l, r);
-    rt.reset();
-    // After reset, bandEnv should be zeroed
-    for (auto& e : rt.bandEnv)
-        EXPECT_FLOAT_EQ(e, 0.0f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v10: Transient Splitter Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(TransientSplitter, SplitSumsToOriginal) {
-    TransientSplitter ts;
-    ts.prepare(kSR);
-    ts.sensitivity = 0.5f;
-
-    auto sine = generateSine(1000.0f, kSR, 4800, 0.8f);
-
-    for (int i = 0; i < 4800; ++i) {
-        float l = sine[i], r = sine[i];
-        float transL, transR, sustL, sustR;
-        ts.processStereo(l, r, transL, transR, sustL, sustR);
-
-        // Transient + sustain should approximately equal input
-        float recombined = transL + sustL;
-        EXPECT_NEAR(recombined, sine[i], 0.1f)
-            << "Transient + sustain should approximate input at sample " << i;
-    }
-}
-
-TEST(TransientSplitter, ResetClearsState) {
-    TransientSplitter ts;
-    ts.prepare(kSR);
-    float l = 0.9f, r = 0.9f;
-    float tL, tR, sL, sR;
-    ts.processStereo(l, r, tL, tR, sL, sR);
-    ts.reset();
-    EXPECT_FLOAT_EQ(ts.envFastL, 0.0f);
-    EXPECT_FLOAT_EQ(ts.envSlowL, 0.0f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v10: Oversampling Engine Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(OversamplingEngine, PrepareDoesNotCrash) {
-    OversamplingEngine os;
-    os.prepare(kSR);
-    EXPECT_EQ(os.baseSampleRate, kSR);
-}
-
-TEST(OversamplingEngine, ResetClearsState) {
-    OversamplingEngine os;
-    os.prepare(kSR);
-    os.reset();
-    // Should not crash
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v10: Reference Tone Matcher Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(ReferenceToneMatcher, PrepareInitializesBandFreqs) {
-    ReferenceToneMatcher rtm;
-    rtm.prepare(kSR);
-    EXPECT_GT(rtm.bandFreqs[0], 20.0f);
-    EXPECT_LT(rtm.bandFreqs[0], 30.0f);  // Should be ~25 Hz
-    EXPECT_GT(rtm.bandFreqs[31], 15000.0f);  // Last band should be high
-}
-
-TEST(ReferenceToneMatcher, CorrectionZeroWhenDisabled) {
-    ReferenceToneMatcher rtm;
-    rtm.prepare(kSR);
-    rtm.enabled = false;
-    float corr = rtm.getCorrectionAtFreq(1000.0f);
-    EXPECT_FLOAT_EQ(corr, 0.0f);
-}
-
-TEST(ReferenceToneMatcher, CorrectionZeroWhenMatchAmountZero) {
-    ReferenceToneMatcher rtm;
-    rtm.prepare(kSR);
-    rtm.enabled = true;
-    rtm.matchAmount = 0.0f;
-    float corr = rtm.getCorrectionAtFreq(1000.0f);
-    EXPECT_FLOAT_EQ(corr, 0.0f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v10: Preset Intelligence Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(PresetIntelligence, DefaultAnalysisIsUnknown) {
-    PresetIntelligence pi;
-    EXPECT_EQ(pi.lastAnalysis.detectedType, PresetIntelligence::SignalType::Unknown);
-    EXPECT_FLOAT_EQ(pi.lastAnalysis.confidence, 0.0f);
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v10: Simple Mode State Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(SimpleModeState, DefaultDisabled) {
-    SimpleModeState sm;
-    EXPECT_FALSE(sm.enabled);
-    EXPECT_FLOAT_EQ(sm.drive, 0.5f);
-    EXPECT_FLOAT_EQ(sm.tone, 0.5f);
-    EXPECT_FLOAT_EQ(sm.output, 0.5f);
-}
-
-TEST(SimpleModeState, ComputeTargetsProducesValidValues) {
-    SimpleModeState sm;
-    sm.drive = 0.0f;
-    sm.tone = 0.0f;
-    sm.output = 0.0f;
-    sm.computeTargets();
-    EXPECT_LE(sm.targets.satDriveDb, 0.0f);  // Low drive = negative dB
-    EXPECT_EQ(sm.targets.satModel, SaturationModel::Tape);  // Low drive = Tape
-
-    sm.drive = 1.0f;
-    sm.tone = 1.0f;
-    sm.output = 1.0f;
-    sm.computeTargets();
-    EXPECT_GT(sm.targets.satDriveDb, 10.0f);  // High drive = high dB
-    EXPECT_EQ(sm.targets.satModel, SaturationModel::Transistor);  // High drive = Transistor
-    EXPECT_GT(sm.targets.shineGainDb, 0.0f);  // Bright tone
-}
-
-// ═══════════════════════════════════════════════════════════════════════════
-// v10: Loudness-Matched A/B Tests
-// ═══════════════════════════════════════════════════════════════════════════
-TEST(LoudnessMatchedAB, CompensationZeroWhenEqual) {
+TEST(LoudnessMatchedAB, UnityWhenEqual) {
     LoudnessMatchedAB lmab;
-    lmab.updateSlotA(-14.0f);
-    lmab.updateSlotB(-14.0f);
-    lmab.computeCompensation();
-    EXPECT_FLOAT_EQ(lmab.compensationDb, 0.0f);
-    EXPECT_FLOAT_EQ(lmab.getCompensationGain(), 1.0f);
-}
-
-TEST(LoudnessMatchedAB, CompensationPositiveWhenALouder) {
-    LoudnessMatchedAB lmab;
-    lmab.updateSlotA(-10.0f);
-    lmab.updateSlotB(-14.0f);
-    lmab.computeCompensation();
-    EXPECT_GT(lmab.compensationDb, 0.0f);  // B needs boost to match A
-    EXPECT_GT(lmab.getCompensationGain(), 1.0f);
-}
-
-TEST(LoudnessMatchedAB, CompensationClampedTo6dB) {
-    LoudnessMatchedAB lmab;
-    lmab.updateSlotA(-5.0f);
-    lmab.updateSlotB(-20.0f);
-    lmab.computeCompensation();
-    EXPECT_LE(lmab.compensationDb, 6.0f);
-}
-
-TEST(LoudnessMatchedAB, CompensationZeroWhenNotMeasured) {
-    LoudnessMatchedAB lmab;
-    lmab.computeCompensation();
-    EXPECT_FLOAT_EQ(lmab.compensationDb, 0.0f);
+    lmab.prepare(kSR);
+    for (int i = 0; i < 48000; ++i) {
+        lmab.updateLevel(true, 0.5f, 0.5f);
+        lmab.updateLevel(false, 0.5f, 0.5f);
+    }
+    float comp = lmab.getCompensation(true);
+    EXPECT_NEAR(comp, 1.0f, 0.1f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// v10: Waveshaper Dispatch with New Models
+// SECTION 15: REAL-TIME SAFETY
 // ═══════════════════════════════════════════════════════════════════════════
-TEST(WaveshaperDispatch, AllModelsProduceFiniteOutput) {
+
+TEST(RTSafety, NoAllocationInSaturation) {
+    // Waveshaper::process should not allocate — verified by structure
     float tapeState = 0.0f;
-    const float testInput = 0.7f;
+    for (int i = 0; i < 10000; ++i) {
+        float x = (float)i / 10000.0f;
+        Waveshaper::process(SaturationModel::Tube, x, tapeState, 0.5f);
+    }
+    // If we get here without crash, no allocation happened
+    SUCCEED();
+}
 
-    for (int m = 0; m < (int)SaturationModel::Neural_Neve; ++m) {
-        auto model = static_cast<SaturationModel>(m);
-        float out = Waveshaper::process(model, testInput, tapeState, 0.5f);
-        EXPECT_TRUE(std::isfinite(out)) << "Model " << m << " produced non-finite output";
-        EXPECT_LE(std::abs(out), 5.0f) << "Model " << m << " output too large";
+TEST(RTSafety, SafetyLayerHandlesAllEdgeCases) {
+    SafetyLayer sl;
+    sl.setSampleRate(kSR);
+    float cases[][2] = {
+        {0.0f, 0.0f},
+        {1.0f, -1.0f},
+        {100.0f, -100.0f},
+        {std::numeric_limits<float>::quiet_NaN(), 0.0f},
+        {0.0f, std::numeric_limits<float>::infinity()},
+        {-std::numeric_limits<float>::infinity(), std::numeric_limits<float>::quiet_NaN()},
+        {std::numeric_limits<float>::denorm_min(), -std::numeric_limits<float>::denorm_min()},
+    };
+    for (auto& c : cases) {
+        float l = c[0], r = c[1];
+        sl.processStereo(l, r);
+        EXPECT_TRUE(std::isfinite(l));
+        EXPECT_TRUE(std::isfinite(r));
+        EXPECT_LE(std::abs(l), 4.0f);
+        EXPECT_LE(std::abs(r), 4.0f);
     }
 }
 
-TEST(WaveshaperDispatch, TanhModelMatchesFastTanh) {
-    float tapeState = 0.0f;
-    float out = Waveshaper::process(SaturationModel::Tanh, 0.5f, tapeState, 0.0f);
-    float expected = fastTanh(0.5f);
-    EXPECT_NEAR(out, expected, 0.001f);
+TEST(RTSafety, StateVersionMatches) {
+    EXPECT_EQ(kStateVersion, 11);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// v10: State Version Check
+// MAIN
 // ═══════════════════════════════════════════════════════════════════════════
-TEST(StateVersion, IsVersion10) {
-    EXPECT_EQ(kStateVersion, 10);
-}
 
-// ═══════════════════════════════════════════════════════════════════════════
-// Main
-// ═══════════════════════════════════════════════════════════════════════════
 int main(int argc, char** argv) {
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();

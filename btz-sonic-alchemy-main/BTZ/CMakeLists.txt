@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(BTZ VERSION 1.1.0)
+project(BTZ VERSION 1.2.0)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -58,7 +58,7 @@ endif()
 # Plugin target
 # ═══════════════════════════════════════════════════════════════════════════
 juce_add_plugin(BTZ
-    FORMATS VST3 AU Standalone AAX
+    FORMATS VST3 AU Standalone
     PRODUCT_NAME "Box Tone Zone (BTZ)"
     PLUGIN_MANUFACTURER_CODE BTZa
     PLUGIN_CODE Btz1
