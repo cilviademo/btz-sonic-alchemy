@@ -1,29 +1,32 @@
 /*
-  Box Tone Zone (BTZ) — PluginEditor.h  v9
+  Box Tone Zone (BTZ) — PluginEditor.h  v10
   ────────────────────────────────────────────────────────────────────────
-  v9 (industry-gap closure):
-    • Resizable UI (75%–200% scaling, aspect ratio locked)
-    • Preset browser (load/save/navigate)
-    • A/B comparison toggle
-    • Undo/Redo buttons
-    • Saturation model selector
-    • Mid/Side toggle
-    • Multiband count selector
-    • Spectrum analyzer display area
-    • Gain reduction history display area
-    • MIDI learn right-click context menu
-    • EBU R128 LUFS readout (momentary/short-term/integrated)
+  v10 (UI/UX Overhaul — "Greatest Plugin" Edition):
+    • Simple Mode: 3 large knobs (Drive, Tone, Output) + harmonic visualizer
+    • Standard Mode: Full 3-page layout with glassmorphism panels
+    • Advanced Mode: Modulation routing, neural model browser, tone matching
+    • HarmonicVisualizer: real-time overtone waterfall (signature display)
+    • GlassPanel: frosted glass containers throughout
+    • DirectManipSpectrum: click-to-control multiband crossovers
+    • GainReductionRibbon: flowing ribbon compression history
+    • TooltipOverlay: cursor-following parameter values
+    • StartupReveal: brief brand animation on open
+    • ProcessingIndicators: breathing glow on active modules
+    • Micro-interactions: hover glow, value tooltips, smooth animations
+    • Resolution independence: proper scaling 50%–200%
+    • Accessibility: focus rings, keyboard nav, screen reader labels
+    • MIDI learn: right-click context menu on any control
   ────────────────────────────────────────────────────────────────────────
-  v3: 3-page luxury UI, module accents, premium macro knobs
 */
 #pragma once
 
 #include "PluginProcessor.h"
 #include "BTZTheme.h"
+#include "BTZComponents.h"
 #include <JuceHeader.h>
 
 // ═══════════════════════════════════════════════════════════════════════
-// BTZLookAndFeel — rendering authority for all BTZ controls
+// BTZLookAndFeel — rendering authority for all BTZ controls (v4)
 // ═══════════════════════════════════════════════════════════════════════
 class BTZLookAndFeel : public juce::LookAndFeel_V4 {
 public:
@@ -74,9 +77,16 @@ public:
 };
 
 // ═══════════════════════════════════════════════════════════════════════
-// BTZAudioProcessorEditor
+// View Modes
 // ═══════════════════════════════════════════════════════════════════════
-class BTZAudioProcessorEditor : public juce::AudioProcessorEditor, private juce::Timer {
+enum class ViewMode { Simple, Standard, Advanced };
+
+// ═══════════════════════════════════════════════════════════════════════
+// BTZAudioProcessorEditor — v10
+// ═══════════════════════════════════════════════════════════════════════
+class BTZAudioProcessorEditor : public juce::AudioProcessorEditor,
+                                 private juce::Timer,
+                                 private juce::Slider::Listener {
 public:
     explicit BTZAudioProcessorEditor(BTZAudioProcessor&);
     ~BTZAudioProcessorEditor() override;
@@ -86,6 +96,7 @@ public:
 
 private:
     void timerCallback() override;
+    void sliderValueChanged(juce::Slider* slider) override;
 
     // ── Setup helpers ──
     void setupKnob(juce::Slider& s, juce::Label& l, const juce::String& labelText);
@@ -93,37 +104,62 @@ private:
     void setupMacroKnob(juce::Slider& s, juce::Label& l, const juce::String& labelText);
 
     // ── Paint helpers ──
+    void paintBackground(juce::Graphics& g);
     void paintHeader(juce::Graphics& g, juce::Rectangle<float> area);
     void paintMeterStrip(juce::Graphics& g, juce::Rectangle<float> area);
     void paintFooter(juce::Graphics& g, juce::Rectangle<float> area);
+    void paintSimpleMode(juce::Graphics& g, juce::Rectangle<float> content);
     void paintMainPage(juce::Graphics& g, juce::Rectangle<float> content);
     void paintSparkPage(juce::Graphics& g, juce::Rectangle<float> content);
     void paintAdvancedPage(juce::Graphics& g, juce::Rectangle<float> content);
-    void paintSpectrumArea(juce::Graphics& g, juce::Rectangle<float> area);
-    void paintGRHistory(juce::Graphics& g, juce::Rectangle<float> area);
 
     // ── Layout helpers ──
+    void layoutSimpleMode(juce::Rectangle<int> content);
     void layoutMainPage(juce::Rectangle<int> content);
     void layoutSparkPage(juce::Rectangle<int> content);
     void layoutAdvancedPage(juce::Rectangle<int> content);
     void hideAllControls();
+    void setViewMode(ViewMode mode);
 
-    // ── v9: MIDI learn context menu ──
+    // ── v10: MIDI learn context menu ──
     void showMIDILearnMenu(juce::Slider& slider, const juce::String& paramID);
+
+    // ── v10: Tooltip management ──
+    void showTooltipForSlider(juce::Slider& slider);
 
     BTZAudioProcessor& proc;
     BTZLookAndFeel lookAndFeel;
-    int currentPage = 0;
+    ViewMode viewMode = ViewMode::Standard;
+    int currentPage = 0;  // within Standard mode: 0=Main, 1=Spark, 2=Advanced
 
-    // v9: Resizable UI
+    // ── v10: Resizable UI with proper constraints ──
     juce::ComponentBoundsConstrainer constrainer;
     std::unique_ptr<juce::ResizableCornerComponent> resizer;
 
-    // ── Tab navigation ──
-    juce::TextButton tabMain { "MAIN" }, tabSpark { "SPARK" }, tabAdvanced { "ADVANCED" };
+    // ── v10: Custom components ──
+    BTZComponents::HarmonicVisualizer harmonicViz;
+    BTZComponents::GlassPanel glassPresetPanel;
+    BTZComponents::GlassPanel glassControlPanel;
+    BTZComponents::GlassPanel glassVisualizerPanel;
+    BTZComponents::TooltipOverlay tooltipOverlay;
+    BTZComponents::StartupReveal startupReveal;
+    BTZComponents::ProcessingIndicator satIndicator { BTZColours::amber };
+    BTZComponents::ProcessingIndicator compIndicator { BTZColours::coral };
+    BTZComponents::ProcessingIndicator limiterIndicator { BTZColours::cyan };
+    BTZComponents::DirectManipSpectrum spectrumDisplay;
+    BTZComponents::GainReductionRibbon grRibbon;
+
+    // ── v10: Simple Mode knobs ──
+    BTZComponents::SimpleKnob simpleKnobDrive { "DRIVE", BTZColours::amber };
+    BTZComponents::SimpleKnob simpleKnobTone  { "TONE", BTZColours::cyan };
+    BTZComponents::SimpleKnob simpleKnobOutput { "OUTPUT", BTZColours::emerald };
+
+    // ── View mode / Tab navigation ──
+    juce::TextButton btnSimple { "SIMPLE" }, btnStandard { "STANDARD" }, btnAdvanced { "ADVANCED" };
+    juce::TextButton tabMain { "MAIN" }, tabSpark { "SPARK" }, tabDetail { "DETAIL" };
     juce::ToggleButton btnBypass { "BYPASS" };
 
-    // ── v9: Toolbar buttons ──
+    // ── v10: Toolbar buttons ──
     juce::TextButton btnUndo { "UNDO" }, btnRedo { "REDO" };
     juce::TextButton btnAB { "A" };
     juce::TextButton btnCopyAB { "A>B" };
@@ -158,12 +194,18 @@ private:
     juce::ComboBox cGlueScHpf;
     juce::Label lGlueScHpf;
 
-    // ── v9: New controls ──
+    // ── v10: New controls ──
     juce::ComboBox cSatModel;
     juce::Label lSatModel;
     juce::ToggleButton btnMidSide { "M/S" };
     juce::ComboBox cMultiband;
     juce::Label lMultiband;
+    juce::ComboBox cQuality;
+    juce::Label lQuality;
+
+    // ── v10: Resonance Taming & Transient controls ──
+    juce::Slider kResTame, kTransSens;
+    juce::Label lResTame, lTransSens;
 
     // ── Attachments ──
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -175,11 +217,13 @@ private:
     std::unique_ptr<SliderAttachment> aCeiling, aShine, aShineMix, aIntensity;
     std::unique_ptr<SliderAttachment> aShineFreq, aShineQ;
     std::unique_ptr<SliderAttachment> aMacro0, aMacro1, aMacro2, aMacro3;
+    std::unique_ptr<SliderAttachment> aResTame, aTransSens;
     std::unique_ptr<ButtonAttachment> aBypass;
     std::unique_ptr<ComboAttachment>  aGlueScHpf;
     std::unique_ptr<ComboAttachment>  aSatModel;
     std::unique_ptr<ButtonAttachment> aMidSide;
     std::unique_ptr<ComboAttachment>  aMultiband;
+    std::unique_ptr<ComboAttachment>  aQuality;
 
     // ── Meter display state ──
     float inPeakL = -100.0f, inPeakR = -100.0f, inRmsL = -100.0f, inRmsR = -100.0f;

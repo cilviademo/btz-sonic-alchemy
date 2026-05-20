@@ -86,6 +86,7 @@ target_sources(BTZ PRIVATE
     Source/PluginEditor.cpp
     Source/BTZDsp.h
     Source/BTZTheme.h
+    Source/BTZComponents.h
     Source/PluginProcessor.h
     Source/PluginEditor.h
 )
