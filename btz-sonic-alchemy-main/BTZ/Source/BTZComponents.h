@@ -694,4 +694,9 @@ private:
     float correlation = 1.0f;
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Type alias — SpectrumDisplay is the same as DirectManipSpectrum
+// ═══════════════════════════════════════════════════════════════════════════
+using SpectrumDisplay = DirectManipSpectrum;
+
 } // namespace btz

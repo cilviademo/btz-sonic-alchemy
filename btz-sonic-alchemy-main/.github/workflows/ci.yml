@@ -10,7 +10,7 @@ name: BTZ CI/CD
 
 on:
   push:
-    branches: [main, 'overhaul/**', 'feature/**', 'claude/**']
+    branches: [main, 'overhaul/**', 'feature/**', 'claude/**', 'baseline/**']
   pull_request:
     branches: [main]
 

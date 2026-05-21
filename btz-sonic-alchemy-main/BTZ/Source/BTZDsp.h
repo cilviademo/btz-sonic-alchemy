@@ -49,6 +49,9 @@
 #ifdef __SSE2__
 #include <emmintrin.h>
 #endif
+#if defined(__ARM_NEON) || defined(__aarch64__)
+#include <fenv.h>
+#endif
 
 namespace BTZDsp {
 
@@ -84,6 +87,13 @@ inline void enableFlushToZero() noexcept {
 #ifdef __SSE__
     _MM_SET_FLUSH_ZERO_MODE(_MM_FLUSH_ZERO_ON);
     _MM_SET_DENORMALS_ZERO_MODE(_MM_DENORMALS_ZERO_ON);
+#elif defined(__ARM_NEON) || defined(__aarch64__)
+    // ARM: flush denormals to zero via FPCR
+    fesetenv(FE_DFL_ENV);
+    uint64_t fpcr;
+    asm volatile("mrs %0, fpcr" : "=r"(fpcr));
+    fpcr |= (1 << 24); // FZ bit
+    asm volatile("msr fpcr, %0" :: "r"(fpcr));
 #endif
     juce::FloatVectorOperations::disableDenormalisedNumberSupport();
 }

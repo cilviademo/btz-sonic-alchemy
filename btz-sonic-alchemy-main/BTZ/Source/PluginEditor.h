@@ -9,10 +9,10 @@
 */
 #pragma once
 
+#include <JuceHeader.h>
 #include "PluginProcessor.h"
 #include "BTZTheme.h"
 #include "BTZComponents.h"
-#include <JuceHeader.h>
 
 // ═══════════════════════════════════════════════════════════════════════════
 // BTZLookAndFeel — rendering authority for all JUCE controls

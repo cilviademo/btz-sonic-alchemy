@@ -18,15 +18,15 @@ BTZLookAndFeel::BTZLookAndFeel() {
     setColour(juce::Slider::thumbColourId,              juce::Colour(palette::orange));
     setColour(juce::Slider::rotarySliderFillColourId,   juce::Colour(palette::orange));
     setColour(juce::Slider::trackColourId,              juce::Colour(palette::knobTrack));
-    setColour(juce::Label::textColourId,                juce::Colour(palette::charcoal));
-    setColour(juce::TextButton::buttonColourId,         juce::Colour(palette::porcelain));
-    setColour(juce::TextButton::textColourOffId,        juce::Colour(palette::charcoal));
-    setColour(juce::ComboBox::backgroundColourId,       juce::Colour(palette::porcelain));
-    setColour(juce::ComboBox::textColourId,             juce::Colour(palette::charcoal));
-    setColour(juce::ComboBox::outlineColourId,          juce::Colour(palette::panelBorder));
-    setColour(juce::PopupMenu::backgroundColourId,      juce::Colour(palette::porcelain));
-    setColour(juce::PopupMenu::textColourId,            juce::Colour(palette::charcoal));
-    setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(palette::sand));
+    setColour(juce::Label::textColourId,                juce::Colour(palette::ink));
+    setColour(juce::TextButton::buttonColourId,         juce::Colour(palette::surface));
+    setColour(juce::TextButton::textColourOffId,        juce::Colour(palette::ink));
+    setColour(juce::ComboBox::backgroundColourId,       juce::Colour(palette::surface));
+    setColour(juce::ComboBox::textColourId,             juce::Colour(palette::ink));
+    setColour(juce::ComboBox::outlineColourId,          juce::Colour(palette::border));
+    setColour(juce::PopupMenu::backgroundColourId,      juce::Colour(palette::surface));
+    setColour(juce::PopupMenu::textColourId,            juce::Colour(palette::ink));
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(palette::well));
 }
 
 void BTZLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int w, int h,
@@ -53,12 +53,12 @@ void BTZLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int w, in
 
     // Small rounded handle with subtle shadow
     const float handleR = 5.0f;
-    g.setColour(juce::Colour(palette::charcoal).withAlpha(0.15f));
+    g.setColour(juce::Colour(palette::ink).withAlpha(0.15f));
     g.fillEllipse(sliderPos - handleR + 0.5f, track.getCentreY() - handleR + 0.5f,
                   handleR * 2.0f, handleR * 2.0f);
-    g.setColour(juce::Colour(palette::ivory));
+    g.setColour(juce::Colour(palette::knobFace));
     g.fillEllipse(sliderPos - handleR, track.getCentreY() - handleR, handleR * 2.0f, handleR * 2.0f);
-    g.setColour(juce::Colour(palette::panelBorder));
+    g.setColour(juce::Colour(palette::border));
     g.drawEllipse(sliderPos - handleR, track.getCentreY() - handleR, handleR * 2.0f, handleR * 2.0f, 0.5f);
 }
 
@@ -68,19 +68,19 @@ void BTZLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& b,
     if (down || b.getToggleState()) {
         g.setColour(juce::Colour(palette::orange));
     } else if (highlighted) {
-        g.setColour(juce::Colour(palette::sand));
+        g.setColour(juce::Colour(palette::well));
     } else {
-        g.setColour(juce::Colour(palette::porcelain));
+        g.setColour(juce::Colour(palette::surface));
     }
     g.fillRoundedRectangle(bounds, radius::sm);
-    g.setColour(juce::Colour(palette::panelBorder));
+    g.setColour(juce::Colour(palette::border));
     g.drawRoundedRectangle(bounds, radius::sm, 0.5f);
 }
 
 void BTZLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& b, bool, bool down) {
-    g.setFont(juce::Font(type::label(), type::labelSize, juce::Font::bold));
-    g.setColour((down || b.getToggleState()) ? juce::Colour(palette::ivory)
-                                              : juce::Colour(palette::charcoal));
+    g.setFont(juce::Font(type::sans(), type::label, juce::Font::bold));
+    g.setColour((down || b.getToggleState()) ? juce::Colour(palette::knobFace)
+                                              : juce::Colour(palette::ink));
     g.drawText(b.getButtonText(), b.getLocalBounds(), juce::Justification::centred);
 }
 
@@ -90,15 +90,15 @@ void BTZLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& b,
     if (b.getToggleState()) {
         g.setColour(juce::Colour(palette::orange));
         g.fillRoundedRectangle(bounds, radius::sm);
-        g.setColour(juce::Colour(palette::ivory));
+        g.setColour(juce::Colour(palette::knobFace));
     } else {
-        g.setColour(juce::Colour(palette::porcelain));
+        g.setColour(juce::Colour(palette::surface));
         g.fillRoundedRectangle(bounds, radius::sm);
-        g.setColour(juce::Colour(palette::panelBorder));
+        g.setColour(juce::Colour(palette::border));
         g.drawRoundedRectangle(bounds, radius::sm, 0.5f);
-        g.setColour(highlighted ? juce::Colour(palette::charcoal) : juce::Colour(palette::warmGray));
+        g.setColour(highlighted ? juce::Colour(palette::ink) : juce::Colour(palette::inkMuted));
     }
-    g.setFont(juce::Font(type::label(), type::labelSize, juce::Font::bold));
+    g.setFont(juce::Font(type::sans(), type::label, juce::Font::bold));
     g.drawText(b.getButtonText(), b.getLocalBounds(), juce::Justification::centred);
 }
 
@@ -111,9 +111,9 @@ void BTZLookAndFeel::drawLabel(juce::Graphics& g, juce::Label& l) {
 void BTZLookAndFeel::drawComboBox(juce::Graphics& g, int w, int h, bool,
                                     int, int, int, int, juce::ComboBox&) {
     auto bounds = juce::Rectangle<float>(0, 0, (float)w, (float)h);
-    g.setColour(juce::Colour(palette::porcelain));
+    g.setColour(juce::Colour(palette::surface));
     g.fillRoundedRectangle(bounds, radius::sm);
-    g.setColour(juce::Colour(palette::panelBorder));
+    g.setColour(juce::Colour(palette::border));
     g.drawRoundedRectangle(bounds.reduced(0.5f), radius::sm, 0.5f);
 
     // Dropdown arrow
@@ -121,7 +121,7 @@ void BTZLookAndFeel::drawComboBox(juce::Graphics& g, int w, int h, bool,
     const float arrowY = (float)h * 0.5f - 2.0f;
     juce::Path arrow;
     arrow.addTriangle(arrowX, arrowY, arrowX + 8.0f, arrowY, arrowX + 4.0f, arrowY + 5.0f);
-    g.setColour(juce::Colour(palette::warmGray));
+    g.setColour(juce::Colour(palette::inkMuted));
     g.fillPath(arrow);
 }
 
@@ -130,16 +130,16 @@ void BTZLookAndFeel::drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<
                                         bool isTicked, bool, const juce::String& text,
                                         const juce::String&, const juce::Drawable*, const juce::Colour*) {
     if (isSeparator) {
-        g.setColour(juce::Colour(palette::panelBorder));
+        g.setColour(juce::Colour(palette::border));
         g.fillRect(area.reduced(space::sm, 0).withHeight(1).withCentre(area.getCentre()));
         return;
     }
     if (isHighlighted) {
-        g.setColour(juce::Colour(palette::sand));
+        g.setColour(juce::Colour(palette::well));
         g.fillRect(area);
     }
-    g.setColour(isTicked ? juce::Colour(palette::orange) : juce::Colour(palette::charcoal));
-    g.setFont(juce::Font(type::label(), type::bodySize, juce::Font::plain));
+    g.setColour(isTicked ? juce::Colour(palette::orange) : juce::Colour(palette::ink));
+    g.setFont(juce::Font(type::sans(), type::body, juce::Font::plain));
     g.drawText(text, area.reduced(space::md, 0), juce::Justification::centredLeft);
 }
 
@@ -190,7 +190,7 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
     addAndMakeVisible(btnAutoGain);
     addAndMakeVisible(lblPresetName);
     lblPresetName.setJustificationType(juce::Justification::centred);
-    lblPresetName.setFont(juce::Font(type::label(), type::bodySize, juce::Font::plain));
+    lblPresetName.setFont(juce::Font(type::sans(), type::body, juce::Font::plain));
 
     // Toolbar callbacks
     btnUndo.onClick = [this] { proc.undo(); };
@@ -356,8 +356,8 @@ void BTZAudioProcessorEditor::setupKnob(juce::Slider& s, juce::Label& l,
 
     l.setText(text, juce::dontSendNotification);
     l.setJustificationType(juce::Justification::centred);
-    l.setFont(juce::Font(type::label(), type::labelSize, juce::Font::bold));
-    l.setColour(juce::Label::textColourId, juce::Colour(palette::warmGray));
+    l.setFont(juce::Font(type::sans(), type::label, juce::Font::bold));
+    l.setColour(juce::Label::textColourId, juce::Colour(palette::inkMuted));
     addAndMakeVisible(l);
 }
 
@@ -513,38 +513,38 @@ void BTZAudioProcessorEditor::hideAllControls() {
 
 void BTZAudioProcessorEditor::paint(juce::Graphics& g) {
     // Warm ivory canvas
-    g.fillAll(juce::Colour(palette::ivory));
+    g.fillAll(juce::Colour(palette::canvas));
 
     // Subtle warm gradient (ivory → linen at bottom)
-    juce::ColourGradient grad(juce::Colour(palette::ivory), 0, 0,
-                              juce::Colour(palette::linen), 0, (float)getHeight(), false);
+    juce::ColourGradient grad(juce::Colour(palette::canvas), 0, 0,
+                              juce::Colour(palette::surfaceAlt), 0, (float)getHeight(), false);
     g.setGradientFill(grad);
     g.fillRect(getLocalBounds());
 
     // Header bar (porcelain)
     auto headerArea = getLocalBounds().toFloat().removeFromTop((float)layout::headerH);
-    g.setColour(juce::Colour(palette::porcelain));
+    g.setColour(juce::Colour(palette::surface));
     g.fillRect(headerArea);
-    g.setColour(juce::Colour(palette::panelBorder));
+    g.setColour(juce::Colour(palette::border));
     g.fillRect(headerArea.removeFromBottom(1.0f));
 
     // Brand wordmark — wide, spaced, confident
-    g.setColour(juce::Colour(palette::softBlack));
-    g.setFont(juce::Font(type::brand(), type::brandSize, juce::Font::bold));
+    g.setColour(juce::Colour(palette::inkStrong));
+    g.setFont(juce::Font(type::display(), type::brand, juce::Font::bold));
     auto brandArea = getLocalBounds().toFloat().removeFromTop((float)layout::headerH);
     g.drawText("B O X   T O N E   Z O N E", brandArea.reduced((float)space::md, 0),
                juce::Justification::centredLeft);
 
     // Footer bar
     auto footerArea = getLocalBounds().toFloat().removeFromBottom((float)layout::footerH);
-    g.setColour(juce::Colour(palette::porcelain));
+    g.setColour(juce::Colour(palette::surface));
     g.fillRect(footerArea);
-    g.setColour(juce::Colour(palette::panelBorder));
+    g.setColour(juce::Colour(palette::border));
     g.fillRect(footerArea.removeFromTop(1.0f));
 
     // Footer metering text
-    g.setFont(juce::Font(type::mono(), type::microSize, juce::Font::plain));
-    g.setColour(juce::Colour(palette::warmGray));
+    g.setFont(juce::Font(type::mono(), type::micro, juce::Font::plain));
+    g.setColour(juce::Colour(palette::inkMuted));
     float lufs = proc.meters.lufs.load(std::memory_order_relaxed);
     float tp = proc.meters.truePeak.load(std::memory_order_relaxed);
     float grVal = proc.meters.grDb.load(std::memory_order_relaxed);
@@ -556,7 +556,7 @@ void BTZAudioProcessorEditor::paint(juce::Graphics& g) {
                juce::Justification::centredLeft);
 
     // Version badge
-    g.setColour(juce::Colour(palette::warmGray));
+    g.setColour(juce::Colour(palette::inkMuted));
     g.drawText("v1.0", footerArea.reduced((float)space::md, 0), juce::Justification::centredRight);
 }
 
@@ -916,7 +916,7 @@ void BTZAudioProcessorEditor::setupTargetLockUI() {
     // Section label
     lblTargetSection.setText("TARGET LOCK", juce::dontSendNotification);
     lblTargetSection.setFont(juce::Font(type::sans(), 11.0f, juce::Font::bold));
-    lblTargetSection.setColour(juce::Label::textColourId, juce::Colour(palette::charcoal));
+    lblTargetSection.setColour(juce::Label::textColourId, juce::Colour(palette::ink));
     addAndMakeVisible(lblTargetSection);
 
     // Helper: setup a text editor for numeric input
@@ -924,14 +924,14 @@ void BTZAudioProcessorEditor::setupTargetLockUI() {
                                  const juce::String& labelText, const juce::String& paramID) {
         lbl.setText(labelText, juce::dontSendNotification);
         lbl.setFont(juce::Font(type::sans(), 10.0f, juce::Font::plain));
-        lbl.setColour(juce::Label::textColourId, juce::Colour(palette::warmGray));
+        lbl.setColour(juce::Label::textColourId, juce::Colour(palette::inkMuted));
         addAndMakeVisible(lbl);
 
         txt.setFont(juce::Font(type::mono(), 12.0f, juce::Font::plain));
         txt.setJustification(juce::Justification::centred);
-        txt.setColour(juce::TextEditor::backgroundColourId, juce::Colour(palette::porcelain));
-        txt.setColour(juce::TextEditor::outlineColourId, juce::Colour(palette::panelBorder));
-        txt.setColour(juce::TextEditor::textColourId, juce::Colour(palette::charcoal));
+        txt.setColour(juce::TextEditor::backgroundColourId, juce::Colour(palette::surface));
+        txt.setColour(juce::TextEditor::outlineColourId, juce::Colour(palette::border));
+        txt.setColour(juce::TextEditor::textColourId, juce::Colour(palette::ink));
         txt.setInputRestrictions(6, "-0123456789.");
         addAndMakeVisible(txt);
 
@@ -978,7 +978,7 @@ void BTZAudioProcessorEditor::setupTargetLockUI() {
     lDynThreshold.setText("DYN RANGE", juce::dontSendNotification);
     lDynThreshold.setFont(juce::Font(type::sans(), 9.0f, juce::Font::plain));
     lDynThreshold.setJustificationType(juce::Justification::centred);
-    lDynThreshold.setColour(juce::Label::textColourId, juce::Colour(palette::warmGray));
+    lDynThreshold.setColour(juce::Label::textColourId, juce::Colour(palette::inkMuted));
     addAndMakeVisible(lDynThreshold);
     aDynThreshold = std::make_unique<SliderAttachment>(apvts, "targetDynThresh", kDynThreshold);
 
