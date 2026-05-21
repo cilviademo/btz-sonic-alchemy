@@ -4,6 +4,47 @@ All notable changes to this project are documented in this file. The format foll
 
 ---
 
+## v1.0.3 — Correctness, Efficiency & QA Pass (2026-05-21)
+
+Deep debugging + performance/security audit against a real JUCE 8.0.6 build
+(plugin + tests compile & link; measured with ASan/UBSan + a CPU benchmark).
+
+### Fixed (correctness)
+- **CRITICAL: plugin output was 100% dry.** Block-rate parameter smoothers
+  (`Mix`, `Width`, `Glue`, `Shine`, `Boom`, `Motion`, …) were read via `.current`
+  but never advanced, so they stayed frozen at 0 — Mix=0 meant the wet path was
+  discarded and Width=0 collapsed to mono. Added `SmoothParam::advanceBlock()`,
+  advance them per block, and snap all smoothers in `prepareToPlay`.
+- **`fastTanh` was unbounded** (returned ~6.7 for input 100) — now saturates to [-1,1].
+- **Oversampling modulation ran 2–8× too fast** at Quality > Eco — now rate-correct.
+- **Transient Sensitivity knob was inert** — wired to the splitter.
+- **`reset()` lifecycle** added (clears all DSP state incl. Target Lock + oversampling).
+
+### Changed (efficiency — measured, behavior-preserving)
+- TruePeakLimiter caches `dbToGain(ceiling)` (was a `std::pow` per sample).
+- Master gain smoothed as a per-block linear ramp (2 `dbToGain`/block vs per sample).
+- ResonanceTamer's 32-"band" loop collapsed to one computation — **bit-identical**
+  output (all bands were identical), ~32× cheaper for that module.
+- Result: worst case (Ultra 8× + all modules) **4.49% → 3.73%** of one core
+  (27× realtime); typical Standard path ~1% per instance.
+
+### Fixed (hardening / security)
+- `processBlock` re-prepares on an oversized block (host contract violation) to
+  avoid an out-of-bounds write on `dryBuffer` / oversampling buffers.
+- `SafetyLayer` now clamps runaway values to ±4.0 (~+12 dBFS) — last-resort guard.
+- Reviewed state/preset/neural-weight parsing: bounds-checked, robust. ASan/UBSan/
+  LSan: **zero findings** across the DSP suite.
+
+### Added (UI / QA)
+- Spectrum + harmonic **visualizers now receive live FFT data** (were empty).
+- **Processor-level integration test** (`BTZProcessorCheck`): wet-path-active,
+  bypass, state round-trip, SR/block-size matrix, oversized-block guard — all pass.
+- **CPU benchmark** (`BTZBench`) for regression tracking.
+- LinkwitzRiley tests rewritten to the correct LR4 allpass property; whole suite
+  now **86/86 green**.
+
+---
+
 ## v1.0.2 — First Successful Compile + Build Hardening (2026-05-21)
 
 First build that actually compiles and links. Verified against real JUCE 8.0.6
