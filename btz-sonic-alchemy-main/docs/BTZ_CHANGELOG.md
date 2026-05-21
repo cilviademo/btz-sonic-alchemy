@@ -4,6 +4,68 @@ All notable changes to this project are documented in this file. The format foll
 
 ---
 
+## v1.0.2 — First Successful Compile + Build Hardening (2026-05-21)
+
+First build that actually compiles and links. Verified against real JUCE 8.0.6
+(FetchContent) + GoogleTest on Linux: plugin Standalone + VST3 link, 81/84 unit
+tests pass. All changes surgical — no architecture, DSP topology, or Ivory UI
+redesign.
+
+### Fixed (compile restoration — the plugin had never compiled before)
+
+- **Editor ↔ theme sync.** `PluginEditor.cpp` (Ivory System) referenced a theme
+  API that was never committed. Resolved via theme-layer compatibility aliases:
+  - `palette::` aliases (`ivory`, `porcelain`, `linen`, `sand`, `panelBorder`,
+    `charcoal`, `softBlack`, `warmGray`) mapping onto the existing semantic tokens.
+  - `type::*Size` aliases (`brandSize`…`valueSize`) onto the scale floats.
+  - `type::label()/brand()` (called as functions but defined as floats) → the
+    family functions `type::sans()/display()` at the 6 call sites.
+- **SafetyIndicator**: added `using Level = State;` + `setLevel()` wrapper for the
+  editor's calls (primary API remains `setState`/`State`).
+- **LabeledKnob**: now inherits `juce::SettableTooltipClient` so `setTooltip()` resolves.
+- **SpectrumDisplay**: added `using SpectrumDisplay = DirectManipSpectrum;` alias.
+- **deltaMonitoring**: moved to the processor's public section (editor writes it).
+- **Preset save**: converted modal `FileChooser::browseForFileToSave` to async
+  `launchAsync` (no modal loops — plugin-safe).
+- **Test build**: `BTZTests` now built via `juce_add_console_app` +
+  `juce_generate_juce_header` (so `<JuceHeader.h>` resolves) with
+  `JUCE_WEB_BROWSER=0`/`JUCE_USE_CURL=0` (drops the gtk dependency). Added missing
+  `<random>`/`<limits>` includes.
+
+### Fixed (DSP / wiring — verified by the test run)
+
+- **fastTanh** is now bounded to [-1, 1]. The Padé [5/5] approximation was
+  unbounded (returned ~6.7 for input 100, overshoots >1.0 above x≈3.3) — a real
+  RT-safety hazard for a saturator. Input is clamped to the valid region and the
+  output hard-bounded.
+- **Correlation meter** wired to `meters.correlation` (was hardcoded "Safe"):
+  ≥0.3 sage / 0–0.3 amber / <0 clay.
+- **reset() lifecycle**: added `AudioProcessor::reset()` → `resetAll()`, and
+  `resetAll()` now also clears Target Lock + JUCE oversampling state.
+
+### Build / CI / Tooling
+
+- CI: added `baseline/**` trigger; pluginval now gates (strictness 10,
+  repeat/randomise, removed `|| true`).
+- Added cross-platform scripts: `scripts/build_{linux,macos,windows}.{sh,ps1}`,
+  `scripts/run_pluginval.{sh,ps1}`, `scripts/clean_build.{sh,ps1}`.
+- Added dev docs under `docs/dev/`: local setup, Cursor/Codex handoffs, validation
+  checklist, CI notes, build/test status.
+
+### Known issues (documented, not silently changed — need product decision)
+
+- `LinkwitzRileyCrossover.{SplitsIntoLowAndHigh,SumsFlatAtCrossover}` tests assert
+  `low+high == input` (identity). Correct LR4 sums to an allpass (flat magnitude,
+  phase-shifted), so identity does not hold. DSP is correct LR4; tests encode a
+  first-order-complementary assumption.
+- `RTSafety.SafetyLayerHandlesAllEdgeCases` expects the safety layer to hard-clamp
+  `|out| ≤ 4.0`; the current design only guards NaN/Inf/denormal + DC.
+- Spectrum/harmonic visualizers are not yet fed live FFT data (render empty).
+- No factory presets; neural slots have no weights (fall back to tanh); no
+  installers / code signing yet.
+
+---
+
 ## v1.0.1 — DSP Correctness + Target Lock (2026-05-20)
 
 ### Added
