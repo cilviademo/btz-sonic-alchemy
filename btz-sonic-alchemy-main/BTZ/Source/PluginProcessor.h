@@ -66,6 +66,11 @@ public:
         std::atomic<float> lufs        { -24.0f };
         std::atomic<float> truePeak    { -100.0f };
         std::atomic<float> correlation { 1.0f };
+        // Target Lock readout (the flagship feature, made legible)
+        std::atomic<bool>  targetActive   { false };
+        std::atomic<float> targetValue    { -14.0f };  // typed target (LUFS or RMS dB)
+        std::atomic<bool>  targetIsLufs    { true };    // true=LUFS shown, false=RMS
+        std::atomic<bool>  targetOnTarget  { false };   // within tolerance of the target
     };
     MeterValues meters;
 

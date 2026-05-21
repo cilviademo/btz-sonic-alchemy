@@ -612,6 +612,19 @@ void BTZAudioProcessorEditor::paint(juce::Graphics& g) {
     g.drawText(footerText, footerArea.reduced((float)space::md, 0),
                juce::Justification::centredLeft);
 
+    // Target Lock readout (flagship) — show current vs typed target + status.
+    if (proc.meters.targetActive.load(std::memory_order_relaxed)) {
+        const float tgt = proc.meters.targetValue.load(std::memory_order_relaxed);
+        const bool isLufs = proc.meters.targetIsLufs.load(std::memory_order_relaxed);
+        const bool onTgt = proc.meters.targetOnTarget.load(std::memory_order_relaxed);
+        juce::String tl = juce::String::formatted("TARGET LOCK  %.1f %s  %s",
+            tgt, isLufs ? "LUFS" : "dB", onTgt ? "LOCKED" : "approaching");
+        g.setColour(juce::Colour(onTgt ? palette::sage : palette::gold));
+        g.setFont(juce::Font(type::mono(), type::microSize, juce::Font::bold));
+        g.drawText(tl, footerArea.reduced((float)space::md, 0),
+                   juce::Justification::centred);
+    }
+
     // Version badge
     g.setColour(juce::Colour(palette::warmGray));
     g.drawText("v1.0", footerArea.reduced((float)space::md, 0), juce::Justification::centredRight);

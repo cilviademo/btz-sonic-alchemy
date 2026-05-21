@@ -164,6 +164,24 @@ int main() {
         check(roundtrip("shineFreq", "8.00 kHz", 8000.0f, 50.0f), "type-in '8 kHz' -> 8000 Hz");
     }
 
+    // ── 8. Target Lock readout publishes when engaged (flagship legibility) ──
+    {
+        std::printf("Target Lock readout:\n");
+        BTZAudioProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        setVal(p, "mix", 1.0f); setVal(p, "drive", 0.4f);
+        juce::AudioBuffer<float> buf(2, 512);
+        // Not locked yet → readout inactive.
+        for (int blk = 0; blk < 8; ++blk) { fillSine(buf, 220.0f, 48000.0f); p.processBlock(buf, midi); }
+        check(!p.meters.targetActive.load(), "readout inactive when no target locked");
+        // Engage LUFS lock at -14.
+        setVal(p, "targetLUFS", -14.0f); setVal(p, "targetLUFSLock", 1.0f);
+        for (int blk = 0; blk < 16; ++blk) { fillSine(buf, 220.0f, 48000.0f); p.processBlock(buf, midi); }
+        check(p.meters.targetActive.load(), "readout active when target locked");
+        check(std::abs(p.meters.targetValue.load() - (-14.0f)) < 0.1f, "readout shows the typed target (-14)");
+        check(p.meters.targetIsLufs.load(), "readout flagged as LUFS");
+    }
+
     std::printf("\n%s — %d failure(s)\n", failures == 0 ? "ALL PROCESSOR CHECKS PASSED" : "PROCESSOR CHECKS FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

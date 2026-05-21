@@ -806,6 +806,17 @@ void BTZAudioProcessor::processLinearPost(float* dataL, float* dataR, int numSam
             dataL[i] = (lowL + midL + highL) * masterGain;
             dataR[i] = (lowR + midR + highR) * masterGain;
         }
+
+        // Publish Target Lock readout for the UI (the flagship, made visible).
+        const bool useLufs = targetLockEngine.lufsLocked;
+        const float tgt = useLufs ? targetLockEngine.targetLUFS : targetLockEngine.targetRMS;
+        const float meas = useLufs ? targetLockEngine.measuredLUFS : targetLockEngine.measuredRMS;
+        meters.targetActive.store(true, std::memory_order_relaxed);
+        meters.targetIsLufs.store(useLufs, std::memory_order_relaxed);
+        meters.targetValue.store(tgt, std::memory_order_relaxed);
+        meters.targetOnTarget.store(std::abs(meas - tgt) <= 1.0f, std::memory_order_relaxed);
+    } else {
+        meters.targetActive.store(false, std::memory_order_relaxed);
     }
 
     // True peak limiter (ceiling from parameter)
