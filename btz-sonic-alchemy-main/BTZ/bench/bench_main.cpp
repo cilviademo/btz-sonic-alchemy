@@ -44,27 +44,29 @@ double runScenario(const Scenario& s, double sr, int blockSize, int iters) {
         setVal(proc, "satModel", 1.0f);   // Tube
     }
 
-    juce::AudioBuffer<float> buf(2, blockSize);
+    juce::AudioBuffer<float> buf(2, blockSize), src(2, blockSize);
     juce::MidiBuffer midi;
     std::mt19937 rng(1);
     std::uniform_real_distribution<float> dist(-0.5f, 0.5f);
-    auto fill = [&] {
-        for (int ch = 0; ch < 2; ++ch) {
-            auto* d = buf.getWritePointer(ch);
-            for (int i = 0; i < blockSize; ++i) d[i] = dist(rng);
-        }
+    for (int ch = 0; ch < 2; ++ch) {           // source noise generated ONCE
+        auto* d = src.getWritePointer(ch);
+        for (int i = 0; i < blockSize; ++i) d[i] = dist(rng);
+    }
+    auto load = [&] {                          // cheap, constant memcpy per iter
+        buf.copyFrom(0, 0, src, 0, 0, blockSize);
+        buf.copyFrom(1, 0, src, 1, 0, blockSize);
     };
 
     // Warm up (let smoothers settle, OS init, branch predictors).
-    for (int i = 0; i < 200; ++i) { fill(); proc.processBlock(buf, midi); }
+    for (int i = 0; i < 200; ++i) { load(); proc.processBlock(buf, midi); }
 
     double best = 1e30;  // best (min) avg over repeats — least noisy estimate
-    for (int rep = 0; rep < 5; ++rep) {
+    for (int rep = 0; rep < 6; ++rep) {
         const auto t0 = std::chrono::steady_clock::now();
-        for (int i = 0; i < iters; ++i) { fill(); proc.processBlock(buf, midi); }
+        for (int i = 0; i < iters; ++i) { load(); proc.processBlock(buf, midi); }
         const auto t1 = std::chrono::steady_clock::now();
         const double ns = std::chrono::duration<double, std::nano>(t1 - t0).count();
-        best = std::min(best, ns / iters);   // ns per block (incl. fill overhead)
+        best = std::min(best, ns / iters);   // ns per block (incl. ~1us memcpy)
     }
     return best;
 }

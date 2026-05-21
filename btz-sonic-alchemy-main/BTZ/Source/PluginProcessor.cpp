@@ -374,6 +374,13 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     if (!prepared || buffer.getNumChannels() < 2) return;
 
+    // Robustness: JUCE's contract guarantees numSamples <= the prepared block
+    // size, but a misbehaving host could exceed it and overrun dryBuffer / the
+    // oversampling buffers. Re-prepare to the larger size rather than risk an
+    // out-of-bounds write (rare, off the steady state).
+    if (buffer.getNumSamples() > maxPreparedBlockSize)
+        prepareToPlay(currentSampleRate, buffer.getNumSamples());
+
     // Apply deferred latency update (setLatencySamples is safe from any thread in JUCE)
     const int pending = pendingLatency.exchange(-1, std::memory_order_relaxed);
     if (pending >= 0)
@@ -466,11 +473,19 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
         }
     }
 
-    // Master gain
-    for (int i = 0; i < numSamples; ++i) {
-        const float masterGain = BTZDsp::dbToGain((sMaster.next() - 0.7f) * 24.0f);
-        dataL[i] *= masterGain;
-        dataR[i] *= masterGain;
+    // Master gain — smoothed as a per-block linear ramp (2 dbToGain calls per
+    // block instead of one std::pow per sample; audibly identical).
+    {
+        const float gStart = BTZDsp::dbToGain((sMaster.current - 0.7f) * 24.0f);
+        sMaster.advanceBlock(numSamples);
+        const float gEnd = BTZDsp::dbToGain((sMaster.current - 0.7f) * 24.0f);
+        const float gStep = (numSamples > 1) ? (gEnd - gStart) / (float)(numSamples - 1) : 0.0f;
+        float g = gStart;
+        for (int i = 0; i < numSamples; ++i) {
+            dataL[i] *= g;
+            dataR[i] *= g;
+            g += gStep;
+        }
     }
 
     // Final safety

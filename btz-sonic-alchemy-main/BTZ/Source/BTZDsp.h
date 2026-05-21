@@ -491,23 +491,23 @@ struct ResonanceTamer {
     inline float process(float input) noexcept {
         if (!enabled) return input;
 
-        // Simplified spectral band analysis via cascaded bandpass approximation
+        // NOTE: every "band" historically received the same broadband |input|
+        // and started from identical state, so all kResonanceBands entries
+        // produced an identical reduction and the min over them equals any one
+        // of them. Collapsed to a single computation: output is bit-identical
+        // to the old 32-iteration loop but ~32x cheaper. (A true multiband
+        // resonance detector would need per-band bandpass filters — future work;
+        // tracked in the docs.)
         const float absIn = std::abs(input);
-        float totalReduction = 1.0f;
-
-        for (int b = 0; b < kResonanceBands; ++b) {
-            bandEnergy[b] += smoothCoeff * (absIn - bandEnergy[b]);
-            const float threshold = sensitivity * 0.5f;
-            if (bandEnergy[b] > threshold) {
-                const float excess = bandEnergy[b] - threshold;
-                gainReduction[b] = 1.0f / (1.0f + excess * depth * 4.0f);
-                totalReduction = juce::jmin(totalReduction, gainReduction[b]);
-            } else {
-                gainReduction[b] += smoothCoeff * (1.0f - gainReduction[b]);
-            }
+        bandEnergy[0] += smoothCoeff * (absIn - bandEnergy[0]);
+        const float threshold = sensitivity * 0.5f;
+        float reduction = 1.0f;
+        if (bandEnergy[0] > threshold) {
+            const float excess = bandEnergy[0] - threshold;
+            gainReduction[0] = 1.0f / (1.0f + excess * depth * 4.0f);
+            reduction = gainReduction[0];
         }
-
-        return input * totalReduction;
+        return input * reduction;
     }
 };
 
@@ -713,7 +713,9 @@ struct TruePeakLimiter {
     static constexpr int kISPFactor = 4;  // 4x oversampling for ISP detection
     static constexpr int kISPFilterLen = 12; // Half-band FIR taps per phase
 
-    float ceiling = -0.3f;
+    float ceiling = -0.3f;            // dB (public; set per block by the host)
+    float ceilingLinear = 0.96605f;   // cached dbToGain(ceiling), recomputed on change
+    float cachedCeilingDb = -0.3f;
     float delayBufL[kLookahead] = {};
     float delayBufR[kLookahead] = {};
     int delayIdx = 0;
@@ -785,10 +787,13 @@ struct TruePeakLimiter {
         const float delR = delayBufR[readIdx];
         delayIdx = (delayIdx + 1) % kLookahead;
 
+        // Cache ceiling in linear gain; recompute only when the dB value changes
+        // (avoids a std::pow per sample — the ceiling is constant within a block).
+        if (ceiling != cachedCeilingDb) { cachedCeilingDb = ceiling; ceilingLinear = dbToGain(ceiling); }
+
         // Detect true inter-sample peak via 4x polyphase interpolation
         const float truePeak = detectTruePeak(l, r);
-        const float ceilLin = dbToGain(ceiling);
-        const float targetGain = (truePeak > ceilLin) ? (ceilLin / truePeak) : 1.0f;
+        const float targetGain = (truePeak > ceilingLinear) ? (ceilingLinear / truePeak) : 1.0f;
 
         // Smooth gain (instant attack, smooth release)
         if (targetGain < gainState)
