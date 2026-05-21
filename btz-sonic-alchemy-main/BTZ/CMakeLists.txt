@@ -154,6 +154,27 @@ if(BTZ_BUILD_TESTS)
 endif()
 
 # ═══════════════════════════════════════════════════════════════════════════
+# Benchmark target (optional, -DBTZ_BUILD_BENCH=ON) — drives real processBlock
+# ═══════════════════════════════════════════════════════════════════════════
+option(BTZ_BUILD_BENCH "Build BTZ CPU benchmark" OFF)
+
+if(BTZ_BUILD_BENCH)
+    juce_add_console_app(BTZBench PRODUCT_NAME "BTZ Bench")
+    target_sources(BTZBench PRIVATE
+        bench/bench_main.cpp
+        Source/PluginProcessor.cpp
+        Source/PluginEditor.cpp)
+    juce_generate_juce_header(BTZBench)
+    target_include_directories(BTZBench PRIVATE Source)
+    target_compile_definitions(BTZBench PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1)
+    target_link_libraries(BTZBench PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags)
+endif()
+
+# ═══════════════════════════════════════════════════════════════════════════
 # Validator integration targets (manual, not built by default)
 # Usage: cmake --build . --target validate_vst3
 #        cmake --build . --target validate_au
