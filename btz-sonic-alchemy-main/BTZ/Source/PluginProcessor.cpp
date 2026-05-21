@@ -50,7 +50,7 @@ BTZAudioProcessor::createParameterLayout() {
     params.push_back(std::make_unique<juce::AudioParameterFloat>("punch",   "Punch",   uni, 0.5f, pct()));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("warmth",  "Warmth",  uni, 0.5f, pct()));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("boom",    "Boom",    uni, 0.3f, pct()));
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("glue",    "Glue",    uni, 0.4f, pct()));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("glue",    "Glue",    uni, 0.45f, pct()));  // subtle default glue
     params.push_back(std::make_unique<juce::AudioParameterFloat>("air",     "Air",     uni, 0.3f, pct()));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("width",   "Width",   uni, 0.5f, pct()));
 
@@ -69,16 +69,16 @@ BTZAudioProcessor::createParameterLayout() {
     params.push_back(std::make_unique<juce::AudioParameterFloat>("macro3",  "Macro D", uni, 0.5f, pct()));
 
     // ── Shine EQ ──
-    params.push_back(std::make_unique<juce::AudioParameterFloat>("shine",     "Shine",     uni, 0.0f, pct()));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("shine",     "Shine",     uni, 0.20f, pct()));  // subtle default sheen
     params.push_back(std::make_unique<juce::AudioParameterFloat>("shineMix",  "Shine Mix", uni, 1.0f, pct()));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("shineFreq", "Shine Freq",
         juce::NormalisableRange<float>(1000.0f, 16000.0f, 1.0f, 0.5f), 8000.0f, hz()));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("shineQ",    "Shine Q",
         juce::NormalisableRange<float>(0.3f, 8.0f, 0.01f, 0.5f), 0.707f, qfac()));
 
-    // ── Saturation model ──
+    // ── Saturation model (default: Tube — warm "instant good" character) ──
     params.push_back(std::make_unique<juce::AudioParameterInt>("satModel", "Saturation Model",
-        0, (int)BTZDsp::SaturationModel::NumModels - 1, 0));
+        0, (int)BTZDsp::SaturationModel::NumModels - 1, (int)BTZDsp::SaturationModel::Tube));
 
     // ── Dynamics ──
     params.push_back(std::make_unique<juce::AudioParameterInt>("glueScHpf", "Glue SC HPF", 0, 3, 0));
@@ -93,6 +93,7 @@ BTZAudioProcessor::createParameterLayout() {
         juce::NormalisableRange<float>(1.0f, 20.0f, 0.1f, 0.5f), 3.0f, ratio()));
     params.push_back(std::make_unique<juce::AudioParameterFloat>("glueLink", "Glue Stereo Link", uni, 1.0f, pct()));
     params.push_back(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("bypassMatch", "Loudness-Matched Bypass", false));
     params.push_back(std::make_unique<juce::AudioParameterBool>("autoGain", "Auto Gain", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("midSide", "Mid/Side", false));
 
@@ -248,6 +249,10 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
 
     // Side low-pass for stereo width
     sideLowCoeff = std::exp(-BTZDsp::kTwoPi * 200.0f / (float)sampleRate);
+
+    // Loudness-matched-bypass smoothing (~400 ms) — slow, glitch-free tracking.
+    bypassMatchCoeff = 1.0f - std::exp(-1.0f / ((float)sampleRate * 0.400f));
+    bypassMatchGain = 1.0f;
 
     initSmoothers(sampleRate);
 
@@ -447,6 +452,12 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     bypassCrossfader.setBypassState(bypassed);
 
     if (bypassCrossfader.isBypassed()) {
+        // Loudness-matched bypass: scale the dry output by the smoothed
+        // processed/dry RMS ratio so an A/B reveals tone, not level. The ratio
+        // was learned from the last processed blocks before bypass.
+        if ((bool)*apvts.getRawParameterValue("bypassMatch") && std::abs(bypassMatchGain - 1.0f) > 1.0e-4f) {
+            for (int i = 0; i < numSamples; ++i) { dataL[i] *= bypassMatchGain; dataR[i] *= bypassMatchGain; }
+        }
         // Still update meters even when bypassed
         updateMeters(dataL, dataR, dataL, dataR, numSamples, 0.0f);
         return;
@@ -525,6 +536,21 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const float* dryR = dryBuffer.getReadPointer(1);
     for (int i = 0; i < numSamples; ++i)
         bypassCrossfader.processStereo(dryL[i], dryR[i], dataL[i], dataR[i]);
+
+    // Track processed/dry RMS ratio for loudness-matched bypass (slow smoothing).
+    {
+        double dryE = 0.0, wetE = 0.0;
+        for (int i = 0; i < numSamples; ++i) {
+            dryE += (double) dryL[i] * dryL[i] + (double) dryR[i] * dryR[i];
+            wetE += (double) dataL[i] * dataL[i] + (double) dataR[i] * dataR[i];
+        }
+        const float dryRms = std::sqrt((float) (dryE / (2.0 * numSamples)));
+        const float wetRms = std::sqrt((float) (wetE / (2.0 * numSamples)));
+        if (dryRms > 1.0e-5f && wetRms > 1.0e-5f) {
+            const float target = juce::jlimit(0.25f, 4.0f, wetRms / dryRms);
+            bypassMatchGain += bypassMatchCoeff * (target - bypassMatchGain);
+        }
+    }
 
     // Delta monitoring: output = wet - dry (what BTZ is adding)
     if (deltaMonitoring.load(std::memory_order_relaxed)) {

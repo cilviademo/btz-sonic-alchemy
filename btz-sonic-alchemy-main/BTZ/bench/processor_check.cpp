@@ -182,6 +182,38 @@ int main() {
         check(p.meters.targetIsLufs.load(), "readout flagged as LUFS");
     }
 
+    // ── 9. Default state is "instant good" (applies character out of the box) ──
+    {
+        std::printf("Default state:\n");
+        BTZAudioProcessor p;            // no params set — pure defaults
+        p.prepareToPlay(48000.0, 512);
+        juce::AudioBuffer<float> buf(2, 512), dry(2, 512);
+        for (int blk = 0; blk < 64; ++blk) { fillSine(buf, 220.0f, 48000.0f); if (blk == 63) dry.makeCopyOf(buf); p.processBlock(buf, midi); }
+        float diff = 0; for (int i = 0; i < 512; ++i) diff += std::abs(buf.getSample(0, i) - dry.getSample(0, i));
+        check(allFinite(buf) && diff / 512.0f > 1.0e-3f, "default patch applies audible character (not transparent)");
+    }
+
+    // ── 10. Loudness-matched bypass moves the dry toward the processed loudness ──
+    {
+        std::printf("Loudness-matched bypass:\n");
+        BTZAudioProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        setVal(p, "mix", 1.0f); setVal(p, "drive", 0.4f); setVal(p, "autoGain", 0.0f);
+        setVal(p, "bypassMatch", 1.0f);
+        juce::AudioBuffer<float> buf(2, 512), processed(2, 512), rawDry(2, 512);
+        // Process (un-bypassed) to learn the processed/dry ratio + capture processed loudness.
+        for (int blk = 0; blk < 250; ++blk) { fillSine(buf, 220.0f, 48000.0f); p.processBlock(buf, midi); if (blk == 249) processed.makeCopyOf(buf); }
+        fillSine(rawDry, 220.0f, 48000.0f);                 // the un-processed input level
+        // Bypass with match on → capture matched output.
+        setVal(p, "bypass", 1.0f);
+        juce::AudioBuffer<float> matched(2, 512);
+        for (int blk = 0; blk < 80; ++blk) { fillSine(buf, 220.0f, 48000.0f); p.processBlock(buf, midi); if (blk == 79) matched.makeCopyOf(buf); }
+        const float rProc = rms(processed), rRaw = rms(rawDry), rMatch = rms(matched);
+        check(allFinite(matched), "matched bypass finite");
+        check(std::abs(rMatch - rProc) < std::abs(rRaw - rProc),
+              "matched bypass is closer to processed loudness than raw dry (level-compensated A/B)");
+    }
+
     std::printf("\n%s — %d failure(s)\n", failures == 0 ? "ALL PROCESSOR CHECKS PASSED" : "PROCESSOR CHECKS FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

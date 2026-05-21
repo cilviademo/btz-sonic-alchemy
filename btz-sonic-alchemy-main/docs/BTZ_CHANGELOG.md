@@ -36,6 +36,9 @@ Deep debugging + performance/security audit against a real JUCE 8.0.6 build
   LSan: **zero findings** across the DSP suite.
 
 ### Added (UI / QA)
+- **Onboarding**: default patch is now a subtle warm glue (Tube model + light glue + sheen) so the plugin sounds good on insert, not transparent. "Init / Neutral" preset remains for a flat start.
+- **Loudness-matched bypass** (trust): optional toggle that level-compensates the bypassed signal to the processed loudness, so an A/B reveals tone rather than level. Verified by a closer-to-processed check.
+- **Target Lock readout**: footer shows the live target + LOCKED/approaching status when engaged.
 - **Real units everywhere**: every parameter now formats as dB / Hz / kHz / ms / ratio / % / LUFS in the knob popups *and* the host's automation lanes & generic editor, and accepts typed values (e.g. "-1 dB", "8 kHz"). Verified by round-trip checks.
 - Spectrum + harmonic **visualizers now receive live FFT data** (were empty).
 - **Processor-level integration test** (`BTZProcessorCheck`): wet-path-active,

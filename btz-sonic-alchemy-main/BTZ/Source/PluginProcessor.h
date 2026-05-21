@@ -184,6 +184,10 @@ private:
     double glueScHpfSampleRate    = 44100.0;
     bool   prepared               = false;
 
+    // ── Loudness-matched bypass: smoothed processed/dry RMS ratio ─────────
+    float  bypassMatchGain        = 1.0f;
+    float  bypassMatchCoeff       = 0.0f;
+
     // ── RT-safe deferred latency update ──────────────────────────────────
     std::atomic<int>  pendingLatency { -1 };  // -1 = no pending change
 
