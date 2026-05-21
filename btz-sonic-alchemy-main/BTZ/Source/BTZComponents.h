@@ -319,7 +319,9 @@ private:
 class LabeledKnob : public juce::Component {
 public:
     LabeledKnob(const juce::String& name, int compID)
-        : labelText(name), componentID(compID) {}
+        : labelText(name), componentID(compID) {
+        setRepaintsOnMouseActivity(true);
+    }
 
     void setValue(float norm, const juce::String& display) {
         normValue = norm;
@@ -328,6 +330,9 @@ public:
     }
 
     void setHovered(bool h) { hovered = h; repaint(); }
+
+    // Callback: called when user drags to change value
+    std::function<void(float)> onValueChange;
 
     void paint(juce::Graphics& g) override {
         const auto bounds = getLocalBounds();
@@ -341,7 +346,7 @@ public:
             static_cast<float>(bounds.getY()),
             static_cast<float>(knobSize),
             static_cast<float>(knobSize));
-        paintKnob(g, knobBounds, normValue, componentID, hovered);
+        paintKnob(g, knobBounds, normValue, componentID, hovered || isMouseOver());
 
         // Label
         auto bottomArea = bounds.withTop(bounds.getY() + knobSize + space::xs);
@@ -357,12 +362,41 @@ public:
                    juce::Justification::centred);
     }
 
+    // ── Mouse interaction (rotary drag) ──────────────────────────────────
+    void mouseDown(const juce::MouseEvent& e) override {
+        dragStartY = e.getPosition().getY();
+        dragStartValue = normValue;
+    }
+
+    void mouseDrag(const juce::MouseEvent& e) override {
+        const float sensitivity = 200.0f;  // pixels for full range
+        const float delta = static_cast<float>(dragStartY - e.getPosition().getY()) / sensitivity;
+        const float newVal = juce::jlimit(0.0f, 1.0f, dragStartValue + delta);
+        if (std::abs(newVal - normValue) > 0.001f) {
+            normValue = newVal;
+            if (onValueChange) onValueChange(normValue);
+            repaint();
+        }
+    }
+
+    void mouseEnter(const juce::MouseEvent&) override { hovered = true; repaint(); }
+    void mouseExit(const juce::MouseEvent&) override { hovered = false; repaint(); }
+
+    void mouseDoubleClick(const juce::MouseEvent&) override {
+        // Reset to center on double-click
+        normValue = 0.5f;
+        if (onValueChange) onValueChange(normValue);
+        repaint();
+    }
+
 private:
     juce::String labelText;
     juce::String valueText;
     int componentID;
     float normValue = 0.0f;
     bool hovered = false;
+    int dragStartY = 0;
+    float dragStartValue = 0.0f;
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

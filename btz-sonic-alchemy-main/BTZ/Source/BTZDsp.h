@@ -72,6 +72,7 @@ static constexpr int   kMaxMIDIMappings    = 32;
 static constexpr int   kNeuralHiddenSize   = 16;
 static constexpr int   kNeuralLayers       = 2;
 static constexpr int   kMaxFIRTaps         = 128;
+static constexpr int   kMaxLFOs            = 4;
 static constexpr int   kResonanceBands     = 32;
 static constexpr int   kHarmonicCount      = 16;
 static constexpr int   kRefSpectrumBins    = 128;
@@ -148,12 +149,14 @@ struct SmoothParam {
     }
 
     void snapTo(float v) noexcept { current = target = v; }
+    void reset(float v) noexcept { snapTo(v); }  // alias for test compatibility
     bool isSmoothing() const noexcept { return std::abs(target - current) > 1.0e-6f; }
 };
 
 // ── EnvFollower: attack/release envelope follower ────────────────────────
 struct EnvFollower {
     float env = 0.0f;
+    float envelope = 0.0f;  // public alias, kept in sync by process()
     float attackCoeff  = 0.0f;
     float releaseCoeff = 0.0f;
 
@@ -163,11 +166,17 @@ struct EnvFollower {
         releaseCoeff = 1.0f - std::exp(-1.0f / (srf * juce::jmax(0.01f, releaseMs) * 0.001f));
     }
 
+    // Convenience overload: prepare(sampleRate, attackSeconds, releaseSeconds)
+    void prepare(double sr, float attackSec, float releaseSec) noexcept {
+        setTimes(attackSec * 1000.0f, releaseSec * 1000.0f, sr);
+    }
+
     void reset(float value = 0.0f) noexcept { env = value; }
 
     inline float process(float xAbs) noexcept {
         const float c = xAbs > env ? attackCoeff : releaseCoeff;
         env += c * (xAbs - env);
+        envelope = env;
         return env;
     }
 };
@@ -374,6 +383,26 @@ struct NeuralSaturationModel {
         return true;
     }
 
+    // Alternative loader: from raw float array (used by loadNeuralModel)
+    bool loadWeights(const float* data, int numWeights) noexcept {
+        // Expected layout: Wz(16) Wr(16) Wh(16) Uz(16) Ur(16) Uh(16) bz(16) br(16) bh(16) outputWeights(16) outputBias(1)
+        const int expected = kNeuralHiddenSize * 10 + 1;
+        if (data == nullptr || numWeights < expected) return false;
+        int offset = 0;
+        auto copyBlock = [&](std::array<float, kNeuralHiddenSize>& arr) {
+            for (int i = 0; i < kNeuralHiddenSize; ++i)
+                arr[i] = data[offset++];
+        };
+        copyBlock(Wz); copyBlock(Wr); copyBlock(Wh);
+        copyBlock(Uz); copyBlock(Ur); copyBlock(Uh);
+        copyBlock(bz); copyBlock(br); copyBlock(bh);
+        copyBlock(outputWeights);
+        outputBias = data[offset];
+        loaded = true;
+        reset();
+        return true;
+    }
+
 private:
     static inline float sigmoid(float x) noexcept {
         return 1.0f / (1.0f + std::exp(-x));
@@ -568,23 +597,31 @@ struct OversamplingEngine {
 // ═══════════════════════════════════════════════════════════════════════════
 
 struct SidechainHPF {
-    float stateL = 0.0f, stateR = 0.0f;
-    float coeff = 0.0f;
+    // Proper 1-pole HPF: y[n] = coeff * (y[n-1] + x[n] - x[n-1])
+    float prevInL = 0.0f, prevInR = 0.0f;
+    float prevOutL = 0.0f, prevOutR = 0.0f;
+    float coeff = 0.995f;
 
     void prepare(double sr, float freqHz) noexcept {
         const float srf = (float)juce::jmax(1.0, sr);
-        coeff = std::exp(-kTwoPi * freqHz / srf);
+        // RC time constant: coeff = RC / (RC + dt), where RC = 1/(2*pi*f)
+        const float rc = 1.0f / (kTwoPi * juce::jmax(1.0f, freqHz));
+        const float dt = 1.0f / srf;
+        coeff = rc / (rc + dt);
     }
 
-    void reset() noexcept { stateL = stateR = 0.0f; }
+    void reset() noexcept { prevInL = prevInR = prevOutL = prevOutR = 0.0f; }
 
     inline void processStereo(float& l, float& r) noexcept {
-        const float newL = l - stateL;
-        stateL = l - coeff * stateL;
-        l = newL;
-        const float newR = r - stateR;
-        stateR = r - coeff * stateR;
-        r = newR;
+        const float outL = coeff * (prevOutL + l - prevInL);
+        prevInL = l;
+        prevOutL = outL;
+        l = outL;
+
+        const float outR = coeff * (prevOutR + r - prevInR);
+        prevInR = r;
+        prevOutR = outR;
+        r = outR;
     }
 };
 
@@ -596,11 +633,14 @@ struct GlueCompressor {
     float ratio = 3.0f;
     float makeupGain = 1.0f;
     float lastGainReductionDb = 0.0f;
+    float stereoLink = 1.0f;  // 0 = dual-mono, 1 = linked
+    float attackMs = 10.0f;
+    float releaseMs = 100.0f;
+    double cachedSR = 44100.0;
 
     void prepare(double sr) noexcept {
-        const float srf = (float)juce::jmax(1.0, sr);
-        attackCoeff  = 1.0f - std::exp(-1.0f / (srf * 0.010f));
-        releaseCoeff = 1.0f - std::exp(-1.0f / (srf * 0.100f));
+        cachedSR = juce::jmax(1.0, sr);
+        recalcCoeffs();
         envState = 0.0f;
     }
 
@@ -612,8 +652,24 @@ struct GlueCompressor {
         makeupGain = dbToGain(makeupDb);
     }
 
+    void setAttackRelease(float atkMs, float relMs) noexcept {
+        attackMs = juce::jmax(0.1f, atkMs);
+        releaseMs = juce::jmax(1.0f, relMs);
+        recalcCoeffs();
+    }
+
+    void setStereoLink(float link) noexcept {
+        stereoLink = juce::jlimit(0.0f, 1.0f, link);
+    }
+
     inline float processStereo(float scL, float scR) noexcept {
-        const float scPeak = juce::jmax(std::abs(scL), std::abs(scR));
+        // Stereo linking: blend between max (linked) and per-channel (dual-mono)
+        const float absL = std::abs(scL);
+        const float absR = std::abs(scR);
+        const float linked = juce::jmax(absL, absR);
+        const float unlinked = (absL + absR) * 0.5f;
+        const float scPeak = lerp(unlinked, linked, stereoLink);
+
         const float scDb = gainToDb(scPeak);
         const float overDb = juce::jmax(0.0f, scDb - threshold);
         const float targetGrDb = -overDb * (1.0f - 1.0f / ratio);
@@ -622,6 +678,13 @@ struct GlueCompressor {
         lastGainReductionDb += c * (targetGrDb - lastGainReductionDb);
 
         return dbToGain(lastGainReductionDb) * makeupGain;
+    }
+
+private:
+    void recalcCoeffs() noexcept {
+        const float srf = (float)cachedSR;
+        attackCoeff  = 1.0f - std::exp(-1.0f / (srf * attackMs * 0.001f));
+        releaseCoeff = 1.0f - std::exp(-1.0f / (srf * releaseMs * 0.001f));
     }
 };
 
@@ -682,8 +745,10 @@ struct ShineProcessor {
     float freq = 8000.0f;
     float gain = 0.0f;
     float q = 0.707f;
+    // Biquad coefficients (peaking EQ, RBJ cookbook)
     float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
-    float z1L = 0.0f, z2L = 0.0f, z1R = 0.0f, z2R = 0.0f;
+    // Transposed Direct Form II state (separate delay lines for input/output)
+    float s1L = 0.0f, s2L = 0.0f, s1R = 0.0f, s2R = 0.0f;
 
     void prepare(double sr) noexcept { recalcCoeffs(sr); }
 
@@ -699,49 +764,62 @@ struct ShineProcessor {
         const float cosW = std::cos(w0);
         const float alpha = sinW / (2.0f * q);
 
+        // RBJ peaking EQ coefficients
         const float a0 = 1.0f + alpha / A;
         b0 = (1.0f + alpha * A) / a0;
         b1 = (-2.0f * cosW) / a0;
         b2 = (1.0f - alpha * A) / a0;
-        a1 = b1;
+        a1 = (-2.0f * cosW) / a0;
         a2 = (1.0f - alpha / A) / a0;
     }
 
-    void reset() noexcept { z1L = z2L = z1R = z2R = 0.0f; }
+    void reset() noexcept { s1L = s2L = s1R = s2R = 0.0f; }
 
     inline void processStereo(float& l, float& r) noexcept {
-        float outL = b0 * l + b1 * z1L + b2 * z2L - a1 * z1L - a2 * z2L;
-        z2L = z1L; z1L = outL;
+        // Transposed Direct Form II (TDF-II) — numerically stable
+        const float outL = b0 * l + s1L;
+        s1L = b1 * l - a1 * outL + s2L;
+        s2L = b2 * l - a2 * outL;
         l = outL;
 
-        float outR = b0 * r + b1 * z1R + b2 * z2R - a1 * z1R - a2 * z2R;
-        z2R = z1R; z1R = outR;
+        const float outR = b0 * r + s1R;
+        s1R = b1 * r - a1 * outR + s2R;
+        s2R = b2 * r - a2 * outR;
         r = outR;
     }
 };
 
 struct LinkwitzRileyCrossover {
+    // 2nd-order Linkwitz-Riley (two cascaded 1-pole filters = -12dB/oct)
+    // This gives flat magnitude sum at crossover (LR2 property)
     float freq = 250.0f;
-    float lpL = 0.0f, lpR = 0.0f;
-    float hpL = 0.0f, hpR = 0.0f;
+    // Two cascaded 1-pole LP states per channel
+    float lp1L = 0.0f, lp2L = 0.0f;
+    float lp1R = 0.0f, lp2R = 0.0f;
     float coeff = 0.0f;
 
     void prepare(double sr, float freqHz) noexcept {
         freq = freqHz;
         const float srf = (float)juce::jmax(1.0, sr);
+        // Matched 1-pole coefficient for LR2 crossover
         coeff = 1.0f - std::exp(-kTwoPi * freqHz / srf);
     }
 
-    void reset() noexcept { lpL = lpR = hpL = hpR = 0.0f; }
+    void reset() noexcept { lp1L = lp2L = lp1R = lp2R = 0.0f; }
 
     inline void processStereo(float inL, float inR,
                               float& lowL, float& lowR,
                               float& highL, float& highR) noexcept {
-        lpL += coeff * (inL - lpL);
-        lpR += coeff * (inR - lpR);
-        lowL = lpL; lowR = lpR;
-        highL = inL - lpL;
-        highR = inR - lpR;
+        // First 1-pole LP pass
+        lp1L += coeff * (inL - lp1L);
+        lp1R += coeff * (inR - lp1R);
+        // Second 1-pole LP pass (cascaded = 2nd order)
+        lp2L += coeff * (lp1L - lp2L);
+        lp2R += coeff * (lp1R - lp2R);
+        // Output
+        lowL = lp2L; lowR = lp2R;
+        highL = inL - lp2L;
+        highR = inR - lp2R;
     }
 };
 
@@ -851,21 +929,28 @@ struct LFO {
         if (phase >= 1.0f) phase -= 1.0f;
         return out;
     }
+
+    // Alias for test compatibility
+    inline float next() noexcept { return tick(); }
 };
 
 struct MacroInterpreter {
     static constexpr int kNumMacros = 4;
     static constexpr int kMaxMappingsPerMacro = 8;
 
+    enum class Curve { Linear, Exponential, Logarithmic };
+
     struct Mapping {
-        int targetParam = -1;
+        juce::String targetParamID;  // parameter ID string
+        int targetParam = -1;         // legacy int ID
         float depth = 0.0f;
-        float curve = 1.0f;  // 1.0 = linear, <1 = log, >1 = exp
+        Curve curve = Curve::Linear;
     };
 
     struct MacroSlot {
         Mapping mappings[kMaxMappingsPerMacro];
         int numMappings = 0;
+        float value = 0.0f;  // current macro knob value (0..1)
 
         void addMapping(const Mapping& m) noexcept {
             if (numMappings < kMaxMappingsPerMacro)
@@ -881,16 +966,27 @@ struct MacroInterpreter {
             return curved * m.depth;
         }
 
-        static float applyCurve(float x, float curve) noexcept {
-            if (curve == 1.0f) return x;
-            return std::pow(juce::jlimit(0.0f, 1.0f, x), curve);
+        static float applyCurve(float x, Curve c) noexcept {
+            const float clamped = juce::jlimit(0.0f, 1.0f, x);
+            switch (c) {
+                case Curve::Linear:      return clamped;
+                case Curve::Exponential: return clamped * clamped;
+                case Curve::Logarithmic: return std::sqrt(clamped);
+                default:                 return clamped;
+            }
         }
     };
 
     MacroSlot slots[kNumMacros];
 
     void reset() noexcept {
-        for (auto& s : slots) s.clearMappings();
+        for (auto& s : slots) { s.clearMappings(); s.value = 0.0f; }
+    }
+
+    // Convenience: get mapped value from slot index and mapping index
+    float getMappedValue(int slotIdx, int mappingIdx) const noexcept {
+        if (slotIdx < 0 || slotIdx >= kNumMacros) return 0.0f;
+        return slots[slotIdx].getMappedValue(slots[slotIdx].value, mappingIdx);
     }
 };
 
@@ -917,11 +1013,15 @@ struct AutoGainSmoother {
         const float peak = juce::jmax(std::abs(peakL), std::abs(peakR));
         inputLevel += smoothCoeff * (peak - inputLevel);
     }
+    // Single-arg convenience overload
+    inline void updateInput(float peak) noexcept { updateInput(peak, peak); }
 
     inline void updateOutput(float peakL, float peakR) noexcept {
         const float peak = juce::jmax(std::abs(peakL), std::abs(peakR));
         outputLevel += smoothCoeff * (peak - outputLevel);
     }
+    // Single-arg convenience overload
+    inline void updateOutput(float peak) noexcept { updateOutput(peak, peak); }
 
     inline float getCompensationGain() noexcept {
         if (outputLevel > 0.001f && inputLevel > 0.001f) {

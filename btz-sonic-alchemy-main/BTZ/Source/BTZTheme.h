@@ -88,15 +88,18 @@ namespace palette {
 
 namespace type {
     // Families
-    inline const char* sans()  { return "Inter"; }
-    inline const char* mono()  { return "JetBrains Mono"; }
+    inline const char* sans()    { return "Inter"; }
+    inline const char* mono()    { return "JetBrains Mono"; }
+    inline const char* display() { return "Inter"; }  // brand/header display face
 
     // Scale (px)
     inline constexpr float brand  = 20.0f;
+    inline constexpr float title  = 16.0f;  // header title size
     inline constexpr float h1     = 14.0f;
     inline constexpr float h2     = 12.0f;
     inline constexpr float body   = 11.0f;
     inline constexpr float label  = 9.5f;
+    inline constexpr float small  = 9.0f;   // footer/micro text
     inline constexpr float micro  = 8.5f;
     inline constexpr float value  = 10.0f;  // monospace values
 
@@ -122,6 +125,10 @@ namespace space {
 namespace layout {
     inline constexpr int windowW     = 1120;
     inline constexpr int windowH     = 700;
+    inline constexpr int defaultW    = 1120;
+    inline constexpr int defaultH    = 700;
+    inline constexpr int maxW        = 2240;
+    inline constexpr int maxH        = 1400;
     inline constexpr int minW        = 840;
     inline constexpr int minH        = 520;
 
@@ -192,6 +199,9 @@ namespace id {
     inline constexpr int tone      = 1014;
     inline constexpr int resTame   = 1015;
     inline constexpr int transient = 1016;
+    inline constexpr int macro     = 1017;
+    inline constexpr int ceiling   = 1018;
+    inline constexpr int shine     = 1019;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -217,6 +227,9 @@ inline juce::Colour accentFor(int componentID) noexcept {
         case id::tone:      return juce::Colour(palette::sage);
         case id::resTame:   return juce::Colour(palette::teal);
         case id::transient: return juce::Colour(palette::orange);
+        case id::macro:     return juce::Colour(palette::teal);
+        case id::ceiling:   return juce::Colour(palette::gold);
+        case id::shine:     return juce::Colour(palette::sage);
         default:            return juce::Colour(palette::sage);
     }
 }

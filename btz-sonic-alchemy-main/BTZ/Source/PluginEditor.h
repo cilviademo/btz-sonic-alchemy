@@ -78,6 +78,7 @@ private:
     void layoutStandard(juce::Rectangle<int> content);
     void layoutAdvanced(juce::Rectangle<int> content);
     void hideAllControls();
+    void populatePresetBrowser();
 
     BTZAudioProcessor& proc;
     BTZLookAndFeel lookAndFeel;
@@ -102,7 +103,7 @@ private:
 
     // ── Simple Mode knobs ──
     btz::LabeledKnob simpleKnobDrive  { "DRIVE",  btz::id::drive };
-    btz::LabeledKnob simpleKnobTone   { "TONE",   btz::id::tone };
+    btz::LabeledKnob simpleKnobTone   { "TONE",   btz::id::shine };
     btz::LabeledKnob simpleKnobOutput { "OUTPUT", btz::id::output };
 
     // ── Toolbar buttons ──

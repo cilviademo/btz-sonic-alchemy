@@ -54,6 +54,16 @@ BTZAudioProcessor::createParameterLayout() {
 
     // ── Dynamics ──
     params.push_back(std::make_unique<juce::AudioParameterInt>("glueScHpf", "Glue SC HPF", 0, 3, 0));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("ceiling", "Limiter Ceiling",
+        juce::NormalisableRange<float>(-12.0f, 0.0f, 0.1f), -0.3f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("intensity", "Intensity", uni, 0.5f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("glueAttack", "Glue Attack",
+        juce::NormalisableRange<float>(0.1f, 100.0f, 0.1f, 0.5f), 10.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("glueRelease", "Glue Release",
+        juce::NormalisableRange<float>(10.0f, 1000.0f, 1.0f, 0.5f), 100.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("glueRatio", "Glue Ratio",
+        juce::NormalisableRange<float>(1.0f, 20.0f, 0.1f, 0.5f), 3.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("glueLink", "Glue Stereo Link", uni, 1.0f));
     params.push_back(std::make_unique<juce::AudioParameterBool>("bypass", "Bypass", false));
     params.push_back(std::make_unique<juce::AudioParameterBool>("autoGain", "Auto Gain", true));
     params.push_back(std::make_unique<juce::AudioParameterBool>("midSide", "Mid/Side", false));
@@ -102,7 +112,10 @@ BTZAudioProcessor::BTZAudioProcessor()
 
     // Store initial state in both undo and A/B
     juce::MemoryBlock initialState;
-    apvts.state.writeToStream(juce::MemoryOutputStream(initialState, false));
+    {
+        juce::MemoryOutputStream stream(initialState, false);
+        apvts.state.writeToStream(stream);
+    }
     undoStack.push(initialState, "Initial state");
     abState.storeA(initialState);
     abState.storeB(initialState);
@@ -187,7 +200,18 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     initSmoothers(sampleRate);
 
     activeQualityMode = getRequestedQualityMode();
-    updateLatencyFromQuality(activeQualityMode);
+    // In prepareToPlay (message thread), we can call setLatencySamples directly
+    {
+        int latency = BTZDsp::TruePeakLimiter::kLookahead;
+        switch (activeQualityMode) {
+            case 1: latency += (int)os2x->getLatencyInSamples(); break;
+            case 2: latency += (int)os4x->getLatencyInSamples(); break;
+            case 3: latency += (int)os8x->getLatencyInSamples(); break;
+            default: break;
+        }
+        setLatencySamples(latency);
+    }
+    pendingLatency.store(-1, std::memory_order_relaxed);
 
     prepared = true;
 }
@@ -260,10 +284,10 @@ void BTZAudioProcessor::updateTargetsFromAPVTS() {
     // Transient splitter
     transientSplitter.enabled = (bool)*apvts.getRawParameterValue("transEnabled");
 
-    // Multiband count
+    // Multiband count — only update numBands (no allocation/prepare on audio thread)
     const int mbCount = (int)*apvts.getRawParameterValue("multibandCount");
-    const float defaultFreqs[] = { 250.0f, 1000.0f, 4000.0f, 8000.0f, 12000.0f };
-    multibandEngine.prepare(currentSampleRate, juce::jlimit(1, BTZDsp::kMaxBands, mbCount + 1), defaultFreqs);
+    const int newBandCount = juce::jlimit(1, BTZDsp::kMaxBands, mbCount + 1);
+    multibandEngine.numBands = newBandCount;
 }
 
 void BTZAudioProcessor::resetAll() {
@@ -293,7 +317,8 @@ void BTZAudioProcessor::updateLatencyFromQuality(int mode) {
         case 3: latency += (int)os8x->getLatencyInSamples(); break;
         default: break;
     }
-    setLatencySamples(latency);
+    // Defer latency reporting to message thread via async callback
+    pendingLatency.store(latency, std::memory_order_relaxed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -303,6 +328,11 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     juce::ScopedNoDenormals noDenormals;
 
     if (!prepared || buffer.getNumChannels() < 2) return;
+
+    // Apply deferred latency update (setLatencySamples is safe from any thread in JUCE)
+    const int pending = pendingLatency.exchange(-1, std::memory_order_relaxed);
+    if (pending >= 0)
+        setLatencySamples(pending);
 
     const int numSamples = buffer.getNumSamples();
     auto* dataL = buffer.getWritePointer(0);
@@ -436,10 +466,16 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
     // Glue compressor
     const float glueAmt = sGlue.current;
     if (glueAmt > 0.01f) {
-        // Configure compressor based on glue amount
+        // Configure compressor from APVTS parameters
+        const float glueRatio = *apvts.getRawParameterValue("glueRatio");
+        const float glueAttack = *apvts.getRawParameterValue("glueAttack");
+        const float glueRelease = *apvts.getRawParameterValue("glueRelease");
+        const float glueLink = *apvts.getRawParameterValue("glueLink");
         glueComp.setParameters(-6.0f - glueAmt * 12.0f,  // threshold
-                               2.0f + glueAmt * 4.0f,     // ratio
+                               glueRatio,                  // ratio
                                glueAmt * 3.0f);            // makeup
+        glueComp.setAttackRelease(glueAttack, glueRelease);
+        glueComp.setStereoLink(glueLink);
 
         for (int i = 0; i < numSamples; ++i) {
             // Sidechain HPF
@@ -469,6 +505,16 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
 void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamples, float osFactor) {
     (void)osFactor;
 
+    // Tick LFOs (if any active)
+    const int lfoCount = (int)*apvts.getRawParameterValue("lfoCount");
+    for (int lfoIdx = 0; lfoIdx < juce::jmin(lfoCount, BTZDsp::kMaxLFOs); ++lfoIdx)
+        lfoModSources[lfoIdx].prepare(currentSampleRate, 1.0f + (float)lfoIdx * 0.5f);
+
+    // Multiband split (if >1 band)
+    const bool useMultiband = multibandEngine.numBands > 1;
+    float bandL[BTZDsp::kMaxBands] = {};
+    float bandR[BTZDsp::kMaxBands] = {};
+
     for (int i = 0; i < numSamples; ++i) {
         const float drive = sDrive.next();
         const float warmth = sWarmth.next();
@@ -483,6 +529,12 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
             if (motionPhase >= 1.0f) motionPhase -= 1.0f;
             const float lfoVal = std::sin(BTZDsp::kTwoPi * motionPhase);
             driveModulated += lfoVal * motionAmt * 0.2f;
+        }
+
+        // LFO modulation (additive on drive)
+        for (int lfoIdx = 0; lfoIdx < juce::jmin(lfoCount, BTZDsp::kMaxLFOs); ++lfoIdx) {
+            const float lfoOut = lfoModSources[lfoIdx].tick();
+            driveModulated += lfoOut * 0.05f;  // subtle modulation
         }
 
         // Calculate drive gain (dB mapping: 0→0dB, 0.5→12dB, 1→30dB)
@@ -587,7 +639,8 @@ void BTZAudioProcessor::processLinearPost(float* dataL, float* dataR, int numSam
         }
     }
 
-    // True peak limiter
+    // True peak limiter (ceiling from parameter)
+    truePeakLimiter.ceiling = *apvts.getRawParameterValue("ceiling");
     for (int i = 0; i < numSamples; ++i)
         truePeakLimiter.processStereo(dataL[i], dataR[i]);
 
@@ -636,10 +689,14 @@ void BTZAudioProcessor::processMIDILearn(juce::MidiBuffer& midi) {
         const float normValue = msg.getControllerValue() / 127.0f;
 
         // Learning mode: assign this CC to the target parameter
+        // Note: learningParamID is set from message thread before isLearning=true.
+        // We only read it here (single-writer guarantee from message thread).
+        // Setting isLearning=false is the signal to message thread that learning completed.
         if (midiLearn.isLearning && midiLearn.learningParamID.isNotEmpty()) {
             midiLearn.addMapping(cc, midiLearn.learningParamID, 0.0f, 1.0f);
             midiLearn.isLearning = false;
-            midiLearn.learningParamID = {};
+            // Don't clear learningParamID here (String dealloc not RT-safe)
+            // Message thread will clear it when it sees isLearning == false
             continue;
         }
 

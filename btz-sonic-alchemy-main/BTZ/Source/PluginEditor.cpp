@@ -259,14 +259,45 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
     aMacro1   = std::make_unique<SliderAttachment>(apvts, "macro1", kMacro1);
     aMacro2   = std::make_unique<SliderAttachment>(apvts, "macro2", kMacro2);
     aMacro3   = std::make_unique<SliderAttachment>(apvts, "macro3", kMacro3);
-    aResTame  = std::make_unique<SliderAttachment>(apvts, "resTame", kResTame);
-    aTransSens = std::make_unique<SliderAttachment>(apvts, "transientSens", kTransSens);
+    aResTame  = std::make_unique<SliderAttachment>(apvts, "resSens", kResTame);
+    aTransSens = std::make_unique<SliderAttachment>(apvts, "transSens", kTransSens);
     aBypass   = std::make_unique<ButtonAttachment>(apvts, "bypass", btnBypass);
     aMidSide  = std::make_unique<ButtonAttachment>(apvts, "midSide", btnMidSide);
     aSatModel = std::make_unique<ComboAttachment>(apvts, "satModel", cSatModel);
     aGlueScHpf = std::make_unique<ComboAttachment>(apvts, "glueScHpf", cGlueScHpf);
-    aMultiband = std::make_unique<ComboAttachment>(apvts, "numBands", cMultiband);
+    aMultiband = std::make_unique<ComboAttachment>(apvts, "multibandCount", cMultiband);
     aQuality  = std::make_unique<ComboAttachment>(apvts, "quality", cQuality);
+
+    // Wire preset save button
+    btnPresetSave.onClick = [this] {
+        auto dir = proc.getPresetDirectory();
+        if (!dir.exists()) dir.createDirectory();
+        juce::FileChooser chooser("Save Preset", dir, "*.btzpreset");
+        if (chooser.browseForFileToSave(true)) {
+            proc.savePreset(chooser.getResult());
+            populatePresetBrowser();
+        }
+    };
+
+    // Wire simple mode knobs to drive underlying APVTS parameters
+    simpleKnobDrive.onValueChange = [this](float v) {
+        if (auto* p = proc.getAPVTS().getParameter("drive"))
+            p->setValueNotifyingHost(v);
+    };
+    simpleKnobTone.onValueChange = [this](float v) {
+        if (auto* p = proc.getAPVTS().getParameter("shine"))
+            p->setValueNotifyingHost(v);
+    };
+    simpleKnobOutput.onValueChange = [this](float v) {
+        if (auto* p = proc.getAPVTS().getParameter("master"))
+            p->setValueNotifyingHost(v);
+    };
+
+    // Wire preset browser
+    presetBrowser.onSelect = [this](int idx) {
+        proc.loadPresetByIndex(idx);
+    };
+    populatePresetBrowser();
 
     setSize(layout::defaultW, layout::defaultH);
     setViewMode(ViewMode::Standard);
@@ -613,4 +644,27 @@ void BTZAudioProcessorEditor::layoutAdvanced(juce::Rectangle<int> area) {
 
     // Preset browser (bottom)
     presetBrowser.setBounds(area.reduced(space::sm));
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Preset Browser Population
+// ═══════════════════════════════════════════════════════════════════════════
+
+void BTZAudioProcessorEditor::populatePresetBrowser() {
+    auto files = proc.getPresetFiles();
+    std::vector<btz::PresetBrowser::Entry> entries;
+    entries.reserve(static_cast<size_t>(files.size()));
+
+    for (const auto& f : files) {
+        btz::PresetBrowser::Entry e;
+        e.name = f.getFileNameWithoutExtension();
+        // Try to extract category from parent folder name
+        e.category = f.getParentDirectory().getFileName();
+        if (e.category == proc.getPresetDirectory().getFileName())
+            e.category = "User";
+        entries.push_back(std::move(e));
+    }
+
+    presetBrowser.setPresets(entries);
+    presetBrowser.setSelected(proc.getCurrentPresetIndex());
 }

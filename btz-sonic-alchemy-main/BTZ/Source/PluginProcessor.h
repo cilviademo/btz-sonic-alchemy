@@ -162,6 +162,12 @@ private:
     double glueScHpfSampleRate    = 44100.0;
     bool   prepared               = false;
 
+    // ── RT-safe deferred latency update ──────────────────────────────────
+    std::atomic<int>  pendingLatency { -1 };  // -1 = no pending change
+
+    // ── RT-safe multiband config (avoid calling prepare on audio thread) ─
+    int lastMultibandCount = 0;  // track changes, defer to message thread
+
     // ── Dry buffer for wet/dry mix ───────────────────────────────────────
     juce::AudioBuffer<float> dryBuffer;
 
