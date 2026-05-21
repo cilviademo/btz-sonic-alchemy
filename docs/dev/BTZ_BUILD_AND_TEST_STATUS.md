@@ -1,5 +1,9 @@
 # BTZ — Build & Test Status
 
+> **Deep debug pass (senior-dev) appended at the bottom — see "§9 Deep Debug Pass".**
+> Headline: a critical signal-flow bug made the plugin output 100% dry (did
+> nothing audible); fixed. DSP modules verified clean under ASan+UBSan+LSan.
+
 **Baseline:** branch `claude/review-btz-compilation-aN5UD` (patches on top of
 `v1.0.1` / `9f6c415`).
 **Last updated by:** Claude Code patch agent.
@@ -89,3 +93,62 @@ sudo apt-get install -y libx11-dev libxext-dev libxrandr-dev libxinerama-dev \
   libfontconfig1-dev libasound2-dev libgl1-mesa-dev libglu1-mesa-dev libcurl4-openssl-dev
 scripts/build_linux.sh Release --tests
 ```
+
+---
+
+## 9. Deep Debug Pass (senior-dev) — findings & verification
+
+Performed with a real JUCE 8.0.6 build + GoogleTest + AddressSanitizer/
+UndefinedBehaviorSanitizer on Linux. Tools used: full data-flow tracing of
+`processBlock`, `-Wall/-Wextra` review, and an instrumented (ASan+UBSan+LSan)
+test run.
+
+### 9.1 CRITICAL bug found & fixed — plugin produced no processed audio
+`SmoothParam` smoothers consumed once per block via `.current` were never
+advanced (`.next()` was only called on the per-sample smoothers). Their
+`.current` stayed frozen at the initial `0.0`:
+- **`sMix == 0`** → wet/dry mix output **100% dry**: the plugin did nothing
+  audible regardless of the Mix knob (default 1.0).
+- **`sWidth == 0`** → Width collapsed the wet signal to **mono**.
+- `sGlue`, `sShine`, `sShineFreq/Q`, `sBoom`, `sMotion`, `sTransientMix` all
+  frozen → glue compressor / shine EQ / etc. never engaged.
+
+**Fix:** `SmoothParam::advanceBlock(n)` (O(1) closed-form), advance the 9
+block-rate smoothers each block, and `snap()` all smoothers in `prepareToPlay`
+so the first blocks don't ramp from zero. Regression tests added. This is the
+class of bug module tests cannot catch — only integrated `processBlock` tracing.
+
+### 9.2 Other bugs fixed this pass
+- **fastTanh was unbounded** (returned ~6.7 for input 100; overshoots >1 above
+  x≈3.3). Now input-clamped + output-bounded to [-1,1]. RT-safety.
+- **Oversampling modulation rate**: `processNonlinear` ignored `osFactor`, so the
+  Motion LFO + LFO bank ran 2–8× too fast at Quality > Eco. Now advanced against
+  the effective (oversampled) rate.
+- **Transient Sensitivity knob (`transSens`) was inert** — wired to
+  `transientSplitter.sensitivity`.
+
+### 9.3 Verified clean
+- **ASan + UBSan + LeakSanitizer:** the full DSP suite (86 tests incl. NaN/Inf/
+  denormal/extreme-value edge cases across all 11 saturation models, filters,
+  limiter, loudness, Target Lock) runs with **zero** sanitizer findings — no
+  OOB, use-after-free, signed-overflow/UB, or leaks.
+- **Unit tests:** 83/86 pass. The 3 failures are the documented design questions
+  (§2): LR4 reconstruction semantics ×2, SafetyLayer clamp policy.
+- **Compiler warnings:** only benign ones (JUCE `Font` deprecation, int→size_t
+  sign-conversion on non-negative values, one `-Wreorder`, `-Woverloaded-virtual`
+  for the double-precision `processBlock` we intentionally don't support). None
+  indicate incorrect behavior.
+
+### 9.4 Still-inert controls (confirmed 0 reads — feature wiring, not bugs)
+These parameters set a smoother target that nothing consumes, so the knobs do
+nothing yet. Wiring them is feature work (left for Cursor/Manus, not this
+correctness pass):
+`air`, `era`, `shineMix`, `toneMatchAmt`, `macro0..3`. (`transSens` was in this
+list and is now wired.)
+
+### 9.5 Not yet covered by sanitizers (recommended next)
+The sanitized run covers `BTZDsp.h` only (the test target doesn't link the
+processor/editor). Recommend a small **processor-level harness** (instantiate
+`BTZAudioProcessor`, `prepareToPlay`/`processBlock`/state round-trip at
+44.1/48/96 kHz and varied block sizes) built under ASan to lock in the
+`processBlock` integration that this pass fixed. See `BTZ_CODEX_HANDOFF.md`.
