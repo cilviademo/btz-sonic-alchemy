@@ -19,7 +19,7 @@ namespace btz {
 // LabeledKnob — Interactive ceramic-style knob with label + value display
 // ═══════════════════════════════════════════════════════════════════════════
 
-class LabeledKnob : public juce::Component {
+class LabeledKnob : public juce::Component, public juce::SettableTooltipClient {
 public:
     LabeledKnob(const juce::String& name, int compID,
                 const juce::String& tooltipText = {})
@@ -427,6 +427,10 @@ private:
         return best;
     }
 };
+
+// The editor's Standard/Advanced spectrum views are DirectManipSpectrum
+// instances; keep the descriptive name the editor expects.
+using SpectrumDisplay = DirectManipSpectrum;
 
 // ═══════════════════════════════════════════════════════════════════════════
 // ProcessingIndicator — small coloured dot

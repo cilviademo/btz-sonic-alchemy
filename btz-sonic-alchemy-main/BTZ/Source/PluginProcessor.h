@@ -68,6 +68,9 @@ public:
     };
     MeterValues meters;
 
+    // Delta (difference) monitoring toggle — UI writes, audio thread reads.
+    std::atomic<bool> deltaMonitoring { false };
+
     // ── Single-writer (audio) / single-reader (UI) buffers ───────────────
     BTZDsp::SpectrumBuffer       spectrumBuffer;
     BTZDsp::GainReductionHistory grHistory;
@@ -175,9 +178,6 @@ private:
 
     // ── Dry buffer for wet/dry mix ───────────────────────────────────────
     juce::AudioBuffer<float> dryBuffer;
-
-    // ── Delta monitoring (difference signal) ─────────────────────────────
-    std::atomic<bool> deltaMonitoring { false };
 
     // ── Internal signal flow methods (audio thread only) ─────────────────
     void initSmoothers(double sampleRate);

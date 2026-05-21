@@ -125,15 +125,27 @@ if(BTZ_BUILD_TESTS)
     set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
     FetchContent_MakeAvailable(googletest)
 
-    add_executable(BTZTests
-        tests/test_dsp_modules.cpp
-    )
+    # Use juce_add_console_app so that juce_generate_juce_header() is available
+    # (BTZDsp.h includes <JuceHeader.h>). The test's main() comes from the test
+    # source; JUCE does not inject one for console apps.
+    juce_add_console_app(BTZTests PRODUCT_NAME "BTZ Tests")
+    target_sources(BTZTests PRIVATE tests/test_dsp_modules.cpp)
+    juce_generate_juce_header(BTZTests)
 
     target_include_directories(BTZTests PRIVATE Source)
     target_link_libraries(BTZTests PRIVATE
         juce::juce_audio_utils
         juce::juce_dsp
+        juce::juce_recommended_config_flags
         gtest_main
+    )
+
+    # Match the plugin's module config so juce_gui_extra does not require
+    # gtk/webkit (JUCE_WEB_BROWSER=0) and no libcurl dependency is pulled in.
+    target_compile_definitions(BTZTests PRIVATE
+        JUCE_WEB_BROWSER=0
+        JUCE_USE_CURL=0
+        JUCE_STANDALONE_APPLICATION=1
     )
 
     # Register with CTest

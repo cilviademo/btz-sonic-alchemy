@@ -93,6 +93,9 @@ private:
     juce::ComponentBoundsConstrainer constrainer;
     std::unique_ptr<juce::ResizableCornerComponent> resizer;
 
+    // ── Async file chooser (must outlive launchAsync callback) ───────────
+    std::unique_ptr<juce::FileChooser> fileChooser;
+
     // ── Custom components (btz:: namespace) ──
     btz::HarmonicVisualizer     harmonicViz;
     btz::GainReductionRibbon    grRibbon;

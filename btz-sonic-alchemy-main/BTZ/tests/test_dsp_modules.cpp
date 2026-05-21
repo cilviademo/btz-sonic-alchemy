@@ -11,6 +11,8 @@
 #include <cmath>
 #include <vector>
 #include <numeric>
+#include <random>
+#include <limits>
 
 using namespace BTZDsp;
 

@@ -296,15 +296,22 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
     aMultiband = std::make_unique<ComboAttachment>(apvts, "multibandCount", cMultiband);
     aQuality  = std::make_unique<ComboAttachment>(apvts, "quality", cQuality);
 
-    // ── Preset save button ──
+    // ── Preset save button (async — no modal loop, plugin-safe) ──
     btnPresetSave.onClick = [this] {
         auto dir = proc.getPresetDirectory();
         if (!dir.exists()) dir.createDirectory();
-        juce::FileChooser chooser("Save Preset", dir, "*.btzpreset");
-        if (chooser.browseForFileToSave(true)) {
-            proc.savePreset(chooser.getResult());
-            populatePresetBrowser();
-        }
+        fileChooser = std::make_unique<juce::FileChooser>("Save Preset", dir, "*.btzpreset");
+        fileChooser->launchAsync(
+            juce::FileBrowserComponent::saveMode
+            | juce::FileBrowserComponent::canSelectFiles
+            | juce::FileBrowserComponent::warnAboutOverwriting,
+            [this](const juce::FileChooser& fc) {
+                const auto result = fc.getResult();
+                if (result != juce::File{}) {
+                    proc.savePreset(result);
+                    populatePresetBrowser();
+                }
+            });
     };
 
     // ── Simple mode knob callbacks ──
