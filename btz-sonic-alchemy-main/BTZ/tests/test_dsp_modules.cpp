@@ -94,13 +94,16 @@ TEST(SmoothParam, ImmediateAfterReset) {
 TEST(EnvFollower, TracksEnvelope) {
     EnvFollower env;
     env.prepare(kSR, 0.001f, 0.050f);
-    // Feed a burst of 1.0 then silence
-    for (int i = 0; i < 48; ++i)
+    // Feed a burst of 1.0 then silence. A 1 ms attack reaches ~63% after one
+    // time constant (48 samples), so feed several time constants (5 ms) to
+    // approach the target before asserting.
+    for (int i = 0; i < 240; ++i)
         env.process(1.0f);
     float afterBurst = env.envelope;
     EXPECT_GT(afterBurst, 0.8f);
-    // Decay
-    for (int i = 0; i < 4800; ++i)
+    // Decay. Release is 50 ms, so 100 ms (2 time constants) only falls to
+    // ~13%. Feed 500 ms (~10 time constants) to reach < 1%.
+    for (int i = 0; i < 24000; ++i)
         env.process(0.0f);
     EXPECT_LT(env.envelope, 0.01f);
 }

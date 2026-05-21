@@ -99,11 +99,17 @@ inline float gainToDb(float gain) noexcept {
     return (gain > 1.0e-10f) ? 20.0f * std::log10(gain) : kMinusInfDb;
 }
 
-// Padé [5/5] tanh — max error 0.0039 over [-6,6]
+// Padé [5/5] tanh approximation. The rational is only accurate (and stays
+// below 1.0) for roughly |x| < 3.3; beyond that it overshoots and eventually
+// diverges. Clamp the input to the valid region and hard-bound the output to
+// [-1, 1] so it saturates like a true tanh. This matters for RT safety: an
+// unbounded "saturator" lets extreme input blow up the rest of the chain.
 inline float fastTanh(float x) noexcept {
-    const float x2 = x * x;
-    return x * (945.0f + x2 * (105.0f + x2)) /
-               (945.0f + x2 * (420.0f + 15.0f * x2));
+    const float cx = (x < -4.0f) ? -4.0f : (x > 4.0f ? 4.0f : x);
+    const float x2 = cx * cx;
+    const float y = cx * (945.0f + x2 * (105.0f + x2)) /
+                         (945.0f + x2 * (420.0f + 15.0f * x2));
+    return (y < -1.0f) ? -1.0f : (y > 1.0f ? 1.0f : y);
 }
 
 inline float softClip(float x) noexcept {

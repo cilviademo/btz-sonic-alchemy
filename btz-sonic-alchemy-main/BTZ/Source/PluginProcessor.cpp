@@ -325,8 +325,18 @@ void BTZAudioProcessor::resetAll() {
     wdfTube.reset(); wdfTransformer.reset();
     inputMeterBallistics.reset(); outputMeterBallistics.reset();
     glueScHpf.reset();
+    targetLockEngine.reset(); targetLockXO1.reset(); targetLockXO2.reset();
+    if (os2x)  os2x->reset();
+    if (os4x)  os4x->reset();
+    if (os8x)  os8x->reset();
+    if (os16x) os16x->reset();
     hpStateL = hpStateR = sideLowState = tapeStateL = tapeStateR = 0.0f;
     motionPhase = 0.0f;
+}
+
+// JUCE lifecycle hook — hosts call this to clear state (transport stop, etc.)
+void BTZAudioProcessor::reset() {
+    resetAll();
 }
 
 int BTZAudioProcessor::getRequestedQualityMode() const {

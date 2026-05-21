@@ -418,8 +418,11 @@ void BTZAudioProcessorEditor::updateSafetyIndicators() {
                       gr < -3.0f ? SafetyIndicator::Level::Caution :
                                    SafetyIndicator::Level::Safe);
 
-    // Correlation (placeholder — would need correlation meter in processor)
-    safetyCorrelation.setLevel(SafetyIndicator::Level::Safe);
+    // Stereo correlation: +1 mono-safe, ~0 wide, <0 phase/mono-cancellation risk.
+    const float corr = proc.meters.correlation.load(std::memory_order_relaxed);
+    safetyCorrelation.setLevel(corr < 0.0f ? SafetyIndicator::Level::Warning :
+                               corr < 0.3f ? SafetyIndicator::Level::Caution :
+                                             SafetyIndicator::Level::Safe);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
