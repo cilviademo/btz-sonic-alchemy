@@ -1,8 +1,8 @@
 /*
-  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v11
-  ────────────────────────────────────────────────────────────────────────
+  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v12 Ivory System
+  ────────────────────────────────────────────────────────────────────
   GoogleTest-based unit tests for all BTZDsp modules.
-  v11: Definitive senior-dev quality rewrite matching BTZDsp.h v11 API.
+  v12: Matches BTZDsp.h v12 Ivory System API.
   Build: cmake -DBTZ_BUILD_TESTS=ON ..
   Run:   ctest --output-on-failure
 */
@@ -469,7 +469,7 @@ TEST(TruePeakLimiter, ReportedLatency) {
 TEST(ShineProcessor, BoostsAtFrequency) {
     ShineProcessor sp;
     sp.setParameters(5000.0f, 6.0f, 0.707f);
-    sp.prepare(kSR);
+    sp.recalcCoeffs(kSR);
     sp.reset();
     auto sine5k = generateSine(5000.0f, kSR, 4800);
     std::vector<float> output(4800);
@@ -485,7 +485,7 @@ TEST(ShineProcessor, BoostsAtFrequency) {
 TEST(ShineProcessor, CutsAtFrequency) {
     ShineProcessor sp;
     sp.setParameters(5000.0f, -6.0f, 0.707f);
-    sp.prepare(kSR);
+    sp.recalcCoeffs(kSR);
     sp.reset();
     auto sine5k = generateSine(5000.0f, kSR, 4800);
     std::vector<float> output(4800);
@@ -972,7 +972,7 @@ TEST(RTSafety, SafetyLayerHandlesAllEdgeCases) {
 }
 
 TEST(RTSafety, StateVersionMatches) {
-    EXPECT_EQ(kStateVersion, 11);
+    EXPECT_EQ(kStateVersion, 12);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

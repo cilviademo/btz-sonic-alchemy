@@ -1,5 +1,5 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.h  v11
+  Box Tone Zone (BTZ) — PluginProcessor.h  v12 Ivory System
   ──────────────────────────────────────────────────────────────────────────
   Thread model:
     • Audio thread: processBlock only — no allocation, no locks.
@@ -64,6 +64,7 @@ public:
         std::atomic<float> grDb        { 0.0f };
         std::atomic<float> lufs        { -24.0f };
         std::atomic<float> truePeak    { -100.0f };
+        std::atomic<float> correlation { 1.0f };
     };
     MeterValues meters;
 
@@ -170,6 +171,9 @@ private:
 
     // ── Dry buffer for wet/dry mix ───────────────────────────────────────
     juce::AudioBuffer<float> dryBuffer;
+
+    // ── Delta monitoring (difference signal) ─────────────────────────────
+    std::atomic<bool> deltaMonitoring { false };
 
     // ── Internal signal flow methods (audio thread only) ─────────────────
     void initSmoothers(double sampleRate);

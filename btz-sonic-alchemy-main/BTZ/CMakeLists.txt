@@ -7,7 +7,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ═══════════════════════════════════════════════════════════════════════════
 # JUCE discovery: env var → local path → FetchContent fallback
 # ═══════════════════════════════════════════════════════════════════════════
-set(BTZ_DEFAULT_JUCE_PATH "C:/Users/marcm/OneDrive/Desktop/JUCE-8.0.6")
+# Default JUCE path — set JUCE_DIR or JUCE_ROOT env var, or it will auto-fetch
+set(BTZ_DEFAULT_JUCE_PATH "${CMAKE_SOURCE_DIR}/../JUCE")
 set(BTZ_JUCE_PATH "")
 
 if(DEFINED ENV{JUCE_DIR} AND EXISTS "$ENV{JUCE_DIR}/CMakeLists.txt")

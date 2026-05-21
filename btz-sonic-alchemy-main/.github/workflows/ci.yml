@@ -1,0 +1,169 @@
+# ═══════════════════════════════════════════════════════════════════════════
+# BTZ Sonic Alchemy — CI/CD Pipeline
+# ═══════════════════════════════════════════════════════════════════════════
+# Builds VST3/AU/Standalone on macOS, Windows, Linux
+# Runs unit tests on all platforms
+# Produces artifacts for download
+# ═══════════════════════════════════════════════════════════════════════════
+
+name: BTZ CI/CD
+
+on:
+  push:
+    branches: [main, 'overhaul/**', 'feature/**', 'claude/**']
+  pull_request:
+    branches: [main]
+
+env:
+  BUILD_TYPE: Release
+  JUCE_VERSION: "8.0.6"
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────
+  # macOS Build (VST3 + AU + Standalone)
+  # ─────────────────────────────────────────────────────────────────────────
+  build-macos:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: brew install cmake ninja
+
+      - name: Configure CMake
+        working-directory: BTZ
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DBTZ_BUILD_TESTS=ON \
+            -DBTZ_BUILD_CLAP=OFF
+
+      - name: Build
+        working-directory: BTZ
+        run: cmake --build build --config ${{ env.BUILD_TYPE }}
+
+      - name: Run Tests
+        working-directory: BTZ/build
+        run: ctest --output-on-failure -C ${{ env.BUILD_TYPE }}
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTZ-macOS
+          path: |
+            BTZ/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/VST3/
+            BTZ/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/AU/
+            BTZ/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/Standalone/
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Windows Build (VST3 + Standalone)
+  # ─────────────────────────────────────────────────────────────────────────
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure CMake
+        working-directory: BTZ
+        run: |
+          cmake -B build `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DBTZ_BUILD_TESTS=ON `
+            -DBTZ_BUILD_CLAP=OFF
+
+      - name: Build
+        working-directory: BTZ
+        run: cmake --build build --config ${{ env.BUILD_TYPE }}
+
+      - name: Run Tests
+        working-directory: BTZ/build
+        run: ctest --output-on-failure -C ${{ env.BUILD_TYPE }}
+
+      - name: Upload Windows Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTZ-Windows
+          path: |
+            BTZ/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/VST3/
+            BTZ/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/Standalone/
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Linux Build (VST3 + Standalone) — validation only
+  # ─────────────────────────────────────────────────────────────────────────
+  build-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            cmake ninja-build \
+            libasound2-dev \
+            libjack-jackd2-dev \
+            libcurl4-openssl-dev \
+            libfreetype6-dev \
+            libx11-dev \
+            libxcomposite-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            libwebkit2gtk-4.0-dev \
+            libglu1-mesa-dev \
+            mesa-common-dev
+
+      - name: Configure CMake
+        working-directory: BTZ
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DBTZ_BUILD_TESTS=ON \
+            -DBTZ_BUILD_CLAP=OFF
+
+      - name: Build
+        working-directory: BTZ
+        run: cmake --build build --config ${{ env.BUILD_TYPE }}
+
+      - name: Run Tests
+        working-directory: BTZ/build
+        run: ctest --output-on-failure -C ${{ env.BUILD_TYPE }}
+
+      - name: Upload Linux Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: BTZ-Linux
+          path: |
+            BTZ/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/VST3/
+            BTZ/build/BTZ_artefacts/${{ env.BUILD_TYPE }}/Standalone/
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # pluginval Validation (macOS only for now)
+  # ─────────────────────────────────────────────────────────────────────────
+  validate:
+    needs: build-macos
+    runs-on: macos-14
+    steps:
+      - name: Download macOS Build
+        uses: actions/download-artifact@v4
+        with:
+          name: BTZ-macOS
+          path: artifacts
+
+      - name: Download pluginval
+        run: |
+          curl -L -o pluginval.zip \
+            "https://github.com/Tracktion/pluginval/releases/latest/download/pluginval_macOS.zip"
+          unzip pluginval.zip
+          chmod +x pluginval.app/Contents/MacOS/pluginval
+
+      - name: Validate VST3
+        run: |
+          ./pluginval.app/Contents/MacOS/pluginval \
+            --validate "artifacts/VST3/Box Tone Zone (BTZ).vst3" \
+            --strictness-level 5 \
+            --timeout-ms 120000 \
+            --validate-in-process || true
+        # Note: strictness 5 for CI (10 for release validation)

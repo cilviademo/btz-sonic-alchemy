@@ -1,8 +1,9 @@
 /*
-  Box Tone Zone (BTZ) — PluginEditor.cpp  v11
+  Box Tone Zone (BTZ) — PluginEditor.cpp  v12 Ivory System
   ──────────────────────────────────────────────────────────────────────────
-  All colours from btz::palette. All dimensions from btz::space/layout.
-  Zero hardcoded hex values. Zero legacy namespace references.
+  Calm horizontal mastering-console architecture.
+  All colours from btz::palette (Ivory System).
+  All dimensions from btz::space/layout. Zero hardcoded hex values.
   ──────────────────────────────────────────────────────────────────────────
 */
 #include "PluginEditor.h"
@@ -14,18 +15,18 @@ using namespace btz;
 // ═══════════════════════════════════════════════════════════════════════════
 
 BTZLookAndFeel::BTZLookAndFeel() {
-    setColour(juce::Slider::thumbColourId,              juce::Colour(palette::sage));
-    setColour(juce::Slider::rotarySliderFillColourId,   juce::Colour(palette::sage));
+    setColour(juce::Slider::thumbColourId,              juce::Colour(palette::orange));
+    setColour(juce::Slider::rotarySliderFillColourId,   juce::Colour(palette::orange));
     setColour(juce::Slider::trackColourId,              juce::Colour(palette::knobTrack));
-    setColour(juce::Label::textColourId,                juce::Colour(palette::ink));
-    setColour(juce::TextButton::buttonColourId,         juce::Colour(palette::surface));
-    setColour(juce::TextButton::textColourOffId,        juce::Colour(palette::ink));
-    setColour(juce::ComboBox::backgroundColourId,       juce::Colour(palette::surface));
-    setColour(juce::ComboBox::textColourId,             juce::Colour(palette::ink));
-    setColour(juce::ComboBox::outlineColourId,          juce::Colour(palette::border));
-    setColour(juce::PopupMenu::backgroundColourId,      juce::Colour(palette::surface));
-    setColour(juce::PopupMenu::textColourId,            juce::Colour(palette::ink));
-    setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(palette::sageFaint));
+    setColour(juce::Label::textColourId,                juce::Colour(palette::charcoal));
+    setColour(juce::TextButton::buttonColourId,         juce::Colour(palette::porcelain));
+    setColour(juce::TextButton::textColourOffId,        juce::Colour(palette::charcoal));
+    setColour(juce::ComboBox::backgroundColourId,       juce::Colour(palette::porcelain));
+    setColour(juce::ComboBox::textColourId,             juce::Colour(palette::charcoal));
+    setColour(juce::ComboBox::outlineColourId,          juce::Colour(palette::panelBorder));
+    setColour(juce::PopupMenu::backgroundColourId,      juce::Colour(palette::porcelain));
+    setColour(juce::PopupMenu::textColourId,            juce::Colour(palette::charcoal));
+    setColour(juce::PopupMenu::highlightedBackgroundColourId, juce::Colour(palette::sand));
 }
 
 void BTZLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int w, int h,
@@ -38,41 +39,48 @@ void BTZLookAndFeel::drawRotarySlider(juce::Graphics& g, int x, int y, int w, in
 void BTZLookAndFeel::drawLinearSlider(juce::Graphics& g, int x, int y, int w, int h,
                                        float sliderPos, float, float,
                                        juce::Slider::SliderStyle, juce::Slider&) {
-    auto track = juce::Rectangle<float>((float)x, (float)y + h * 0.4f, (float)w, 3.0f);
+    // Thin rounded track (warm gray inactive)
+    auto track = juce::Rectangle<float>((float)x, (float)y + h * 0.45f, (float)w, 3.0f);
     g.setColour(juce::Colour(palette::knobTrack));
     g.fillRoundedRectangle(track, 1.5f);
 
+    // Active fill (orange)
     const float fillW = sliderPos - (float)x;
     if (fillW > 0.5f) {
-        g.setColour(juce::Colour(palette::sage));
+        g.setColour(juce::Colour(palette::orange));
         g.fillRoundedRectangle(track.withWidth(fillW), 1.5f);
     }
 
-    g.setColour(juce::Colour(palette::knobFace));
-    g.fillEllipse(sliderPos - 5.0f, track.getCentreY() - 5.0f, 10.0f, 10.0f);
-    g.setColour(juce::Colour(palette::border));
-    g.drawEllipse(sliderPos - 5.0f, track.getCentreY() - 5.0f, 10.0f, 10.0f, 0.5f);
+    // Small rounded handle with subtle shadow
+    const float handleR = 5.0f;
+    g.setColour(juce::Colour(palette::charcoal).withAlpha(0.15f));
+    g.fillEllipse(sliderPos - handleR + 0.5f, track.getCentreY() - handleR + 0.5f,
+                  handleR * 2.0f, handleR * 2.0f);
+    g.setColour(juce::Colour(palette::ivory));
+    g.fillEllipse(sliderPos - handleR, track.getCentreY() - handleR, handleR * 2.0f, handleR * 2.0f);
+    g.setColour(juce::Colour(palette::panelBorder));
+    g.drawEllipse(sliderPos - handleR, track.getCentreY() - handleR, handleR * 2.0f, handleR * 2.0f, 0.5f);
 }
 
 void BTZLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& b,
                                             const juce::Colour&, bool highlighted, bool down) {
     auto bounds = b.getLocalBounds().toFloat().reduced(0.5f);
     if (down || b.getToggleState()) {
-        g.setColour(juce::Colour(palette::sage));
+        g.setColour(juce::Colour(palette::orange));
     } else if (highlighted) {
-        g.setColour(juce::Colour(palette::sageFaint));
+        g.setColour(juce::Colour(palette::sand));
     } else {
-        g.setColour(juce::Colour(palette::surface));
+        g.setColour(juce::Colour(palette::porcelain));
     }
     g.fillRoundedRectangle(bounds, radius::sm);
-    g.setColour(juce::Colour(palette::border));
+    g.setColour(juce::Colour(palette::panelBorder));
     g.drawRoundedRectangle(bounds, radius::sm, 0.5f);
 }
 
 void BTZLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& b, bool, bool down) {
-    g.setFont(juce::Font(type::sans(), type::label, juce::Font::bold));
-    g.setColour((down || b.getToggleState()) ? juce::Colour(palette::canvas)
-                                              : juce::Colour(palette::ink));
+    g.setFont(juce::Font(type::label(), type::labelSize, juce::Font::bold));
+    g.setColour((down || b.getToggleState()) ? juce::Colour(palette::ivory)
+                                              : juce::Colour(palette::charcoal));
     g.drawText(b.getButtonText(), b.getLocalBounds(), juce::Justification::centred);
 }
 
@@ -80,17 +88,17 @@ void BTZLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& b,
                                        bool highlighted, bool) {
     auto bounds = b.getLocalBounds().toFloat().reduced(1.0f);
     if (b.getToggleState()) {
-        g.setColour(juce::Colour(palette::sage));
+        g.setColour(juce::Colour(palette::orange));
         g.fillRoundedRectangle(bounds, radius::sm);
-        g.setColour(juce::Colour(palette::canvas));
+        g.setColour(juce::Colour(palette::ivory));
     } else {
-        g.setColour(juce::Colour(palette::surface));
+        g.setColour(juce::Colour(palette::porcelain));
         g.fillRoundedRectangle(bounds, radius::sm);
-        g.setColour(juce::Colour(palette::border));
+        g.setColour(juce::Colour(palette::panelBorder));
         g.drawRoundedRectangle(bounds, radius::sm, 0.5f);
-        g.setColour(highlighted ? juce::Colour(palette::ink) : juce::Colour(palette::inkMuted));
+        g.setColour(highlighted ? juce::Colour(palette::charcoal) : juce::Colour(palette::warmGray));
     }
-    g.setFont(juce::Font(type::sans(), type::label, juce::Font::bold));
+    g.setFont(juce::Font(type::label(), type::labelSize, juce::Font::bold));
     g.drawText(b.getButtonText(), b.getLocalBounds(), juce::Justification::centred);
 }
 
@@ -103,16 +111,17 @@ void BTZLookAndFeel::drawLabel(juce::Graphics& g, juce::Label& l) {
 void BTZLookAndFeel::drawComboBox(juce::Graphics& g, int w, int h, bool,
                                     int, int, int, int, juce::ComboBox&) {
     auto bounds = juce::Rectangle<float>(0, 0, (float)w, (float)h);
-    g.setColour(juce::Colour(palette::surface));
+    g.setColour(juce::Colour(palette::porcelain));
     g.fillRoundedRectangle(bounds, radius::sm);
-    g.setColour(juce::Colour(palette::border));
+    g.setColour(juce::Colour(palette::panelBorder));
     g.drawRoundedRectangle(bounds.reduced(0.5f), radius::sm, 0.5f);
 
+    // Dropdown arrow
     const float arrowX = (float)w - 16.0f;
     const float arrowY = (float)h * 0.5f - 2.0f;
     juce::Path arrow;
     arrow.addTriangle(arrowX, arrowY, arrowX + 8.0f, arrowY, arrowX + 4.0f, arrowY + 5.0f);
-    g.setColour(juce::Colour(palette::inkMuted));
+    g.setColour(juce::Colour(palette::warmGray));
     g.fillPath(arrow);
 }
 
@@ -121,16 +130,16 @@ void BTZLookAndFeel::drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<
                                         bool isTicked, bool, const juce::String& text,
                                         const juce::String&, const juce::Drawable*, const juce::Colour*) {
     if (isSeparator) {
-        g.setColour(juce::Colour(palette::border));
+        g.setColour(juce::Colour(palette::panelBorder));
         g.fillRect(area.reduced(space::sm, 0).withHeight(1).withCentre(area.getCentre()));
         return;
     }
     if (isHighlighted) {
-        g.setColour(juce::Colour(palette::sageFaint));
+        g.setColour(juce::Colour(palette::sand));
         g.fillRect(area);
     }
-    g.setColour(isTicked ? juce::Colour(palette::sage) : juce::Colour(palette::ink));
-    g.setFont(juce::Font(type::sans(), type::body, juce::Font::plain));
+    g.setColour(isTicked ? juce::Colour(palette::orange) : juce::Colour(palette::charcoal));
+    g.setFont(juce::Font(type::label(), type::bodySize, juce::Font::plain));
     g.drawText(text, area.reduced(space::md, 0), juce::Justification::centredLeft);
 }
 
@@ -149,19 +158,13 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
     resizer = std::make_unique<juce::ResizableCornerComponent>(this, &constrainer);
     addAndMakeVisible(*resizer);
 
-    // View tabs
+    // ── View tabs (Simple / Standard / Advanced) ──
     viewTabs.setTabs({ "SIMPLE", "STANDARD", "ADVANCED" });
     viewTabs.setActive(1);
     viewTabs.onTabChanged = [this](int idx) { setViewMode(static_cast<ViewMode>(idx)); };
     addAndMakeVisible(viewTabs);
 
-    // Page tabs (Standard sub-pages)
-    pageTabs.setTabs({ "MAIN", "SPARK", "DETAIL" });
-    pageTabs.setActive(0);
-    pageTabs.onTabChanged = [this](int idx) { currentPage = idx; resized(); };
-    addAndMakeVisible(pageTabs);
-
-    // Custom components
+    // ── Custom visualizer components ──
     addAndMakeVisible(harmonicViz);
     addAndMakeVisible(grRibbon);
     addAndMakeVisible(spectrumDisplay);
@@ -170,59 +173,86 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
     addAndMakeVisible(compIndicator);
     addAndMakeVisible(limIndicator);
     addAndMakeVisible(presetBrowser);
+    addAndMakeVisible(safetyTruePeak);
+    addAndMakeVisible(safetyCorrelation);
+    addAndMakeVisible(safetyGR);
+
+    // ── Simple Mode knobs ──
     addAndMakeVisible(simpleKnobDrive);
     addAndMakeVisible(simpleKnobTone);
     addAndMakeVisible(simpleKnobOutput);
 
-    // Toolbar buttons
+    // ── Header toolbar buttons ──
     for (auto* btn : { &btnUndo, &btnRedo, &btnAB, &btnCopyAB,
-                       &btnPresetPrev, &btnPresetNext, &btnPresetSave })
+                       &btnPresetPrev, &btnPresetNext, &btnPresetSave, &btnDelta })
         addAndMakeVisible(btn);
     addAndMakeVisible(btnBypass);
+    addAndMakeVisible(btnAutoGain);
     addAndMakeVisible(lblPresetName);
     lblPresetName.setJustificationType(juce::Justification::centred);
-    lblPresetName.setFont(juce::Font(type::sans(), type::body, juce::Font::plain));
+    lblPresetName.setFont(juce::Font(type::label(), type::bodySize, juce::Font::plain));
 
+    // Toolbar callbacks
     btnUndo.onClick = [this] { proc.undo(); };
     btnRedo.onClick = [this] { proc.redo(); };
     btnAB.onClick = [this] { proc.toggleAB(); };
     btnCopyAB.onClick = [this] { proc.copyAtoB(); };
     btnPresetPrev.onClick = [this] { proc.loadPresetByIndex(proc.getCurrentPresetIndex() - 1); };
     btnPresetNext.onClick = [this] { proc.loadPresetByIndex(proc.getCurrentPresetIndex() + 1); };
+    btnDelta.onClick = [this] {
+        deltaMode = !deltaMode;
+        btnDelta.setToggleState(deltaMode, juce::dontSendNotification);
+        proc.deltaMonitoring.store(deltaMode, std::memory_order_relaxed);
+    };
 
-    // Core knobs
-    setupKnob(kPunch, lPunch, "PUNCH", id::punch);
-    setupKnob(kWarmth, lWarmth, "WARMTH", id::warmth);
-    setupKnob(kBoom, lBoom, "BOOM", id::boom);
-    setupKnob(kGlue, lGlue, "GLUE", id::glue);
-    setupKnob(kAir, lAir, "AIR", id::air);
-    setupKnob(kWidth, lWidth, "WIDTH", id::width);
-    setupKnob(kDrive, lDrive, "DRIVE", id::drive);
-    setupKnob(kMix, lMix, "MIX", id::mix);
-    setupKnob(kMaster, lMaster, "MASTER", id::output);
+    // ── Standard Mode: Character knobs (left) ──
+    setupKnob(kPunch, lPunch, "PUNCH", id::punch,
+              "Adds transient energy and low-mid compression timing. Use on drums and mix bus.");
+    setupKnob(kWarmth, lWarmth, "WARMTH", id::warmth,
+              "Low-mid harmonic density with transformer/tape saturation blend.");
+    setupKnob(kBoom, lBoom, "BOOM", id::boom,
+              "Low-frequency harmonic content. Subtle sub-bass enhancement.");
+    setupKnob(kGlue, lGlue, "GLUE", id::glue,
+              "Adds compression-like cohesion and harmonic binding. Use lightly on mix bus or vocals.");
+    setupKnob(kAir, lAir, "AIR", id::air,
+              "High-frequency harmonic lift with subtle exciter and phase-safe widening.");
+    setupKnob(kWidth, lWidth, "WIDTH", id::width,
+              "Stereo image control. Center = natural, right = wider, left = narrower.");
 
-    // Macros
-    setupSmallKnob(kDensity, lDensity, "DENSITY", id::density);
-    setupSmallKnob(kMotion, lMotion, "MOTION", id::motion);
-    setupSmallKnob(kEra, lEra, "ERA", id::era);
-    setupSmallKnob(kMacro0, lMacro0, "MACRO 1", id::macro);
-    setupSmallKnob(kMacro1, lMacro1, "MACRO 2", id::macro);
-    setupSmallKnob(kMacro2, lMacro2, "MACRO 3", id::macro);
-    setupSmallKnob(kMacro3, lMacro3, "MACRO 4", id::macro);
+    // ── Standard Mode: Center (Drive/Mix/Master) ──
+    setupKnob(kDrive, lDrive, "DRIVE", id::drive,
+              "Main saturation amount. Controls harmonic intensity across all models.");
+    setupKnob(kMix, lMix, "MIX", id::mix,
+              "Wet/dry blend. Use for parallel saturation processing.");
+    setupKnob(kMaster, lMaster, "MASTER", id::output,
+              "Output level trim. Adjust after processing to match input level.");
 
-    // Spark page
-    setupSmallKnob(kCeiling, lCeiling, "CEILING", id::ceiling);
-    setupSmallKnob(kIntensity, lIntensity, "INTENSITY", id::intensity);
+    // ── Standard Mode: Bottom row ──
+    setupSmallKnob(kDensity, lDensity, "DENSITY", id::density,
+                   "Parallel compression character. Adds body and sustain.");
+    setupSmallKnob(kMotion, lMotion, "MOTION", id::motion,
+                   "Subtle LFO modulation on drive. Adds organic movement.");
+    setupSmallKnob(kEra, lEra, "ERA", id::era,
+                   "Blends between vintage (warm/dark) and modern (clean/bright) character.");
+    setupSmallKnob(kIntensity, lIntensity, "INTENSITY", id::intensity,
+                   "Overall processing intensity. Scales all active modules proportionally.");
 
-    // Shine
-    setupSmallKnob(kShine, lShine, "SHINE", id::shine);
-    setupSmallKnob(kShineMix, lShineMix, "SHINE MIX", id::shine);
-    setupSmallKnob(kShineFreq, lShineFreq, "FREQ", id::shine);
-    setupSmallKnob(kShineQ, lShineQ, "Q", id::shine);
+    // ── Advanced Mode controls ──
+    setupSmallKnob(kResTame, lResTame, "RES TAME", id::resTame,
+                   "Resonance taming sensitivity. Detects and reduces harsh resonances.");
+    setupSmallKnob(kTransSens, lTransSens, "TRANSIENT", id::transient,
+                   "Transient detection sensitivity. Protects transients from over-saturation.");
+    setupSmallKnob(kCeiling, lCeiling, "CEILING", id::ceiling,
+                   "True peak limiter ceiling. Set to -0.3 dB for streaming, -1 dB for mastering.");
+    setupSmallKnob(kShine, lShine, "SHINE", id::shine,
+                   "High-frequency presence EQ. Adds air and sparkle above 4kHz.");
+    setupSmallKnob(kGlueAttack, lGlueAttack, "ATTACK", id::glue,
+                   "Glue compressor attack time in ms.");
+    setupSmallKnob(kGlueRelease, lGlueRelease, "RELEASE", id::glue,
+                   "Glue compressor release time in ms.");
+    setupSmallKnob(kGlueRatio, lGlueRatio, "RATIO", id::glue,
+                   "Glue compressor ratio. 2-4 for glue, higher for limiting.");
 
-    // Advanced
-    setupSmallKnob(kResTame, lResTame, "RES TAME", id::resTame);
-    setupSmallKnob(kTransSens, lTransSens, "TRANSIENT", id::transient);
     addAndMakeVisible(btnMidSide);
     addAndMakeVisible(cSatModel);
     addAndMakeVisible(cGlueScHpf);
@@ -230,12 +260,13 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
     addAndMakeVisible(cQuality);
 
     cSatModel.addItemList({ "Tanh", "Tube", "Tape", "Transistor", "Transformer",
-                            "Neural Neve", "Neural API", "Neural SSL", "Neural Custom" }, 1);
-    cGlueScHpf.addItemList({ "Off", "60 Hz", "100 Hz", "200 Hz", "300 Hz" }, 1);
-    cMultiband.addItemList({ "1 Band", "2 Bands", "3 Bands", "4 Bands", "5 Bands", "6 Bands" }, 1);
-    cQuality.addItemList({ "Eco", "Standard", "High", "Ultra" }, 1);
+                            "Neural Neve", "Neural API", "Neural SSL", "Neural Custom",
+                            "WDF Tube", "WDF Transformer" }, 1);
+    cGlueScHpf.addItemList({ "Off", "60 Hz", "120 Hz", "250 Hz" }, 1);
+    cMultiband.addItemList({ "Full Range", "2 Bands", "3 Bands", "4 Bands", "5 Bands", "6 Bands" }, 1);
+    cQuality.addItemList({ "Eco (1x)", "Standard (2x)", "High (4x)", "Ultra (8x)" }, 1);
 
-    // Attachments
+    // ── APVTS Attachments ──
     auto& apvts = proc.getAPVTS();
     aPunch    = std::make_unique<SliderAttachment>(apvts, "punch", kPunch);
     aWarmth   = std::make_unique<SliderAttachment>(apvts, "warmth", kWarmth);
@@ -249,26 +280,23 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
     aDensity  = std::make_unique<SliderAttachment>(apvts, "density", kDensity);
     aMotion   = std::make_unique<SliderAttachment>(apvts, "motion", kMotion);
     aEra      = std::make_unique<SliderAttachment>(apvts, "era", kEra);
-    aCeiling  = std::make_unique<SliderAttachment>(apvts, "ceiling", kCeiling);
     aIntensity = std::make_unique<SliderAttachment>(apvts, "intensity", kIntensity);
+    aCeiling  = std::make_unique<SliderAttachment>(apvts, "ceiling", kCeiling);
     aShine    = std::make_unique<SliderAttachment>(apvts, "shine", kShine);
-    aShineMix = std::make_unique<SliderAttachment>(apvts, "shineMix", kShineMix);
-    aShineFreq = std::make_unique<SliderAttachment>(apvts, "shineFreq", kShineFreq);
-    aShineQ   = std::make_unique<SliderAttachment>(apvts, "shineQ", kShineQ);
-    aMacro0   = std::make_unique<SliderAttachment>(apvts, "macro0", kMacro0);
-    aMacro1   = std::make_unique<SliderAttachment>(apvts, "macro1", kMacro1);
-    aMacro2   = std::make_unique<SliderAttachment>(apvts, "macro2", kMacro2);
-    aMacro3   = std::make_unique<SliderAttachment>(apvts, "macro3", kMacro3);
     aResTame  = std::make_unique<SliderAttachment>(apvts, "resSens", kResTame);
     aTransSens = std::make_unique<SliderAttachment>(apvts, "transSens", kTransSens);
+    aGlueAttack = std::make_unique<SliderAttachment>(apvts, "glueAttack", kGlueAttack);
+    aGlueRelease = std::make_unique<SliderAttachment>(apvts, "glueRelease", kGlueRelease);
+    aGlueRatio = std::make_unique<SliderAttachment>(apvts, "glueRatio", kGlueRatio);
     aBypass   = std::make_unique<ButtonAttachment>(apvts, "bypass", btnBypass);
     aMidSide  = std::make_unique<ButtonAttachment>(apvts, "midSide", btnMidSide);
+    aAutoGain = std::make_unique<ButtonAttachment>(apvts, "autoGain", btnAutoGain);
     aSatModel = std::make_unique<ComboAttachment>(apvts, "satModel", cSatModel);
     aGlueScHpf = std::make_unique<ComboAttachment>(apvts, "glueScHpf", cGlueScHpf);
     aMultiband = std::make_unique<ComboAttachment>(apvts, "multibandCount", cMultiband);
     aQuality  = std::make_unique<ComboAttachment>(apvts, "quality", cQuality);
 
-    // Wire preset save button
+    // ── Preset save button ──
     btnPresetSave.onClick = [this] {
         auto dir = proc.getPresetDirectory();
         if (!dir.exists()) dir.createDirectory();
@@ -279,7 +307,7 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
         }
     };
 
-    // Wire simple mode knobs to drive underlying APVTS parameters
+    // ── Simple mode knob callbacks ──
     simpleKnobDrive.onValueChange = [this](float v) {
         if (auto* p = proc.getAPVTS().getParameter("drive"))
             p->setValueNotifyingHost(v);
@@ -293,7 +321,7 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
             p->setValueNotifyingHost(v);
     };
 
-    // Wire preset browser
+    // ── Preset browser ──
     presetBrowser.onSelect = [this](int idx) {
         proc.loadPresetByIndex(idx);
     };
@@ -313,46 +341,75 @@ BTZAudioProcessorEditor::~BTZAudioProcessorEditor() {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void BTZAudioProcessorEditor::setupKnob(juce::Slider& s, juce::Label& l,
-                                          const juce::String& text, int compID) {
+                                          const juce::String& text, int compID,
+                                          const juce::String& tooltip) {
     s.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
     s.setTextBoxStyle(juce::Slider::NoTextBox, true, 0, 0);
     s.setComponentID(juce::String(compID));
     s.setPopupDisplayEnabled(true, true, this);
+    if (tooltip.isNotEmpty())
+        s.setTooltip(tooltip);
     addAndMakeVisible(s);
 
     l.setText(text, juce::dontSendNotification);
     l.setJustificationType(juce::Justification::centred);
-    l.setFont(juce::Font(type::sans(), type::label, juce::Font::plain));
-    l.setColour(juce::Label::textColourId, juce::Colour(palette::inkFaint));
+    l.setFont(juce::Font(type::label(), type::labelSize, juce::Font::bold));
+    l.setColour(juce::Label::textColourId, juce::Colour(palette::warmGray));
     addAndMakeVisible(l);
 }
 
 void BTZAudioProcessorEditor::setupSmallKnob(juce::Slider& s, juce::Label& l,
-                                               const juce::String& text, int compID) {
-    setupKnob(s, l, text, compID);
+                                               const juce::String& text, int compID,
+                                               const juce::String& tooltip) {
+    setupKnob(s, l, text, compID, tooltip);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Timer
+// Timer — update meters and visualizers
 // ═══════════════════════════════════════════════════════════════════════════
 
 void BTZAudioProcessorEditor::timerCallback() {
+    // GR ribbon
     const float gr = proc.meters.grDb.load(std::memory_order_relaxed);
     grRibbon.push(gr);
 
+    // Processing indicators (color per design brief)
     satIndicator.setActive(gr < -0.1f, juce::Colour(palette::orange));
     compIndicator.setActive(gr < -1.0f, juce::Colour(palette::sage));
     limIndicator.setActive(gr < -3.0f, juce::Colour(palette::clay));
 
+    // Preset name
     lblPresetName.setText(proc.getCurrentPresetName(), juce::dontSendNotification);
 
+    // Simple mode knob sync
     if (viewMode == ViewMode::Simple) {
         simpleKnobDrive.setValue(kDrive.getValue() / kDrive.getMaximum(), "");
         simpleKnobTone.setValue(kShine.getValue() / kShine.getMaximum(), "");
         simpleKnobOutput.setValue(kMaster.getValue() / kMaster.getMaximum(), "");
     }
 
+    // Safety indicators
+    updateSafetyIndicators();
+
     repaint();
+}
+
+void BTZAudioProcessorEditor::updateSafetyIndicators() {
+    const float tp = proc.meters.truePeak.load(std::memory_order_relaxed);
+    const float gr = proc.meters.grDb.load(std::memory_order_relaxed);
+
+    // True peak warning (above -0.5 dBTP)
+    safetyTruePeak.setLevel(tp > -0.5f ? SafetyIndicator::Level::Warning :
+                            tp > -1.0f ? SafetyIndicator::Level::Caution :
+                                         SafetyIndicator::Level::Safe);
+
+    // Excessive GR warning (more than 6 dB)
+    safetyGR.setLevel(gr < -6.0f ? SafetyIndicator::Level::Warning :
+                      gr < -3.0f ? SafetyIndicator::Level::Caution :
+                                   SafetyIndicator::Level::Safe);
+
+    // Correlation (placeholder — would need correlation meter in processor)
+    safetyCorrelation.setLevel(SafetyIndicator::Level::Safe);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -369,46 +426,68 @@ void BTZAudioProcessorEditor::setViewMode(ViewMode mode) {
             simpleKnobTone.setVisible(true);
             simpleKnobOutput.setVisible(true);
             harmonicViz.setVisible(true);
-            pageTabs.setVisible(false);
+            safetyTruePeak.setVisible(true);
+            safetyCorrelation.setVisible(true);
             break;
 
         case ViewMode::Standard:
+            // Character knobs (left)
             kPunch.setVisible(true); lPunch.setVisible(true);
             kWarmth.setVisible(true); lWarmth.setVisible(true);
             kBoom.setVisible(true); lBoom.setVisible(true);
             kGlue.setVisible(true); lGlue.setVisible(true);
             kAir.setVisible(true); lAir.setVisible(true);
             kWidth.setVisible(true); lWidth.setVisible(true);
+            // Center
             kDrive.setVisible(true); lDrive.setVisible(true);
             kMix.setVisible(true); lMix.setVisible(true);
             kMaster.setVisible(true); lMaster.setVisible(true);
+            // Bottom
             kDensity.setVisible(true); lDensity.setVisible(true);
             kMotion.setVisible(true); lMotion.setVisible(true);
             kEra.setVisible(true); lEra.setVisible(true);
+            kIntensity.setVisible(true); lIntensity.setVisible(true);
+            // Visualizers
             harmonicViz.setVisible(true);
             grRibbon.setVisible(true);
             spectrumDisplay.setVisible(true);
             satIndicator.setVisible(true);
             compIndicator.setVisible(true);
             limIndicator.setVisible(true);
-            pageTabs.setVisible(true);
+            safetyTruePeak.setVisible(true);
+            safetyCorrelation.setVisible(true);
+            safetyGR.setVisible(true);
             break;
 
         case ViewMode::Advanced:
+            // All Standard knobs
             kDrive.setVisible(true); lDrive.setVisible(true);
             kMix.setVisible(true); lMix.setVisible(true);
             kMaster.setVisible(true); lMaster.setVisible(true);
+            // Advanced-specific
             kResTame.setVisible(true); lResTame.setVisible(true);
             kTransSens.setVisible(true); lTransSens.setVisible(true);
+            kCeiling.setVisible(true); lCeiling.setVisible(true);
+            kShine.setVisible(true); lShine.setVisible(true);
+            kGlueAttack.setVisible(true); lGlueAttack.setVisible(true);
+            kGlueRelease.setVisible(true); lGlueRelease.setVisible(true);
+            kGlueRatio.setVisible(true); lGlueRatio.setVisible(true);
             btnMidSide.setVisible(true);
             cSatModel.setVisible(true);
             cGlueScHpf.setVisible(true);
             cMultiband.setVisible(true);
             cQuality.setVisible(true);
+            // Visualizers
             spectrumAdvanced.setVisible(true);
             grRibbon.setVisible(true);
+            harmonicViz.setVisible(true);
             presetBrowser.setVisible(true);
-            pageTabs.setVisible(false);
+            satIndicator.setVisible(true);
+            compIndicator.setVisible(true);
+            limIndicator.setVisible(true);
+            safetyTruePeak.setVisible(true);
+            safetyCorrelation.setVisible(true);
+            safetyGR.setVisible(true);
             break;
     }
 
@@ -420,57 +499,62 @@ void BTZAudioProcessorEditor::hideAllControls() {
         if (child != &viewTabs && child != resizer.get() &&
             child != &btnUndo && child != &btnRedo && child != &btnAB &&
             child != &btnCopyAB && child != &btnPresetPrev && child != &btnPresetNext &&
-            child != &btnPresetSave && child != &btnBypass && child != &lblPresetName)
+            child != &btnPresetSave && child != &btnDelta && child != &btnBypass &&
+            child != &btnAutoGain && child != &lblPresetName)
             child->setVisible(false);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Paint
+// Paint — Ivory System background
 // ═══════════════════════════════════════════════════════════════════════════
 
 void BTZAudioProcessorEditor::paint(juce::Graphics& g) {
-    // Canvas background
-    g.fillAll(juce::Colour(palette::canvas));
+    // Warm ivory canvas
+    g.fillAll(juce::Colour(palette::ivory));
 
-    // Subtle warm gradient overlay
-    juce::ColourGradient grad(juce::Colour(palette::canvas), 0, 0,
-                              juce::Colour(palette::orangeFaint), 0, (float)getHeight(), false);
+    // Subtle warm gradient (ivory → linen at bottom)
+    juce::ColourGradient grad(juce::Colour(palette::ivory), 0, 0,
+                              juce::Colour(palette::linen), 0, (float)getHeight(), false);
     g.setGradientFill(grad);
     g.fillRect(getLocalBounds());
 
-    // Header bar
+    // Header bar (porcelain)
     auto headerArea = getLocalBounds().toFloat().removeFromTop((float)layout::headerH);
-    g.setColour(juce::Colour(palette::surface));
+    g.setColour(juce::Colour(palette::porcelain));
     g.fillRect(headerArea);
-    g.setColour(juce::Colour(palette::border));
+    g.setColour(juce::Colour(palette::panelBorder));
     g.fillRect(headerArea.removeFromBottom(1.0f));
 
-    // Brand
-    g.setColour(juce::Colour(palette::ink));
-    g.setFont(juce::Font(type::display(), type::title, juce::Font::bold));
-    g.drawText("BOX TONE ZONE", headerArea.reduced(space::md, 0),
+    // Brand wordmark — wide, spaced, confident
+    g.setColour(juce::Colour(palette::softBlack));
+    g.setFont(juce::Font(type::brand(), type::brandSize, juce::Font::bold));
+    auto brandArea = getLocalBounds().toFloat().removeFromTop((float)layout::headerH);
+    g.drawText("B O X   T O N E   Z O N E", brandArea.reduced((float)space::md, 0),
                juce::Justification::centredLeft);
 
     // Footer bar
     auto footerArea = getLocalBounds().toFloat().removeFromBottom((float)layout::footerH);
-    g.setColour(juce::Colour(palette::surface));
+    g.setColour(juce::Colour(palette::porcelain));
     g.fillRect(footerArea);
-    g.setColour(juce::Colour(palette::border));
+    g.setColour(juce::Colour(palette::panelBorder));
     g.fillRect(footerArea.removeFromTop(1.0f));
 
-    // Footer meters text
-    g.setFont(juce::Font(type::mono(), type::small, juce::Font::plain));
-    g.setColour(juce::Colour(palette::inkMuted));
+    // Footer metering text
+    g.setFont(juce::Font(type::mono(), type::microSize, juce::Font::plain));
+    g.setColour(juce::Colour(palette::warmGray));
     float lufs = proc.meters.lufs.load(std::memory_order_relaxed);
     float tp = proc.meters.truePeak.load(std::memory_order_relaxed);
-    juce::String footerText = juce::String::formatted("LUFS: %.1f  |  TP: %.1f dB  |  GR: %.1f dB",
-                                                       lufs, tp,
-                                                       proc.meters.grDb.load(std::memory_order_relaxed));
-    g.drawText(footerText, footerArea.reduced(space::md, 0), juce::Justification::centredLeft);
+    float grVal = proc.meters.grDb.load(std::memory_order_relaxed);
+    juce::String footerText = juce::String::formatted(
+        "LUFS: %.1f   |   TRUE PEAK: %.1f dBTP   |   GR: %.1f dB   |   %s",
+        lufs, tp, grVal,
+        deltaMode ? "DELTA ON" : "");
+    g.drawText(footerText, footerArea.reduced((float)space::md, 0),
+               juce::Justification::centredLeft);
 
-    // Version
-    g.setColour(juce::Colour(palette::inkFaint));
-    g.drawText("v11", footerArea.reduced(space::md, 0), juce::Justification::centredRight);
+    // Version badge
+    g.setColour(juce::Colour(palette::warmGray));
+    g.drawText("v12", footerArea.reduced((float)space::md, 0), juce::Justification::centredRight);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -484,27 +568,32 @@ void BTZAudioProcessorEditor::resized() {
     // Header
     auto header = area.removeFromTop(layout::headerH);
     auto toolbarArea = header.reduced(space::md, 0);
-    toolbarArea.removeFromLeft(200); // Brand space
+    toolbarArea.removeFromLeft(220); // Brand space
 
     // View tabs in header
-    viewTabs.setBounds(toolbarArea.removeFromLeft(240).reduced(0, space::xs));
+    viewTabs.setBounds(toolbarArea.removeFromLeft(260).reduced(0, space::xs));
 
-    // Toolbar buttons (right side of header)
-    const int btnW = 28;
+    // Toolbar buttons (right side)
+    const int btnW = 32;
     const int btnH = 24;
     auto rightTools = toolbarArea;
     rightTools.removeFromLeft(space::lg);
-    btnBypass.setBounds(rightTools.removeFromRight(btnW).withSizeKeepingCentre(btnW, btnH));
+
+    btnBypass.setBounds(rightTools.removeFromRight(56).withSizeKeepingCentre(56, btnH));
+    rightTools.removeFromRight(space::xs);
+    btnAutoGain.setBounds(rightTools.removeFromRight(44).withSizeKeepingCentre(44, btnH));
     rightTools.removeFromRight(space::sm);
     btnPresetNext.setBounds(rightTools.removeFromRight(btnW).withSizeKeepingCentre(btnW, btnH));
-    lblPresetName.setBounds(rightTools.removeFromRight(120).withSizeKeepingCentre(120, btnH));
+    lblPresetName.setBounds(rightTools.removeFromRight(130).withSizeKeepingCentre(130, btnH));
     btnPresetPrev.setBounds(rightTools.removeFromRight(btnW).withSizeKeepingCentre(btnW, btnH));
     rightTools.removeFromRight(space::md);
+    btnDelta.setBounds(rightTools.removeFromRight(48).withSizeKeepingCentre(48, btnH));
+    rightTools.removeFromRight(space::xs);
     btnCopyAB.setBounds(rightTools.removeFromRight(36).withSizeKeepingCentre(36, btnH));
-    btnAB.setBounds(rightTools.removeFromRight(36).withSizeKeepingCentre(36, btnH));
+    btnAB.setBounds(rightTools.removeFromRight(28).withSizeKeepingCentre(28, btnH));
     rightTools.removeFromRight(space::sm);
-    btnRedo.setBounds(rightTools.removeFromRight(btnW).withSizeKeepingCentre(btnW, btnH));
-    btnUndo.setBounds(rightTools.removeFromRight(btnW).withSizeKeepingCentre(btnW, btnH));
+    btnRedo.setBounds(rightTools.removeFromRight(40).withSizeKeepingCentre(40, btnH));
+    btnUndo.setBounds(rightTools.removeFromRight(40).withSizeKeepingCentre(40, btnH));
 
     // Footer
     area.removeFromBottom(layout::footerH);
@@ -513,137 +602,220 @@ void BTZAudioProcessorEditor::resized() {
     auto content = area.reduced(space::lg, space::md);
 
     switch (viewMode) {
-        case ViewMode::Simple:
-            layoutSimple(content);
-            break;
-        case ViewMode::Standard:
-            layoutStandard(content);
-            break;
-        case ViewMode::Advanced:
-            layoutAdvanced(content);
-            break;
+        case ViewMode::Simple:   layoutSimple(content); break;
+        case ViewMode::Standard: layoutStandard(content); break;
+        case ViewMode::Advanced: layoutAdvanced(content); break;
     }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Layout: Simple Mode
+// ═══════════════════════════════════════════════════════════════════════════
+
 void BTZAudioProcessorEditor::layoutSimple(juce::Rectangle<int> area) {
-    // Three large knobs centered with harmonic viz above
-    auto vizArea = area.removeFromTop(area.getHeight() / 2);
+    // Harmonic visualizer (circular bloom) — top half
+    auto vizArea = area.removeFromTop(area.getHeight() * 55 / 100);
     harmonicViz.setBounds(vizArea.reduced(space::xl, space::md));
 
-    const int knobSize = juce::jmin(area.getWidth() / 4, area.getHeight() - 30);
+    // Three large knobs centered — bottom half
+    const int knobSize = juce::jmin(area.getWidth() / 4, area.getHeight() - 40);
     const int totalW = knobSize * 3 + space::xl * 2;
-    auto knobRow = area.withSizeKeepingCentre(totalW, knobSize + 24);
+    auto knobRow = area.withSizeKeepingCentre(totalW, knobSize + 28);
 
     auto dArea = knobRow.removeFromLeft(knobSize);
-    simpleKnobDrive.setBounds(dArea.removeFromTop(knobSize));
-
+    simpleKnobDrive.setBounds(dArea);
     knobRow.removeFromLeft(space::xl);
+
     auto tArea = knobRow.removeFromLeft(knobSize);
-    simpleKnobTone.setBounds(tArea.removeFromTop(knobSize));
-
+    simpleKnobTone.setBounds(tArea);
     knobRow.removeFromLeft(space::xl);
+
     auto oArea = knobRow.removeFromLeft(knobSize);
-    simpleKnobOutput.setBounds(oArea.removeFromTop(knobSize));
+    simpleKnobOutput.setBounds(oArea);
+
+    // Safety indicators at bottom
+    auto safetyRow = area.removeFromBottom(16);
+    safetyTruePeak.setBounds(safetyRow.removeFromLeft(80));
+    safetyRow.removeFromLeft(space::sm);
+    safetyCorrelation.setBounds(safetyRow.removeFromLeft(80));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Layout: Standard Mode
+// ═══════════════════════════════════════════════════════════════════════════
+
 void BTZAudioProcessorEditor::layoutStandard(juce::Rectangle<int> area) {
-    // Page tabs
-    pageTabs.setBounds(area.removeFromTop(28).reduced(area.getWidth() / 4, 0));
+    // Processing indicators (top row)
+    auto indicatorRow = area.removeFromTop(14);
+    satIndicator.setBounds(indicatorRow.removeFromLeft(14));
+    indicatorRow.removeFromLeft(space::xs);
+    compIndicator.setBounds(indicatorRow.removeFromLeft(14));
+    indicatorRow.removeFromLeft(space::xs);
+    limIndicator.setBounds(indicatorRow.removeFromLeft(14));
     area.removeFromTop(space::sm);
 
-    // Processing indicators
-    auto indicatorRow = area.removeFromTop(12);
-    satIndicator.setBounds(indicatorRow.removeFromLeft(12));
-    indicatorRow.removeFromLeft(space::xs);
-    compIndicator.setBounds(indicatorRow.removeFromLeft(12));
-    indicatorRow.removeFromLeft(space::xs);
-    limIndicator.setBounds(indicatorRow.removeFromLeft(12));
-    area.removeFromTop(space::sm);
-
-    // Harmonic viz / spectrum
-    auto vizArea = area.removeFromTop(area.getHeight() / 4);
-    harmonicViz.setBounds(vizArea.removeFromLeft(vizArea.getWidth() / 2).reduced(space::xs));
-    spectrumDisplay.setBounds(vizArea.reduced(space::xs));
+    // Visualizer row (harmonic + spectrum side by side)
+    auto vizRow = area.removeFromTop(area.getHeight() * 28 / 100);
+    harmonicViz.setBounds(vizRow.removeFromLeft(vizRow.getWidth() / 2).reduced(space::xs));
+    spectrumDisplay.setBounds(vizRow.reduced(space::xs));
 
     // GR ribbon
-    grRibbon.setBounds(area.removeFromTop(20).reduced(space::sm, 0));
+    grRibbon.setBounds(area.removeFromTop(18).reduced(space::md, 0));
     area.removeFromTop(space::sm);
 
-    // Character knobs (2x3 grid)
-    const int knobSize = juce::jmin(area.getWidth() / 7, (area.getHeight() - 80) / 3);
-    auto charArea = area.removeFromTop(knobSize * 2 + space::md);
-    auto row1 = charArea.removeFromTop(knobSize);
-    auto row2 = charArea.removeFromTop(knobSize);
+    // Main knob area — 3 columns
+    auto mainArea = area.removeFromTop(area.getHeight() * 60 / 100);
+    const int knobSize = juce::jmin(mainArea.getWidth() / 8, (mainArea.getHeight() - 20) / 2);
+
+    // Left column: Character knobs (2x3 grid)
+    auto leftCol = mainArea.removeFromLeft(mainArea.getWidth() * 38 / 100);
+    auto charRow1 = leftCol.removeFromTop(knobSize + 16);
+    auto charRow2 = leftCol.removeFromTop(knobSize + 16);
 
     auto placeKnob = [&](juce::Slider& s, juce::Label& l, juce::Rectangle<int>& row) {
         auto slot = row.removeFromLeft(knobSize);
-        s.setBounds(slot.removeFromTop(knobSize - 16));
+        s.setBounds(slot.removeFromTop(knobSize));
         l.setBounds(slot);
         row.removeFromLeft(space::sm);
     };
 
-    placeKnob(kPunch, lPunch, row1);
-    placeKnob(kWarmth, lWarmth, row1);
-    placeKnob(kBoom, lBoom, row1);
-    row1.removeFromLeft(space::lg);
-    placeKnob(kDrive, lDrive, row1);
-    placeKnob(kMix, lMix, row1);
-    placeKnob(kMaster, lMaster, row1);
+    placeKnob(kPunch, lPunch, charRow1);
+    placeKnob(kWarmth, lWarmth, charRow1);
+    placeKnob(kBoom, lBoom, charRow1);
+    placeKnob(kGlue, lGlue, charRow2);
+    placeKnob(kAir, lAir, charRow2);
+    placeKnob(kWidth, lWidth, charRow2);
 
-    placeKnob(kGlue, lGlue, row2);
-    placeKnob(kAir, lAir, row2);
-    placeKnob(kWidth, lWidth, row2);
-    row2.removeFromLeft(space::lg);
-    placeKnob(kDensity, lDensity, row2);
-    placeKnob(kMotion, lMotion, row2);
-    placeKnob(kEra, lEra, row2);
+    // Center column: Drive / Mix / Master (large)
+    auto centerCol = mainArea.removeFromLeft(mainArea.getWidth() * 50 / 100);
+    const int bigKnob = (int)(knobSize * 1.3f);
+    auto centerKnobRow = centerCol.withSizeKeepingCentre(bigKnob * 3 + space::lg * 2, bigKnob + 16);
+    auto driveSlot = centerKnobRow.removeFromLeft(bigKnob);
+    kDrive.setBounds(driveSlot.removeFromTop(bigKnob));
+    lDrive.setBounds(driveSlot);
+    centerKnobRow.removeFromLeft(space::lg);
+    auto mixSlot = centerKnobRow.removeFromLeft(bigKnob);
+    kMix.setBounds(mixSlot.removeFromTop(bigKnob));
+    lMix.setBounds(mixSlot);
+    centerKnobRow.removeFromLeft(space::lg);
+    auto masterSlot = centerKnobRow.removeFromLeft(bigKnob);
+    kMaster.setBounds(masterSlot.removeFromTop(bigKnob));
+    lMaster.setBounds(masterSlot);
+
+    // Right column: meters/safety (handled by indicators already placed)
+
+    // Bottom row: Density / Motion / Era / Intensity
+    area.removeFromTop(space::sm);
+    auto bottomRow = area;
+    const int smallKnob = (int)(knobSize * 0.8f);
+    auto bottomCenter = bottomRow.withSizeKeepingCentre(smallKnob * 4 + space::md * 3, smallKnob + 16);
+
+    auto placeSmall = [&](juce::Slider& s, juce::Label& l) {
+        auto slot = bottomCenter.removeFromLeft(smallKnob);
+        s.setBounds(slot.removeFromTop(smallKnob));
+        l.setBounds(slot);
+        bottomCenter.removeFromLeft(space::md);
+    };
+    placeSmall(kDensity, lDensity);
+    placeSmall(kMotion, lMotion);
+    placeSmall(kEra, lEra);
+    placeSmall(kIntensity, lIntensity);
+
+    // Safety indicators (bottom-right)
+    auto safetyArea = area.removeFromBottom(16);
+    safetyArea = safetyArea.removeFromRight(280);
+    safetyTruePeak.setBounds(safetyArea.removeFromLeft(80));
+    safetyArea.removeFromLeft(space::sm);
+    safetyCorrelation.setBounds(safetyArea.removeFromLeft(80));
+    safetyArea.removeFromLeft(space::sm);
+    safetyGR.setBounds(safetyArea.removeFromLeft(80));
 }
 
+// ═══════════════════════════════════════════════════════════════════════════
+// Layout: Advanced Mode
+// ═══════════════════════════════════════════════════════════════════════════
+
 void BTZAudioProcessorEditor::layoutAdvanced(juce::Rectangle<int> area) {
-    // Spectrum analyzer (full width, top)
-    spectrumAdvanced.setBounds(area.removeFromTop(area.getHeight() / 3).reduced(space::xs));
+    // Top: Spectrum analyzer + harmonic visualizer
+    auto vizRow = area.removeFromTop(area.getHeight() * 30 / 100);
+    spectrumAdvanced.setBounds(vizRow.removeFromLeft(vizRow.getWidth() * 60 / 100).reduced(space::xs));
+    harmonicViz.setBounds(vizRow.reduced(space::xs));
+
+    // GR ribbon + indicators
+    auto indicatorRow = area.removeFromTop(14);
+    satIndicator.setBounds(indicatorRow.removeFromLeft(14));
+    indicatorRow.removeFromLeft(space::xs);
+    compIndicator.setBounds(indicatorRow.removeFromLeft(14));
+    indicatorRow.removeFromLeft(space::xs);
+    limIndicator.setBounds(indicatorRow.removeFromLeft(14));
+    area.removeFromTop(space::xs);
+    grRibbon.setBounds(area.removeFromTop(18).reduced(space::md, 0));
     area.removeFromTop(space::sm);
 
-    // GR ribbon
-    grRibbon.setBounds(area.removeFromTop(20).reduced(space::sm, 0));
-    area.removeFromTop(space::sm);
+    // Three-column layout per design brief
+    auto mainArea = area.removeFromTop(area.getHeight() * 65 / 100);
 
-    // Controls row
-    auto ctrlRow = area.removeFromTop(80);
-    auto leftCtrl = ctrlRow.removeFromLeft(ctrlRow.getWidth() / 2);
-    auto rightCtrl = ctrlRow;
+    // LEFT: Saturation model, dynamics, multiband, quality
+    auto leftCol = mainArea.removeFromLeft(mainArea.getWidth() / 3);
+    leftCol = leftCol.reduced(space::sm, 0);
+    cSatModel.setBounds(leftCol.removeFromTop(26));
+    leftCol.removeFromTop(space::xs);
+    cQuality.setBounds(leftCol.removeFromTop(26));
+    leftCol.removeFromTop(space::xs);
+    cMultiband.setBounds(leftCol.removeFromTop(26));
+    leftCol.removeFromTop(space::xs);
+    cGlueScHpf.setBounds(leftCol.removeFromTop(26));
+    leftCol.removeFromTop(space::sm);
+    btnMidSide.setBounds(leftCol.removeFromTop(26).removeFromLeft(80));
+    leftCol.removeFromTop(space::sm);
 
-    // Left: sat model, quality, multiband, mid/side
-    cSatModel.setBounds(leftCtrl.removeFromTop(24).removeFromLeft(160));
-    leftCtrl.removeFromTop(space::xs);
-    auto comboRow = leftCtrl.removeFromTop(24);
-    cQuality.setBounds(comboRow.removeFromLeft(100));
-    comboRow.removeFromLeft(space::sm);
-    cMultiband.setBounds(comboRow.removeFromLeft(100));
-    comboRow.removeFromLeft(space::sm);
-    cGlueScHpf.setBounds(comboRow.removeFromLeft(100));
-    leftCtrl.removeFromTop(space::xs);
-    btnMidSide.setBounds(leftCtrl.removeFromTop(24).removeFromLeft(80));
-
-    // Right: knobs
-    const int smallKnob = 56;
-    auto knobArea = rightCtrl;
-    auto placeSmall = [&](juce::Slider& s, juce::Label& l) {
-        auto slot = knobArea.removeFromLeft(smallKnob);
-        s.setBounds(slot.removeFromTop(smallKnob - 14));
+    // Glue compressor detail knobs
+    const int advKnob = 48;
+    auto glueRow = leftCol.removeFromTop(advKnob + 14);
+    auto placeAdv = [&](juce::Slider& s, juce::Label& l, juce::Rectangle<int>& row) {
+        auto slot = row.removeFromLeft(advKnob);
+        s.setBounds(slot.removeFromTop(advKnob));
         l.setBounds(slot);
-        knobArea.removeFromLeft(space::xs);
+        row.removeFromLeft(space::xs);
     };
-    placeSmall(kDrive, lDrive);
-    placeSmall(kResTame, lResTame);
-    placeSmall(kTransSens, lTransSens);
-    placeSmall(kMix, lMix);
-    placeSmall(kMaster, lMaster);
+    placeAdv(kGlueAttack, lGlueAttack, glueRow);
+    placeAdv(kGlueRelease, lGlueRelease, glueRow);
+    placeAdv(kGlueRatio, lGlueRatio, glueRow);
 
-    area.removeFromTop(space::md);
+    // CENTER: Drive/Mix/Master + Res/Trans/Ceiling/Shine
+    auto centerCol = mainArea.removeFromLeft(mainArea.getWidth() / 2);
+    centerCol = centerCol.reduced(space::sm, 0);
+    const int ctrKnob = 56;
+    auto ctrRow1 = centerCol.removeFromTop(ctrKnob + 14);
+    auto placeCenter = [&](juce::Slider& s, juce::Label& l, juce::Rectangle<int>& row) {
+        auto slot = row.removeFromLeft(ctrKnob);
+        s.setBounds(slot.removeFromTop(ctrKnob));
+        l.setBounds(slot);
+        row.removeFromLeft(space::sm);
+    };
+    placeCenter(kDrive, lDrive, ctrRow1);
+    placeCenter(kMix, lMix, ctrRow1);
+    placeCenter(kMaster, lMaster, ctrRow1);
 
-    // Preset browser (bottom)
-    presetBrowser.setBounds(area.reduced(space::sm));
+    centerCol.removeFromTop(space::sm);
+    auto ctrRow2 = centerCol.removeFromTop(ctrKnob + 14);
+    placeCenter(kResTame, lResTame, ctrRow2);
+    placeCenter(kTransSens, lTransSens, ctrRow2);
+    placeCenter(kCeiling, lCeiling, ctrRow2);
+    placeCenter(kShine, lShine, ctrRow2);
+
+    // RIGHT: Neural model browser / preset browser
+    auto rightCol = mainArea;
+    rightCol = rightCol.reduced(space::sm, 0);
+    presetBrowser.setBounds(rightCol);
+
+    // Bottom: Safety indicators
+    auto safetyArea = area.removeFromBottom(16);
+    safetyTruePeak.setBounds(safetyArea.removeFromLeft(80));
+    safetyArea.removeFromLeft(space::sm);
+    safetyCorrelation.setBounds(safetyArea.removeFromLeft(80));
+    safetyArea.removeFromLeft(space::sm);
+    safetyGR.setBounds(safetyArea.removeFromLeft(80));
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -658,7 +830,6 @@ void BTZAudioProcessorEditor::populatePresetBrowser() {
     for (const auto& f : files) {
         btz::PresetBrowser::Entry e;
         e.name = f.getFileNameWithoutExtension();
-        // Try to extract category from parent folder name
         e.category = f.getParentDirectory().getFileName();
         if (e.category == proc.getPresetDirectory().getFileName())
             e.category = "User";

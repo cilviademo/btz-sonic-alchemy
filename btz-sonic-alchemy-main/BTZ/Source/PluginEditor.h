@@ -1,8 +1,10 @@
 /*
-  Box Tone Zone (BTZ) — PluginEditor.h  v11
+  Box Tone Zone (BTZ) — PluginEditor.h  v12 Ivory System
   ──────────────────────────────────────────────────────────────────────────
   Three view modes: Simple, Standard, Advanced.
-  All colours from btz::palette. All components from btz:: namespace.
+  All colours from btz::palette (Ivory System).
+  All components from btz:: namespace.
+  Layout: calm horizontal mastering-console architecture.
   ──────────────────────────────────────────────────────────────────────────
 */
 #pragma once
@@ -69,8 +71,10 @@ private:
     void timerCallback() override;
 
     // ── Setup helpers ──
-    void setupKnob(juce::Slider& s, juce::Label& l, const juce::String& text, int compID);
-    void setupSmallKnob(juce::Slider& s, juce::Label& l, const juce::String& text, int compID);
+    void setupKnob(juce::Slider& s, juce::Label& l, const juce::String& text,
+                   int compID, const juce::String& tooltip = {});
+    void setupSmallKnob(juce::Slider& s, juce::Label& l, const juce::String& text,
+                        int compID, const juce::String& tooltip = {});
 
     // ── Layout helpers ──
     void setViewMode(ViewMode mode);
@@ -79,11 +83,11 @@ private:
     void layoutAdvanced(juce::Rectangle<int> content);
     void hideAllControls();
     void populatePresetBrowser();
+    void updateSafetyIndicators();
 
     BTZAudioProcessor& proc;
     BTZLookAndFeel lookAndFeel;
     ViewMode viewMode = ViewMode::Standard;
-    int currentPage = 0;  // Standard sub-pages: 0=Main, 1=Spark, 2=Detail
 
     // ── Resizable ──
     juce::ComponentBoundsConstrainer constrainer;
@@ -93,53 +97,53 @@ private:
     btz::HarmonicVisualizer     harmonicViz;
     btz::GainReductionRibbon    grRibbon;
     btz::SpectrumDisplay        spectrumDisplay;
-    btz::DirectManipSpectrum    spectrumAdvanced;
+    btz::SpectrumDisplay        spectrumAdvanced;  // full-width in Advanced
     btz::ProcessingIndicator    satIndicator;
     btz::ProcessingIndicator    compIndicator;
     btz::ProcessingIndicator    limIndicator;
     btz::TabBar                 viewTabs;
-    btz::TabBar                 pageTabs;
     btz::PresetBrowser          presetBrowser;
+    btz::SafetyIndicator        safetyTruePeak;
+    btz::SafetyIndicator        safetyCorrelation;
+    btz::SafetyIndicator        safetyGR;
 
     // ── Simple Mode knobs ──
     btz::LabeledKnob simpleKnobDrive  { "DRIVE",  btz::id::drive };
-    btz::LabeledKnob simpleKnobTone   { "TONE",   btz::id::shine };
-    btz::LabeledKnob simpleKnobOutput { "OUTPUT", btz::id::output };
+    btz::LabeledKnob simpleKnobTone   { "CHARACTER", btz::id::shine };
+    btz::LabeledKnob simpleKnobOutput { "MIX / OUTPUT", btz::id::output };
 
-    // ── Toolbar buttons ──
+    // ── Header toolbar ──
     juce::TextButton btnUndo { "UNDO" }, btnRedo { "REDO" };
     juce::TextButton btnAB { "A" }, btnCopyAB { "A>B" };
     juce::TextButton btnPresetPrev { "<" }, btnPresetNext { ">" };
     juce::TextButton btnPresetSave { "SAVE" };
+    juce::TextButton btnDelta { "DELTA" };
     juce::Label lblPresetName;
     juce::ToggleButton btnBypass { "BYPASS" };
+    juce::ToggleButton btnAutoGain { "AUTO" };
 
-    // ── Core knobs (Standard — Main page) ──
+    // ── Standard Mode: Character knobs (left column) ──
     juce::Slider kPunch, kWarmth, kBoom, kGlue, kAir, kWidth;
-    juce::Slider kDrive, kMix, kMaster;
-    juce::Slider kDensity, kMotion, kEra;
     juce::Label lPunch, lWarmth, lBoom, lGlue, lAir, lWidth;
+
+    // ── Standard Mode: Center (Drive/Mix/Master) ──
+    juce::Slider kDrive, kMix, kMaster;
     juce::Label lDrive, lMix, lMaster;
-    juce::Label lDensity, lMotion, lEra;
 
-    // ── Macro knobs ──
-    juce::Slider kMacro0, kMacro1, kMacro2, kMacro3;
-    juce::Label lMacro0, lMacro1, lMacro2, lMacro3;
+    // ── Standard Mode: Bottom row (Density/Motion/Era/Intensity) ──
+    juce::Slider kDensity, kMotion, kEra, kIntensity;
+    juce::Label lDensity, lMotion, lEra, lIntensity;
 
-    // ── Spark page ──
-    juce::Slider kCeiling, kIntensity;
-    juce::Label lCeiling, lIntensity;
-
-    // ── Shine controls ──
-    juce::Slider kShine, kShineMix, kShineFreq, kShineQ;
-    juce::Label lShine, lShineMix, lShineFreq, lShineQ;
-
-    // ── Advanced controls ──
+    // ── Advanced Mode: Saturation/Dynamics/Multiband ──
     juce::ComboBox cSatModel, cGlueScHpf, cMultiband, cQuality;
     juce::Label lSatModel, lGlueScHpf, lMultiband, lQuality;
     juce::ToggleButton btnMidSide { "M/S" };
-    juce::Slider kResTame, kTransSens;
-    juce::Label lResTame, lTransSens;
+    juce::Slider kResTame, kTransSens, kCeiling, kShine;
+    juce::Label lResTame, lTransSens, lCeiling, lShine;
+
+    // ── Advanced Mode: Glue compressor detail ──
+    juce::Slider kGlueAttack, kGlueRelease, kGlueRatio;
+    juce::Label lGlueAttack, lGlueRelease, lGlueRatio;
 
     // ── Attachments ──
     using SliderAttachment = juce::AudioProcessorValueTreeState::SliderAttachment;
@@ -148,13 +152,15 @@ private:
 
     std::unique_ptr<SliderAttachment> aPunch, aWarmth, aBoom, aGlue, aAir, aWidth;
     std::unique_ptr<SliderAttachment> aDrive, aMix, aMaster;
-    std::unique_ptr<SliderAttachment> aDensity, aMotion, aEra;
-    std::unique_ptr<SliderAttachment> aCeiling, aIntensity;
-    std::unique_ptr<SliderAttachment> aShine, aShineMix, aShineFreq, aShineQ;
-    std::unique_ptr<SliderAttachment> aMacro0, aMacro1, aMacro2, aMacro3;
+    std::unique_ptr<SliderAttachment> aDensity, aMotion, aEra, aIntensity;
+    std::unique_ptr<SliderAttachment> aCeiling, aShine;
     std::unique_ptr<SliderAttachment> aResTame, aTransSens;
-    std::unique_ptr<ButtonAttachment> aBypass, aMidSide;
+    std::unique_ptr<SliderAttachment> aGlueAttack, aGlueRelease, aGlueRatio;
+    std::unique_ptr<ButtonAttachment> aBypass, aMidSide, aAutoGain;
     std::unique_ptr<ComboAttachment>  aSatModel, aGlueScHpf, aMultiband, aQuality;
+
+    // ── Delta monitoring state ──
+    bool deltaMode = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(BTZAudioProcessorEditor)
 };

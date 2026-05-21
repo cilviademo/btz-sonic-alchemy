@@ -1,8 +1,8 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.cpp  v11
+  Box Tone Zone (BTZ) — PluginProcessor.cpp  v12 Ivory System
   ──────────────────────────────────────────────────────────────────────────
-  Senior-dev quality rewrite. All APIs match BTZDsp.h v11 exactly.
-  Thread model: processBlock = audio thread only, no allocation.
+  All APIs match BTZDsp.h v12. Thread model: processBlock = audio thread only.
+  Delta monitoring, auto-gain, correlation metering, full signal chain.
   ──────────────────────────────────────────────────────────────────────────
 */
 #include "PluginProcessor.h"
@@ -423,6 +423,25 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
     const float* dryR = dryBuffer.getReadPointer(1);
     for (int i = 0; i < numSamples; ++i)
         bypassCrossfader.processStereo(dryL[i], dryR[i], dataL[i], dataR[i]);
+
+    // Delta monitoring: output = wet - dry (what BTZ is adding)
+    if (deltaMonitoring.load(std::memory_order_relaxed)) {
+        for (int i = 0; i < numSamples; ++i) {
+            dataL[i] = dataL[i] - dryL[i];
+            dataR[i] = dataR[i] - dryR[i];
+        }
+    }
+
+    // Stereo correlation measurement
+    float corrSum = 0.0f, energyL = 0.0f, energyR = 0.0f;
+    for (int i = 0; i < numSamples; ++i) {
+        corrSum += dataL[i] * dataR[i];
+        energyL += dataL[i] * dataL[i];
+        energyR += dataR[i] * dataR[i];
+    }
+    const float denom = std::sqrt(energyL * energyR);
+    const float corr = (denom > 1e-8f) ? (corrSum / denom) : 1.0f;
+    meters.correlation.store(corr, std::memory_order_relaxed);
 
     // Update meters
     sparkGR = glueComp.lastGainReductionDb;

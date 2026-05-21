@@ -1,5 +1,5 @@
 /*
-  Box Tone Zone (BTZ) — BTZDsp.h  v11
+  Box Tone Zone (BTZ) — BTZDsp.h  v12 Ivory System
   ──────────────────────────────────────────────────────────────────────────
   Production-quality DSP header. Single-header library.
 
@@ -55,7 +55,7 @@ namespace BTZDsp {
 // ═══════════════════════════════════════════════════════════════════════════
 // Constants
 // ═══════════════════════════════════════════════════════════════════════════
-static constexpr int   kStateVersion        = 11;
+static constexpr int   kStateVersion        = 12;
 static constexpr float kPi                  = 3.14159265358979323846f;
 static constexpr float kTwoPi              = 6.28318530717958647692f;
 static constexpr float kSqrt2              = 1.41421356237309504880f;
