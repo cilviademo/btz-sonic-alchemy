@@ -1,5 +1,5 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.h  v12 Ivory System
+  Box Tone Zone (BTZ) — PluginProcessor.h  v1.0 Ivory System
   ──────────────────────────────────────────────────────────────────────────
   Thread model:
     • Audio thread: processBlock only — no allocation, no locks.

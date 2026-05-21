@@ -1,8 +1,8 @@
 # Box Tone Zone (BTZ) — Sonic Alchemy
 
-A next-generation saturation, dynamics, and tone-shaping audio plugin built with JUCE and C++.
+A next-generation saturation, dynamics, and tone-shaping audio plugin built with JUCE 8 and C++17.
 
-The plugin source lives in [`BTZ/`](./BTZ/) — see [`BTZ/README.md`](./BTZ/README.md) for full documentation, build instructions, and architecture details.
+**Version: v1.0.0 Baseline**
 
 ## Quick Start
 
@@ -13,6 +13,17 @@ cmake --build build --config Release
 ```
 
 The resulting VST3/AU/CLAP binaries will be in `build/BTZ_artefacts/`.
+
+## Documentation
+
+| Document | Purpose |
+|----------|---------|
+| [BTZ/README.md](./BTZ/README.md) | Plugin build instructions and feature overview |
+| [docs/BTZ_PROJECT_PRIMER.md](./docs/BTZ_PROJECT_PRIMER.md) | Quick-start orientation |
+| [docs/BTZ_MASTER_ARCHITECTURE.md](./docs/BTZ_MASTER_ARCHITECTURE.md) | Technical architecture |
+| [docs/BTZ_AI_WORKFLOW.md](./docs/BTZ_AI_WORKFLOW.md) | AI agent instructions |
+| [docs/BTZ_V1_BASELINE_ARCHIVE.md](./docs/BTZ_V1_BASELINE_ARCHIVE.md) | Full V1-V12 history |
+| [docs/BTZ_CHANGELOG.md](./docs/BTZ_CHANGELOG.md) | Version changelog |
 
 ## License
 

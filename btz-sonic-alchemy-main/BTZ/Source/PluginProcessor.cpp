@@ -1,7 +1,7 @@
 /*
-  Box Tone Zone (BTZ) — PluginProcessor.cpp  v12 Ivory System
+  Box Tone Zone (BTZ) — PluginProcessor.cpp  v1.0 Ivory System
   ──────────────────────────────────────────────────────────────────────────
-  All APIs match BTZDsp.h v12. Thread model: processBlock = audio thread only.
+  All APIs match BTZDsp.h v1.0. Thread model: processBlock = audio thread only.
   Delta monitoring, auto-gain, correlation metering, full signal chain.
   ──────────────────────────────────────────────────────────────────────────
 */

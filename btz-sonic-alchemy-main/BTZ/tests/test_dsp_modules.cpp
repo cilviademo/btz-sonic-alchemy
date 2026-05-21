@@ -1,8 +1,8 @@
 /*
-  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v12 Ivory System
+  Box Tone Zone (BTZ) — test_dsp_modules.cpp  v1.0 Ivory System
   ────────────────────────────────────────────────────────────────────
   GoogleTest-based unit tests for all BTZDsp modules.
-  v12: Matches BTZDsp.h v12 Ivory System API.
+  v1.0: Matches BTZDsp.h v1.0 Ivory System API.
   Build: cmake -DBTZ_BUILD_TESTS=ON ..
   Run:   ctest --output-on-failure
 */

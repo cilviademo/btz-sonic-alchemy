@@ -1,5 +1,5 @@
 /*
-  Box Tone Zone (BTZ) — BTZTheme.h  v12 "Ivory System"
+  Box Tone Zone (BTZ) — BTZTheme.h  v1.0 "Ivory System"
   ──────────────────────────────────────────────────────────────────────────
   SINGLE SOURCE OF TRUTH for every visual constant.
 

@@ -1,5 +1,5 @@
 /*
-  Box Tone Zone (BTZ) — PluginEditor.cpp  v12 Ivory System
+  Box Tone Zone (BTZ) — PluginEditor.cpp  v1.0 Ivory System
   ──────────────────────────────────────────────────────────────────────────
   Calm horizontal mastering-console architecture.
   All colours from btz::palette (Ivory System).
@@ -554,7 +554,7 @@ void BTZAudioProcessorEditor::paint(juce::Graphics& g) {
 
     // Version badge
     g.setColour(juce::Colour(palette::warmGray));
-    g.drawText("v12", footerArea.reduced((float)space::md, 0), juce::Justification::centredRight);
+    g.drawText("v1.0", footerArea.reduced((float)space::md, 0), juce::Justification::centredRight);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

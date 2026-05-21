@@ -1,5 +1,5 @@
 /*
-  Box Tone Zone (BTZ) — PluginEditor.h  v12 Ivory System
+  Box Tone Zone (BTZ) — PluginEditor.h  v1.0 Ivory System
   ──────────────────────────────────────────────────────────────────────────
   Three view modes: Simple, Standard, Advanced.
   All colours from btz::palette (Ivory System).

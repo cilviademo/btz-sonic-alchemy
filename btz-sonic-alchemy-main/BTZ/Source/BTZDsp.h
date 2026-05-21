@@ -1,5 +1,5 @@
 /*
-  Box Tone Zone (BTZ) — BTZDsp.h  v12 Ivory System
+  Box Tone Zone (BTZ) — BTZDsp.h  v1.0 Ivory System
   ──────────────────────────────────────────────────────────────────────────
   Production-quality DSP header. Single-header library.
 

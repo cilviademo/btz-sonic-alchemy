@@ -1,5 +1,5 @@
 /*
-  Box Tone Zone (BTZ) — BTZComponents.h  v12 "Ivory System"
+  Box Tone Zone (BTZ) — BTZComponents.h  v1.0 "Ivory System"
   ──────────────────────────────────────────────────────────────────────────
   All reusable UI components. Every colour and dimension comes from BTZTheme.h.
   Zero hardcoded hex values. Zero magic numbers.

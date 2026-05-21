@@ -1,4 +1,4 @@
-# Box Tone Zone (BTZ) — v1.2.0 Ivory System
+# Box Tone Zone (BTZ) — v1.0.0 Ivory System
 
 A premium saturation, dynamics, and tone-shaping plugin built with JUCE 8.
 
@@ -140,7 +140,7 @@ Knobs are rendered as ceramic-style circles with subtle shadow, matte fill, and 
 
 ## State Version
 
-Current: **v12** (Ivory System). State migration handles v10 to v12 automatically.
+Current: **v1.0** (Ivory System). State migration handles legacy versions automatically.
 
 ## CI/CD
 
