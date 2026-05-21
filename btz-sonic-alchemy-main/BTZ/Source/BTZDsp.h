@@ -154,7 +154,19 @@ struct SmoothParam {
         return current;
     }
 
+    // Advance n samples in a single O(1) step. Use when the smoothed value is
+    // consumed once per block (as a block constant) instead of per sample —
+    // calling next() once per block would smooth ~blockSize times too slowly.
+    inline float advanceBlock(int n) noexcept {
+        if (n > 0) {
+            current = target + (current - target) * std::pow(1.0f - coeff, (float)n);
+            if (std::abs(target - current) < 1.0e-6f) current = target;
+        }
+        return current;
+    }
+
     void snapTo(float v) noexcept { current = target = v; }
+    void snap() noexcept { current = target; }  // snap to the existing target
     void reset(float v) noexcept { snapTo(v); }  // alias for test compatibility
     bool isSmoothing() const noexcept { return std::abs(target - current) > 1.0e-6f; }
 };

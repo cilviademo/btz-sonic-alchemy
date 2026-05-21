@@ -91,6 +91,31 @@ TEST(SmoothParam, ImmediateAfterReset) {
     EXPECT_FLOAT_EQ(sp.next(), 0.75f);
 }
 
+// Regression: block-rate smoothers are advanced via advanceBlock(), not next().
+// A smoother that is never advanced stays frozen at its initial value (the
+// bug that made Mix stick at 0 = fully-dry output).
+TEST(SmoothParam, AdvanceBlockConvergesToTarget) {
+    SmoothParam sp;
+    sp.setTime(20.0f, kSR);   // 20 ms
+    sp.setTarget(1.0f);
+    // One 512-sample block should move it well off zero...
+    sp.advanceBlock(512);
+    EXPECT_GT(sp.current, 0.0f);
+    // ...and after ~200 ms of blocks it should reach the target.
+    for (int i = 0; i < 32; ++i) sp.advanceBlock(512);
+    EXPECT_NEAR(sp.current, 1.0f, 1e-3f);
+}
+
+TEST(SmoothParam, AdvanceBlockMatchesPerSampleNext) {
+    SmoothParam a, b;
+    a.setTime(15.0f, kSR); b.setTime(15.0f, kSR);
+    a.setTarget(0.8f);     b.setTarget(0.8f);
+    const int n = 256;
+    for (int i = 0; i < n; ++i) a.next();   // per-sample path
+    b.advanceBlock(n);                      // closed-form path
+    EXPECT_NEAR(a.current, b.current, 1e-4f);
+}
+
 TEST(EnvFollower, TracksEnvelope) {
     EnvFollower env;
     env.prepare(kSR, 0.001f, 0.050f);

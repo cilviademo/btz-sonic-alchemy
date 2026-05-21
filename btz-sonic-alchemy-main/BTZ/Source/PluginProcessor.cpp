@@ -223,6 +223,16 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
 
     initSmoothers(sampleRate);
 
+    // Initialise smoothers to the current parameter values so the first blocks
+    // don't ramp up from zero (which would briefly mute/mono the output).
+    updateTargetsFromAPVTS();
+    for (auto* s : { &sPunch, &sWarmth, &sBoom, &sGlue, &sAir, &sWidth, &sDensity,
+                     &sMotion, &sEra, &sMix, &sDrive, &sMaster, &sShine, &sShineMix,
+                     &sShineFreq, &sShineQ, &sMacro0, &sMacro1, &sMacro2, &sMacro3,
+                     &sResonanceSens, &sResonanceDepth, &sTransientSens, &sTransientMix,
+                     &sToneMatchAmount })
+        s->snap();
+
     activeQualityMode = getRequestedQualityMode();
     // In prepareToPlay (message thread), we can call setLatencySamples directly
     {
@@ -307,6 +317,7 @@ void BTZAudioProcessor::updateTargetsFromAPVTS() {
 
     // Transient splitter
     transientSplitter.enabled = (bool)*apvts.getRawParameterValue("transEnabled");
+    transientSplitter.sensitivity = *apvts.getRawParameterValue("transSens");  // was inert
 
     // Multiband count — only update numBands (no allocation/prepare on audio thread)
     const int mbCount = (int)*apvts.getRawParameterValue("multibandCount");
@@ -377,6 +388,20 @@ void BTZAudioProcessor::processBlock(juce::AudioBuffer<float>& buffer, juce::Mid
 
     // Update smoother targets from parameter values
     updateTargetsFromAPVTS();
+
+    // Advance block-rate smoothers (consumed once per block as a constant).
+    // Without this their .current would never leave 0 — e.g. Mix would stay at
+    // 0 (fully dry) and Width would collapse to mono. The per-sample smoothers
+    // (drive/warmth/punch/density/master/resonance) advance via next() instead.
+    sMix.advanceBlock(numSamples);
+    sGlue.advanceBlock(numSamples);
+    sShine.advanceBlock(numSamples);
+    sShineFreq.advanceBlock(numSamples);
+    sShineQ.advanceBlock(numSamples);
+    sWidth.advanceBlock(numSamples);
+    sMotion.advanceBlock(numSamples);
+    sTransientMix.advanceBlock(numSamples);
+    sBoom.advanceBlock(numSamples);
 
     // Store dry signal for wet/dry mix
     dryBuffer.copyFrom(0, 0, dataL, numSamples);
@@ -556,12 +581,15 @@ void BTZAudioProcessor::processLinearPre(float* dataL, float* dataR, int numSamp
 // processNonlinear — saturation (transient-aware, model-select, multiband)
 // ═══════════════════════════════════════════════════════════════════════════
 void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamples, float osFactor) {
-    (void)osFactor;
+    // When oversampling, this loop runs osFactor× more samples per host block,
+    // so all per-sample modulation must advance against the oversampled rate or
+    // it runs osFactor× too fast.
+    const double effectiveSR = currentSampleRate * (double)juce::jmax(1.0f, osFactor);
 
     // Tick LFOs (if any active)
     const int lfoCount = (int)*apvts.getRawParameterValue("lfoCount");
     for (int lfoIdx = 0; lfoIdx < juce::jmin(lfoCount, BTZDsp::kMaxLFOs); ++lfoIdx)
-        lfoModSources[lfoIdx].prepare(currentSampleRate, 1.0f + (float)lfoIdx * 0.5f);
+        lfoModSources[lfoIdx].prepare(effectiveSR, 1.0f + (float)lfoIdx * 0.5f);
 
     // Multiband split (if >1 band)
     const bool useMultiband = multibandEngine.numBands > 1;
@@ -578,7 +606,7 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
         const float motionAmt = sMotion.current;
         float driveModulated = drive;
         if (motionAmt > 0.01f) {
-            motionPhase += 2.0f / (float)currentSampleRate;  // 2 Hz LFO
+            motionPhase += 2.0f / (float)effectiveSR;  // 2 Hz LFO (oversampling-aware)
             if (motionPhase >= 1.0f) motionPhase -= 1.0f;
             const float lfoVal = std::sin(BTZDsp::kTwoPi * motionPhase);
             driveModulated += lfoVal * motionAmt * 0.2f;
