@@ -133,6 +133,37 @@ int main() {
         check(ok, "all factory presets produce finite, non-silent output");
     }
 
+    // ── 7. Parameters display real units + parse typed values back ──
+    {
+        std::printf("Parameter units:\n");
+        BTZAudioProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        auto& a = p.getAPVTS();
+        auto txt = [&](const char* id) {
+            auto* prm = a.getParameter(id);
+            return prm ? prm->getText(prm->getValue(), 32) : juce::String("?");
+        };
+        auto roundtrip = [&](const char* id, const juce::String& typed, float expectedVal, float tol) {
+            auto* prm = a.getParameter(id);
+            if (!prm) return false;
+            const float norm = prm->getValueForText(typed);
+            if (auto* rp = dynamic_cast<juce::RangedAudioParameter*>(prm)) {
+                const float val = rp->getNormalisableRange().convertFrom0to1(norm);
+                return std::abs(val - expectedVal) < tol;
+            }
+            return false;
+        };
+        setVal(p, "drive", 0.5f);   check(txt("drive").containsIgnoreCase("%"),  "drive shows %");
+        setVal(p, "ceiling", -1.0f);check(txt("ceiling").containsIgnoreCase("dB"), "ceiling shows dB");
+        setVal(p, "shineFreq", 8000.0f); check(txt("shineFreq").containsIgnoreCase("Hz"), "shineFreq shows Hz/kHz");
+        setVal(p, "glueAttack", 10.0f);  check(txt("glueAttack").containsIgnoreCase("ms"), "glueAttack shows ms");
+        setVal(p, "glueRatio", 4.0f);    check(txt("glueRatio").contains(":1"), "glueRatio shows :1");
+        setVal(p, "targetLUFS", -14.0f); check(txt("targetLUFS").containsIgnoreCase("LUFS"), "targetLUFS shows LUFS");
+        check(roundtrip("drive", "50 %", 0.5f, 0.02f),      "type-in '50 %' -> drive 0.5");
+        check(roundtrip("ceiling", "-1.0 dB", -1.0f, 0.05f),"type-in '-1.0 dB' -> ceiling -1.0");
+        check(roundtrip("shineFreq", "8.00 kHz", 8000.0f, 50.0f), "type-in '8 kHz' -> 8000 Hz");
+    }
+
     std::printf("\n%s — %d failure(s)\n", failures == 0 ? "ALL PROCESSOR CHECKS PASSED" : "PROCESSOR CHECKS FAILED", failures);
     return failures == 0 ? 0 : 1;
 }
