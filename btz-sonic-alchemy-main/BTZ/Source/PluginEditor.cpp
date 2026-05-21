@@ -197,8 +197,8 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
     btnRedo.onClick = [this] { proc.redo(); };
     btnAB.onClick = [this] { proc.toggleAB(); };
     btnCopyAB.onClick = [this] { proc.copyAtoB(); };
-    btnPresetPrev.onClick = [this] { proc.loadPresetByIndex(proc.getCurrentPresetIndex() - 1); };
-    btnPresetNext.onClick = [this] { proc.loadPresetByIndex(proc.getCurrentPresetIndex() + 1); };
+    btnPresetPrev.onClick = [this] { loadCombinedPreset(presetBrowser.getSelected() - 1); };
+    btnPresetNext.onClick = [this] { loadCombinedPreset(presetBrowser.getSelected() + 1); };
     btnDelta.onClick = [this] {
         deltaMode = !deltaMode;
         btnDelta.setToggleState(deltaMode, juce::dontSendNotification);
@@ -328,10 +328,8 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
             p->setValueNotifyingHost(v);
     };
 
-    // ── Preset browser ──
-    presetBrowser.onSelect = [this](int idx) {
-        proc.loadPresetByIndex(idx);
-    };
+    // ── Preset browser (factory presets first, then user files) ──
+    presetBrowser.onSelect = [this](int idx) { loadCombinedPreset(idx); };
     populatePresetBrowser();
 
     // ── v1.0.1: Target Lock UI setup ──
@@ -948,21 +946,29 @@ void BTZAudioProcessorEditor::layoutAdvanced(juce::Rectangle<int> area) {
 // ═══════════════════════════════════════════════════════════════════════════
 
 void BTZAudioProcessorEditor::populatePresetBrowser() {
-    auto files = proc.getPresetFiles();
     std::vector<btz::PresetBrowser::Entry> entries;
-    entries.reserve(static_cast<size_t>(files.size()));
 
-    for (const auto& f : files) {
-        btz::PresetBrowser::Entry e;
-        e.name = f.getFileNameWithoutExtension();
-        e.category = f.getParentDirectory().getFileName();
-        if (e.category == proc.getPresetDirectory().getFileName())
-            e.category = "User";
-        entries.push_back(std::move(e));
-    }
+    // Factory presets first (always available).
+    numFactoryPresets_ = proc.getNumFactoryPresets();
+    for (const auto& fp : proc.getFactoryPresets())
+        entries.push_back({ fp.name, fp.category });
+
+    // Then user presets from disk.
+    for (const auto& f : proc.getPresetFiles())
+        entries.push_back({ f.getFileNameWithoutExtension(), "User" });
 
     presetBrowser.setPresets(entries);
-    presetBrowser.setSelected(proc.getCurrentPresetIndex());
+}
+
+void BTZAudioProcessorEditor::loadCombinedPreset(int combinedIndex) {
+    const int total = numFactoryPresets_ + proc.getPresetFiles().size();
+    if (total <= 0) return;
+    const int idx = juce::jlimit(0, total - 1, combinedIndex);
+    if (idx < numFactoryPresets_)
+        proc.loadFactoryPreset(idx);
+    else
+        proc.loadPresetByIndex(idx - numFactoryPresets_);
+    presetBrowser.setSelected(idx);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

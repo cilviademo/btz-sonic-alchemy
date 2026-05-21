@@ -726,6 +726,7 @@ struct TruePeakLimiter {
     int delayIdx = 0;
     float gainState = 1.0f;
     float releaseCoeff = 0.0f;
+    float truePeakHold = 0.0f;        // measured inter-sample peak (linear), for the UI
 
     // History buffer for polyphase interpolation (4 samples needed)
     float histL[4] = {};
@@ -798,6 +799,9 @@ struct TruePeakLimiter {
 
         // Detect true inter-sample peak via 4x polyphase interpolation
         const float truePeak = detectTruePeak(l, r);
+        // Hold the measured ISP (with slow decay) so the UI can show a real
+        // dBTP reading rather than a sample-peak approximation.
+        truePeakHold = juce::jmax(truePeakHold * 0.9999f, truePeak);
         const float targetGain = (truePeak > ceilingLinear) ? (ceilingLinear / truePeak) : 1.0f;
 
         // Smooth gain (instant attack, smooth release)

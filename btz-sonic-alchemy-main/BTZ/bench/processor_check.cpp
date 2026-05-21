@@ -112,6 +112,27 @@ int main() {
         check(allFinite(big), "oversized block handled without NaN/crash");
     }
 
+    // ── 6. Every factory preset loads and produces finite, non-silent audio ──
+    {
+        std::printf("Factory presets:\n");
+        BTZAudioProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        const int n = p.getNumFactoryPresets();
+        check(n >= 10, "at least 10 factory presets exist");
+        bool ok = true;
+        for (int i = 0; i < n; ++i) {
+            p.loadFactoryPreset(i);
+            juce::AudioBuffer<float> buf(2, 512);
+            for (int blk = 0; blk < 16; ++blk) { fillSine(buf, 330.0f, 48000.0f); p.processBlock(buf, midi); }
+            if (!allFinite(buf) || rms(buf) < 1.0e-5f) {
+                ok = false;
+                std::printf("    preset %d (%s) produced bad output\n",
+                            i, p.getFactoryPresets()[(size_t) i].name.toRawUTF8());
+            }
+        }
+        check(ok, "all factory presets produce finite, non-silent output");
+    }
+
     std::printf("\n%s — %d failure(s)\n", failures == 0 ? "ALL PROCESSOR CHECKS PASSED" : "PROCESSOR CHECKS FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

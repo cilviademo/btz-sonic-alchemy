@@ -83,6 +83,8 @@ private:
     void layoutAdvanced(juce::Rectangle<int> content);
     void hideAllControls();
     void populatePresetBrowser();
+    void loadCombinedPreset(int combinedIndex);   // factory (first) + user presets
+    int  numFactoryPresets_ = 0;
     void updateSafetyIndicators();
     void updateVisualizers();   // FFT the processor's spectrum buffer → displays
 

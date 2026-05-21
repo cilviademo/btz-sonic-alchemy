@@ -107,6 +107,14 @@ public:
     juce::String getCurrentPresetName() const { return currentPresetName; }
     void loadNeuralModel(const juce::File& modelFile, BTZDsp::SaturationModel slot);
 
+    // ── Factory presets (built-in, always available) ─────────────────────
+    struct FactoryParam { const char* id; float value; };
+    struct FactoryPreset { juce::String name; juce::String category; std::vector<FactoryParam> params; };
+    static const std::vector<FactoryPreset>& getFactoryPresets();
+    int  getNumFactoryPresets() const { return (int) getFactoryPresets().size(); }
+    void loadFactoryPreset(int index);
+    void resetToDefaults();
+
 private:
     // ── Parameter layout ─────────────────────────────────────────────────
     juce::AudioProcessorValueTreeState apvts;

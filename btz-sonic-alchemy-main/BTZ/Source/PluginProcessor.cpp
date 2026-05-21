@@ -872,7 +872,9 @@ void BTZAudioProcessor::updateMeters(const float* inL, const float* inR,
     meters.outputPeakR.store(outputMeterBallistics.peakR, std::memory_order_relaxed);
     meters.grDb.store(grDb, std::memory_order_relaxed);
     meters.lufs.store(loudnessMeter.momentary, std::memory_order_relaxed);
-    meters.truePeak.store(loudnessMeter.truePeak, std::memory_order_relaxed);
+    // Real inter-sample peak (dBTP) from the limiter's 4x ISP detector, not the
+    // loudness meter's sample-peak approximation.
+    meters.truePeak.store(BTZDsp::gainToDb(truePeakLimiter.truePeakHold), std::memory_order_relaxed);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1048,6 +1050,103 @@ void BTZAudioProcessor::migrateState(juce::ValueTree& tree, int fromVersion) {
         }
     }
     tree.setProperty("stateVersion", BTZDsp::kStateVersion, nullptr);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Factory Presets (message thread only) — curated, musically useful starting
+// points. Only parameters that audibly do something are set; everything else
+// resets to its default. The mastering bank showcases Target Lock (the hero).
+// ═══════════════════════════════════════════════════════════════════════════
+const std::vector<BTZAudioProcessor::FactoryPreset>& BTZAudioProcessor::getFactoryPresets() {
+    static const std::vector<FactoryPreset> presets = {
+        { "Init / Neutral", "Utility",
+          { {"drive",0.15f}, {"mix",1.0f}, {"master",0.7f}, {"satModel",0.f} } },
+
+        { "Mix Bus Glue", "Mix Bus",
+          { {"satModel",1.f}, {"drive",0.25f}, {"warmth",0.40f}, {"glue",0.55f},
+            {"glueRatio",2.0f}, {"glueAttack",30.f}, {"glueRelease",120.f}, {"glueScHpf",1.f},
+            {"shine",0.30f}, {"shineFreq",10000.f}, {"width",0.55f} } },
+
+        { "Mix Bus Warmth", "Mix Bus",
+          { {"satModel",2.f}, {"drive",0.35f}, {"warmth",0.60f}, {"boom",0.40f},
+            {"glue",0.30f}, {"glueRatio",2.f}, {"shine",0.20f} } },
+
+        { "Drum Smash", "Drum Bus",
+          { {"satModel",3.f}, {"drive",0.60f}, {"punch",0.70f},
+            {"glue",0.70f}, {"glueRatio",4.f}, {"glueAttack",10.f}, {"glueRelease",80.f},
+            {"transEnabled",1.f}, {"transSens",0.60f}, {"transMix",0.60f}, {"shine",0.40f} } },
+
+        { "Drum Glue", "Drum Bus",
+          { {"satModel",1.f}, {"drive",0.30f}, {"punch",0.50f},
+            {"glue",0.60f}, {"glueRatio",4.f}, {"glueAttack",30.f}, {"glueRelease",140.f} } },
+
+        { "Vocal Warmth", "Vocal",
+          { {"satModel",1.f}, {"drive",0.30f}, {"warmth",0.55f},
+            {"shine",0.45f}, {"shineFreq",10000.f}, {"shineQ",0.7f},
+            {"glue",0.40f}, {"glueRatio",3.f}, {"glueAttack",5.f}, {"glueRelease",150.f},
+            {"glueScHpf",1.f}, {"resEnabled",1.f}, {"resSens",0.45f}, {"resDepth",0.50f} } },
+
+        { "Vocal Presence", "Vocal",
+          { {"satModel",0.f}, {"drive",0.22f}, {"shine",0.60f}, {"shineFreq",8000.f},
+            {"shineQ",0.8f}, {"glue",0.35f}, {"glueRatio",3.f} } },
+
+        { "Bass Saturator", "Bass",
+          { {"satModel",4.f}, {"boom",0.60f}, {"drive",0.45f}, {"glue",0.40f},
+            {"glueRatio",3.f}, {"width",0.45f}, {"shine",0.10f} } },
+
+        { "Bass Tighten", "Bass",
+          { {"satModel",2.f}, {"drive",0.30f}, {"boom",0.50f},
+            {"glue",0.55f}, {"glueRatio",4.f}, {"glueAttack",10.f}, {"glueRelease",80.f},
+            {"width",0.45f} } },
+
+        { "Master Clean", "Mastering",
+          { {"satModel",0.f}, {"drive",0.12f}, {"glue",0.25f}, {"glueRatio",2.f},
+            {"glueAttack",30.f}, {"glueRelease",200.f}, {"shine",0.20f}, {"shineFreq",12000.f},
+            {"ceiling",-1.0f}, {"quality",2.f}, {"width",0.55f}, {"autoGain",1.f} } },
+
+        { "Master Streaming -14 LUFS", "Mastering",
+          { {"targetLUFS",-14.f}, {"targetLUFSLock",1.f}, {"targetDynThresh",6.f},
+            {"ceiling",-1.0f}, {"drive",0.15f}, {"glue",0.30f}, {"glueRatio",3.f},
+            {"quality",2.f} } },
+
+        { "Master Loud -9 LUFS", "Mastering",
+          { {"targetLUFS",-9.f}, {"targetLUFSLock",1.f}, {"targetDynThresh",3.f},
+            {"ceiling",-1.0f}, {"drive",0.22f}, {"glue",0.45f}, {"glueRatio",3.f},
+            {"quality",3.f} } },
+
+        { "Parallel Crush", "Parallel",
+          { {"mix",0.40f}, {"drive",0.80f}, {"satModel",3.f}, {"density",0.60f},
+            {"glue",0.70f}, {"glueRatio",8.f}, {"glueAttack",5.f}, {"glueRelease",80.f} } },
+
+        { "Parallel Warmth", "Parallel",
+          { {"mix",0.50f}, {"drive",0.50f}, {"satModel",2.f}, {"warmth",0.60f}, {"boom",0.40f} } },
+
+        { "Wide & Open", "Creative",
+          { {"satModel",1.f}, {"drive",0.25f}, {"midSide",1.f}, {"width",0.80f}, {"shine",0.50f} } },
+
+        { "Lo-Fi Color", "Creative",
+          { {"satModel",2.f}, {"drive",0.60f}, {"boom",0.50f}, {"density",0.70f},
+            {"motion",0.30f}, {"width",0.40f} } },
+    };
+    return presets;
+}
+
+void BTZAudioProcessor::resetToDefaults() {
+    for (auto* p : getParameters())
+        if (auto* rp = dynamic_cast<juce::RangedAudioParameter*>(p))
+            rp->setValueNotifyingHost(rp->getDefaultValue());
+}
+
+void BTZAudioProcessor::loadFactoryPreset(int index) {
+    const auto& presets = getFactoryPresets();
+    if (index < 0 || index >= (int) presets.size()) return;
+    resetToDefaults();
+    const auto& preset = presets[(size_t) index];
+    for (const auto& fp : preset.params)
+        if (auto* p = apvts.getParameter(fp.id))
+            p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(fp.value));
+    currentPresetName = preset.name;
+    pushUndoState("Load preset: " + currentPresetName);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
