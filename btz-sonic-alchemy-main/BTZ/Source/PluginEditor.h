@@ -159,6 +159,25 @@ private:
     std::unique_ptr<ButtonAttachment> aBypass, aMidSide, aAutoGain;
     std::unique_ptr<ComboAttachment>  aSatModel, aGlueScHpf, aMultiband, aQuality;
 
+    // ── v1.0.1: Target Lock UI ──
+    juce::Label lblTargetLUFS, lblTargetRMS;
+    juce::Label lblTargetLow, lblTargetMid, lblTargetHigh;
+    juce::TextEditor txtTargetLUFS, txtTargetRMS;
+    juce::TextEditor txtTargetLow, txtTargetMid, txtTargetHigh;
+    juce::ToggleButton btnLUFSLock { "LOCK" }, btnRMSLock { "LOCK" };
+    juce::ToggleButton btnLowLock { "LOCK" }, btnMidLock { "LOCK" }, btnHighLock { "LOCK" };
+    juce::Slider kDynThreshold;
+    juce::Label lDynThreshold;
+    juce::Label lblTargetSection;
+
+    std::unique_ptr<SliderAttachment> aDynThreshold;
+    std::unique_ptr<ButtonAttachment> aLUFSLock, aRMSLock;
+    std::unique_ptr<ButtonAttachment> aLowLock, aMidLock, aHighLock;
+    // Note: TextEditor values are pushed to APVTS manually via onReturnKey/onFocusLost
+
+    void setupTargetLockUI();
+    void syncTargetLockFromAPVTS();
+
     // ── Delta monitoring state ──
     bool deltaMode = false;
 

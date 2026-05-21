@@ -1,0 +1,24 @@
+BTZ Sonic Alchemy — Support FAQ
+
+Q: Why does the volume stay the same when I turn up the Drive?
+A: BTZ features an internal Auto-Gain system. It measures the RMS level of the signal before saturation and automatically attenuates the output to match. This allows you to hear the actual harmonic changes without being fooled by the "louder sounds better" psychoacoustic effect. If you want to increase the final volume, use the Master slider.
+
+Q: The plugin is using a lot of CPU. How can I optimize it?
+A: BTZ is a complex DSP ecosystem. To save CPU:
+1. Switch from a Neural model to an Algorithmic model (like Tube or Tape).
+2. Ensure you are in "Draft" mode (1x oversampling) while tracking/mixing. Save "HQ" mode for rendering.
+3. If you are in Advanced mode, disable unused multiband splits.
+
+Q: What is the difference between the Tone knob and the Air slider?
+A: The Air slider (in Standard/Advanced mode) is a simple gain control for the TDF-II Shine EQ (a high-frequency shelf). The Tone knob (in Simple mode) is a macro that simultaneously adjusts the Shine EQ *and* the Resonance Tamer. Turning Tone up adds highs while dynamically suppressing harsh peaks, keeping the top end smooth.
+
+Q: Why is the Safety Indicator turning red?
+A: The Safety Indicator turns red if the plugin detects a mathematically invalid signal (NaN or Infinity) or a DC offset, and successfully blocks it from blowing out your speakers. If this happens frequently, check the plugins placed *before* BTZ in your chain, as they may be outputting corrupted audio.
+
+Q: Where are the presets saved on my computer?
+A: 
+- macOS: ~/Library/Audio/Presets/BTZ Audio/BTZ Sonic Alchemy/
+- Windows: C:\Users\[Username]\Documents\BTZ Audio\BTZ Sonic Alchemy\Presets\
+
+Q: Can I use BTZ for mastering?
+A: Absolutely. We recommend using Advanced Mode for mastering. Utilize the Multiband Crossover to apply saturation only to the lows or mids, use the True Peak Limiter to catch inter-sample peaks, and monitor the LUFS meter to hit your streaming targets.

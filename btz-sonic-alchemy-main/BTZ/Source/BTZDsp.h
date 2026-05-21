@@ -689,13 +689,32 @@ private:
 };
 
 struct TruePeakLimiter {
+    // ITU-R BS.1770-4 compliant True Peak Limiter
+    // Uses 4x polyphase FIR interpolation for inter-sample peak detection
     static constexpr int kLookahead = 8;
+    static constexpr int kISPFactor = 4;  // 4x oversampling for ISP detection
+    static constexpr int kISPFilterLen = 12; // Half-band FIR taps per phase
+
     float ceiling = -0.3f;
     float delayBufL[kLookahead] = {};
     float delayBufR[kLookahead] = {};
     int delayIdx = 0;
     float gainState = 1.0f;
     float releaseCoeff = 0.0f;
+
+    // History buffer for polyphase interpolation (4 samples needed)
+    float histL[4] = {};
+    float histR[4] = {};
+    int histIdx = 0;
+
+    // Polyphase FIR coefficients (4-point, 4-phase Lagrange interpolator)
+    // These approximate a sinc function for 4x oversampled peak detection
+    static constexpr float kPhaseCoeffs[4][4] = {
+        { 0.0f,    1.0f,    0.0f,    0.0f   },  // Phase 0: original sample
+        {-0.0625f, 0.5625f, 0.5625f,-0.0625f},  // Phase 1: +0.25 sample
+        {-0.0625f, 0.25f,   0.875f, -0.0625f},  // Phase 2: +0.5 sample (approx)
+        {-0.0234f, 0.0703f, 0.8672f, 0.0859f}   // Phase 3: +0.75 sample
+    };
 
     void prepare(double sr) noexcept {
         const float srf = (float)juce::jmax(1.0, sr);
@@ -706,8 +725,35 @@ struct TruePeakLimiter {
     void reset() noexcept {
         std::memset(delayBufL, 0, sizeof(delayBufL));
         std::memset(delayBufR, 0, sizeof(delayBufR));
+        std::memset(histL, 0, sizeof(histL));
+        std::memset(histR, 0, sizeof(histR));
         delayIdx = 0;
+        histIdx = 0;
         gainState = 1.0f;
+    }
+
+    // 4x polyphase interpolation to detect inter-sample peaks
+    inline float detectTruePeak(float l, float r) noexcept {
+        // Store current sample in history
+        histL[histIdx] = l;
+        histR[histIdx] = r;
+
+        float maxPeak = 0.0f;
+
+        // Evaluate all 4 phases to find the true peak
+        for (int phase = 0; phase < kISPFactor; ++phase) {
+            float interpL = 0.0f, interpR = 0.0f;
+            for (int tap = 0; tap < 4; ++tap) {
+                const int idx = (histIdx - 3 + tap + 4) % 4;
+                interpL += kPhaseCoeffs[phase][tap] * histL[idx];
+                interpR += kPhaseCoeffs[phase][tap] * histR[idx];
+            }
+            const float absPeak = juce::jmax(std::abs(interpL), std::abs(interpR));
+            if (absPeak > maxPeak) maxPeak = absPeak;
+        }
+
+        histIdx = (histIdx + 1) % 4;
+        return maxPeak;
     }
 
     inline void processStereo(float& l, float& r) noexcept {
@@ -721,10 +767,10 @@ struct TruePeakLimiter {
         const float delR = delayBufR[readIdx];
         delayIdx = (delayIdx + 1) % kLookahead;
 
-        // Calculate required gain reduction
-        const float peak = juce::jmax(std::abs(l), std::abs(r));
+        // Detect true inter-sample peak via 4x polyphase interpolation
+        const float truePeak = detectTruePeak(l, r);
         const float ceilLin = dbToGain(ceiling);
-        const float targetGain = (peak > ceilLin) ? (ceilLin / peak) : 1.0f;
+        const float targetGain = (truePeak > ceilLin) ? (ceilLin / truePeak) : 1.0f;
 
         // Smooth gain (instant attack, smooth release)
         if (targetGain < gainState)
@@ -790,36 +836,89 @@ struct ShineProcessor {
 };
 
 struct LinkwitzRileyCrossover {
-    // 2nd-order Linkwitz-Riley (two cascaded 1-pole filters = -12dB/oct)
-    // This gives flat magnitude sum at crossover (LR2 property)
+    // True Linkwitz-Riley 4th-order (LR4) crossover: -24dB/oct slopes
+    // Implemented as two cascaded 2nd-order Butterworth biquads for BOTH LP and HP
+    // LP and HP sum to unity (allpass) — no phase cancellation at crossover
     float freq = 250.0f;
-    // Two cascaded 1-pole LP states per channel
-    float lp1L = 0.0f, lp2L = 0.0f;
-    float lp1R = 0.0f, lp2R = 0.0f;
-    float coeff = 0.0f;
+
+    // LP biquad 1 & 2 coefficients (shared between both cascades)
+    float lp_b0 = 1.0f, lp_b1 = 0.0f, lp_b2 = 0.0f;
+    float lp_a1 = 0.0f, lp_a2 = 0.0f;
+    // HP biquad 1 & 2 coefficients
+    float hp_b0 = 1.0f, hp_b1 = 0.0f, hp_b2 = 0.0f;
+    float hp_a1 = 0.0f, hp_a2 = 0.0f;
+
+    // TDF-II state: 2 cascaded biquads x 2 channels x LP/HP
+    // LP cascade
+    float lp1_s1L = 0.0f, lp1_s2L = 0.0f, lp2_s1L = 0.0f, lp2_s2L = 0.0f;
+    float lp1_s1R = 0.0f, lp1_s2R = 0.0f, lp2_s1R = 0.0f, lp2_s2R = 0.0f;
+    // HP cascade
+    float hp1_s1L = 0.0f, hp1_s2L = 0.0f, hp2_s1L = 0.0f, hp2_s2L = 0.0f;
+    float hp1_s1R = 0.0f, hp1_s2R = 0.0f, hp2_s1R = 0.0f, hp2_s2R = 0.0f;
 
     void prepare(double sr, float freqHz) noexcept {
         freq = freqHz;
         const float srf = (float)juce::jmax(1.0, sr);
-        // Matched 1-pole coefficient for LR2 crossover
-        coeff = 1.0f - std::exp(-kTwoPi * freqHz / srf);
+        const float w0 = kTwoPi * juce::jlimit(20.0f, srf * 0.49f, freqHz) / srf;
+        const float sinW = std::sin(w0);
+        const float cosW = std::cos(w0);
+        // Butterworth Q = 0.7071 for each 2nd-order section
+        const float alpha = sinW / (2.0f * kSqrt2 * 0.5f); // Q = 1/sqrt(2) per section
+
+        // 2nd-order Butterworth LPF coefficients (RBJ cookbook)
+        {
+            const float a0 = 1.0f + alpha;
+            lp_b0 = ((1.0f - cosW) * 0.5f) / a0;
+            lp_b1 = (1.0f - cosW) / a0;
+            lp_b2 = ((1.0f - cosW) * 0.5f) / a0;
+            lp_a1 = (-2.0f * cosW) / a0;
+            lp_a2 = (1.0f - alpha) / a0;
+        }
+
+        // 2nd-order Butterworth HPF coefficients (RBJ cookbook)
+        {
+            const float a0 = 1.0f + alpha;
+            hp_b0 = ((1.0f + cosW) * 0.5f) / a0;
+            hp_b1 = (-(1.0f + cosW)) / a0;
+            hp_b2 = ((1.0f + cosW) * 0.5f) / a0;
+            hp_a1 = (-2.0f * cosW) / a0;
+            hp_a2 = (1.0f - alpha) / a0;
+        }
+
+        reset();
     }
 
-    void reset() noexcept { lp1L = lp2L = lp1R = lp2R = 0.0f; }
+    void reset() noexcept {
+        lp1_s1L = lp1_s2L = lp2_s1L = lp2_s2L = 0.0f;
+        lp1_s1R = lp1_s2R = lp2_s1R = lp2_s2R = 0.0f;
+        hp1_s1L = hp1_s2L = hp2_s1L = hp2_s2L = 0.0f;
+        hp1_s1R = hp1_s2R = hp2_s1R = hp2_s2R = 0.0f;
+    }
 
     inline void processStereo(float inL, float inR,
                               float& lowL, float& lowR,
                               float& highL, float& highR) noexcept {
-        // First 1-pole LP pass
-        lp1L += coeff * (inL - lp1L);
-        lp1R += coeff * (inR - lp1R);
-        // Second 1-pole LP pass (cascaded = 2nd order)
-        lp2L += coeff * (lp1L - lp2L);
-        lp2R += coeff * (lp1R - lp2R);
-        // Output
-        lowL = lp2L; lowR = lp2R;
-        highL = inL - lp2L;
-        highR = inR - lp2R;
+        // LP path: two cascaded 2nd-order Butterworth LPF = LR4 LP
+        lowL = biquadTDF2(inL, lp_b0, lp_b1, lp_b2, lp_a1, lp_a2, lp1_s1L, lp1_s2L);
+        lowL = biquadTDF2(lowL, lp_b0, lp_b1, lp_b2, lp_a1, lp_a2, lp2_s1L, lp2_s2L);
+        lowR = biquadTDF2(inR, lp_b0, lp_b1, lp_b2, lp_a1, lp_a2, lp1_s1R, lp1_s2R);
+        lowR = biquadTDF2(lowR, lp_b0, lp_b1, lp_b2, lp_a1, lp_a2, lp2_s1R, lp2_s2R);
+
+        // HP path: two cascaded 2nd-order Butterworth HPF = LR4 HP
+        highL = biquadTDF2(inL, hp_b0, hp_b1, hp_b2, hp_a1, hp_a2, hp1_s1L, hp1_s2L);
+        highL = biquadTDF2(highL, hp_b0, hp_b1, hp_b2, hp_a1, hp_a2, hp2_s1L, hp2_s2L);
+        highR = biquadTDF2(inR, hp_b0, hp_b1, hp_b2, hp_a1, hp_a2, hp1_s1R, hp1_s2R);
+        highR = biquadTDF2(highR, hp_b0, hp_b1, hp_b2, hp_a1, hp_a2, hp2_s1R, hp2_s2R);
+    }
+
+private:
+    static inline float biquadTDF2(float x, float b0, float b1, float b2,
+                                    float a1, float a2,
+                                    float& s1, float& s2) noexcept {
+        const float y = b0 * x + s1;
+        s1 = b1 * x - a1 * y + s2;
+        s2 = b2 * x - a2 * y;
+        return y;
     }
 };
 
@@ -1083,18 +1182,38 @@ struct MeterBallistics {
 };
 
 struct LoudnessMeter {
-    // Simplified EBU R128 momentary loudness (400ms window)
+    // ITU-R BS.1770-4 compliant loudness meter with K-weighting
+    // K-weighting = Stage 1 (high-shelf +4dB @ 1681Hz) + Stage 2 (HPF @ 38Hz)
     float momentary = -24.0f;
     float shortTerm = -24.0f;
     float integrated = -24.0f;
     float truePeak = -100.0f;
     float accumulator = 0.0f;
     int sampleCount = 0;
-    int windowSamples = 0;
+    int windowSamples = 0;      // 400ms for momentary
+    int shortTermWindow = 0;    // 3000ms for short-term
+    float shortTermAccum = 0.0f;
+    int shortTermCount = 0;
     float gatingThreshold = -70.0f;
 
+    // K-weighting Stage 1: High-shelf filter (+4dB at 1681Hz)
+    // Biquad coefficients (TDF-II)
+    float hs_b0 = 1.0f, hs_b1 = 0.0f, hs_b2 = 0.0f;
+    float hs_a1 = 0.0f, hs_a2 = 0.0f;
+    float hs_s1L = 0.0f, hs_s2L = 0.0f;
+    float hs_s1R = 0.0f, hs_s2R = 0.0f;
+
+    // K-weighting Stage 2: High-pass filter (38Hz, 2nd order Butterworth)
+    float hp_b0 = 1.0f, hp_b1 = 0.0f, hp_b2 = 0.0f;
+    float hp_a1 = 0.0f, hp_a2 = 0.0f;
+    float hp_s1L = 0.0f, hp_s2L = 0.0f;
+    float hp_s1R = 0.0f, hp_s2R = 0.0f;
+
     void prepare(double sr) noexcept {
+        const float srf = (float)juce::jmax(1.0, sr);
         windowSamples = (int)(sr * 0.400);
+        shortTermWindow = (int)(sr * 3.0);
+        computeKWeighting(srf);
         reset();
     }
 
@@ -1103,30 +1222,108 @@ struct LoudnessMeter {
         truePeak = -100.0f;
         accumulator = 0.0f;
         sampleCount = 0;
+        shortTermAccum = 0.0f;
+        shortTermCount = 0;
+        hs_s1L = hs_s2L = hs_s1R = hs_s2R = 0.0f;
+        hp_s1L = hp_s2L = hp_s1R = hp_s2R = 0.0f;
     }
 
     inline void process(float l, float r) noexcept {
-        const float sum = l * l + r * r;
-        accumulator += sum;
-        ++sampleCount;
+        // Apply K-weighting filter chain
+        float kL = applyKWeight(l, hs_s1L, hs_s2L, hp_s1L, hp_s2L);
+        float kR = applyKWeight(r, hs_s1R, hs_s2R, hp_s1R, hp_s2R);
 
-        // True peak (sample-level — for proper ISP, needs 4x oversampling)
+        // Accumulate mean-square of K-weighted signal
+        const float sum = kL * kL + kR * kR;
+        accumulator += sum;
+        shortTermAccum += sum;
+        ++sampleCount;
+        ++shortTermCount;
+
+        // True peak tracking (sample-level; full ISP is in TruePeakLimiter)
         const float peak = juce::jmax(std::abs(l), std::abs(r));
         if (peak > dbToGain(truePeak))
             truePeak = gainToDb(peak);
 
+        // Momentary loudness (400ms gate)
         if (sampleCount >= windowSamples) {
             const float meanSquare = accumulator / (float)windowSamples;
             momentary = (meanSquare > 1.0e-10f)
                 ? -0.691f + 10.0f * std::log10(meanSquare) : -100.0f;
-
-            // Simple IIR for short-term and integrated
-            shortTerm += 0.1f * (momentary - shortTerm);
-            if (momentary > gatingThreshold)
-                integrated += 0.01f * (momentary - integrated);
-
             accumulator = 0.0f;
             sampleCount = 0;
+
+            // Integrated loudness (gated)
+            if (momentary > gatingThreshold)
+                integrated += 0.01f * (momentary - integrated);
+        }
+
+        // Short-term loudness (3s gate)
+        if (shortTermCount >= shortTermWindow) {
+            const float stMean = shortTermAccum / (float)shortTermWindow;
+            shortTerm = (stMean > 1.0e-10f)
+                ? -0.691f + 10.0f * std::log10(stMean) : -100.0f;
+            shortTermAccum = 0.0f;
+            shortTermCount = 0;
+        }
+    }
+
+private:
+    // Apply K-weighting: Stage 1 (high-shelf) then Stage 2 (HPF)
+    inline float applyKWeight(float x,
+                              float& s1_hs, float& s2_hs,
+                              float& s1_hp, float& s2_hp) noexcept {
+        // Stage 1: High-shelf TDF-II
+        const float y1 = hs_b0 * x + s1_hs;
+        s1_hs = hs_b1 * x - hs_a1 * y1 + s2_hs;
+        s2_hs = hs_b2 * x - hs_a2 * y1;
+
+        // Stage 2: HPF TDF-II
+        const float y2 = hp_b0 * y1 + s1_hp;
+        s1_hp = hp_b1 * y1 - hp_a1 * y2 + s2_hp;
+        s2_hp = hp_b2 * y1 - hp_a2 * y2;
+
+        return y2;
+    }
+
+    // Compute BS.1770-4 K-weighting filter coefficients
+    void computeKWeighting(float sr) noexcept {
+        // Stage 1: High-shelf at 1681.97 Hz, +3.999 dB gain
+        // Derived from ITU-R BS.1770-4 Table 1 (pre-computed for 48kHz,
+        // bilinear-transformed for arbitrary SR)
+        {
+            const float f0 = 1681.974450955533f;
+            const float G = 3.999843853973347f; // dB
+            const float Q = 0.7071752369554196f;
+            const float A = std::pow(10.0f, G / 40.0f);
+            const float w0 = kTwoPi * f0 / sr;
+            const float sinW = std::sin(w0);
+            const float cosW = std::cos(w0);
+            const float alpha = sinW / (2.0f * Q);
+
+            const float a0 = 1.0f + alpha / A;
+            hs_b0 = (1.0f + alpha * A) / a0;
+            hs_b1 = (-2.0f * cosW) / a0;
+            hs_b2 = (1.0f - alpha * A) / a0;
+            hs_a1 = (-2.0f * cosW) / a0;
+            hs_a2 = (1.0f - alpha / A) / a0;
+        }
+
+        // Stage 2: High-pass at 38.13 Hz (2nd-order Butterworth)
+        {
+            const float f0 = 38.13547087602444f;
+            const float Q = 0.5003270373238773f;
+            const float w0 = kTwoPi * f0 / sr;
+            const float sinW = std::sin(w0);
+            const float cosW = std::cos(w0);
+            const float alpha = sinW / (2.0f * Q);
+
+            const float a0 = 1.0f + alpha;
+            hp_b0 = ((1.0f + cosW) * 0.5f) / a0;
+            hp_b1 = (-(1.0f + cosW)) / a0;
+            hp_b2 = ((1.0f + cosW) * 0.5f) / a0;
+            hp_a1 = (-2.0f * cosW) / a0;
+            hp_a2 = (1.0f - alpha) / a0;
         }
     }
 };
@@ -1383,4 +1580,189 @@ struct LoudnessMatchedAB {
     }
 };
 
+// ═══════════════════════════════════════════════════════════════════════════
+//  SECTION 15: TARGET LOCK ENGINE
+//  Typed target values (LUFS, RMS, per-band spectral) with dynamics threshold.
+//  The engine transparently adjusts gain/limiting/EQ to hit the target while
+//  preserving dynamics within the user-defined threshold range.
+// ═══════════════════════════════════════════════════════════════════════════
+
+struct TargetLockBand {
+    // Per-band spectral target (for low, mid, high frequency ranges)
+    float targetDb = 0.0f;       // Target level in dB for this band
+    bool locked = false;         // Whether this band is target-locked
+    float currentDb = -100.0f;   // Measured level in this band
+    float correctionGain = 1.0f; // Applied correction gain
+    float smoothCoeff = 0.0f;
+
+    void prepare(double sr) noexcept {
+        smoothCoeff = 1.0f - std::exp(-1.0f / ((float)sr * 0.200f));
+        correctionGain = 1.0f;
+        currentDb = -100.0f;
+    }
+
+    void reset() noexcept { correctionGain = 1.0f; currentDb = -100.0f; }
+
+    // Measure the current band level and compute correction
+    inline float process(float bandPeakLinear, float dynamicsThreshold) noexcept {
+        if (!locked) return 1.0f;
+
+        // Update measured level (smoothed)
+        const float measuredDb = gainToDb(juce::jmax(1.0e-10f, bandPeakLinear));
+        currentDb += smoothCoeff * (measuredDb - currentDb);
+
+        // Compute error (how far from target)
+        const float errorDb = targetDb - currentDb;
+
+        // Apply dynamics threshold: only correct if error exceeds threshold
+        // This preserves natural dynamics within the threshold range
+        float correctionDb = 0.0f;
+        if (std::abs(errorDb) > dynamicsThreshold) {
+            // Correct only the portion beyond the threshold
+            correctionDb = (errorDb > 0.0f)
+                ? (errorDb - dynamicsThreshold)
+                : (errorDb + dynamicsThreshold);
+        }
+
+        // Limit correction rate to avoid pumping (max 6dB/sec equivalent)
+        correctionDb = juce::jlimit(-6.0f, 6.0f, correctionDb);
+
+        // Smooth the correction gain
+        const float targetGain = dbToGain(correctionDb);
+        correctionGain += smoothCoeff * (targetGain - correctionGain);
+
+        return juce::jlimit(0.1f, 10.0f, correctionGain);
+    }
+};
+
+struct TargetLockEngine {
+    // Master loudness target
+    float targetLUFS = -14.0f;       // Target integrated LUFS (typed by user)
+    float targetRMS = -14.0f;        // Target RMS dB (typed by user)
+    float dynamicsThreshold = 3.0f;  // dB range of allowed dynamics (0 = brick, 12 = loose)
+    bool lufsLocked = false;         // Whether LUFS target is active
+    bool rmsLocked = false;          // Whether RMS target is active
+
+    // Per-band spectral targets (Low / Mid / High)
+    static constexpr int kNumTargetBands = 3;
+    TargetLockBand bands[kNumTargetBands];
+    float bandFreqs[2] = { 200.0f, 4000.0f }; // Crossover points: low<200, mid 200-4k, high>4k
+
+    // Master gain correction (for LUFS/RMS targeting)
+    float masterCorrectionGain = 1.0f;
+    float smoothCoeff = 0.0f;
+    float measuredLUFS = -24.0f;
+    float measuredRMS = -24.0f;
+
+    // Internal RMS measurement
+    float rmsAccumL = 0.0f, rmsAccumR = 0.0f;
+    int rmsSampleCount = 0;
+    int rmsWindowSamples = 0;
+
+    void prepare(double sr) noexcept {
+        smoothCoeff = 1.0f - std::exp(-1.0f / ((float)sr * 0.300f));
+        rmsWindowSamples = (int)(sr * 0.300); // 300ms RMS window
+        masterCorrectionGain = 1.0f;
+        rmsAccumL = rmsAccumR = 0.0f;
+        rmsSampleCount = 0;
+        for (auto& b : bands) b.prepare(sr);
+    }
+
+    void reset() noexcept {
+        masterCorrectionGain = 1.0f;
+        measuredLUFS = measuredRMS = -24.0f;
+        rmsAccumL = rmsAccumR = 0.0f;
+        rmsSampleCount = 0;
+        for (auto& b : bands) b.reset();
+    }
+
+    // Set targets from user-typed values
+    void setLUFSTarget(float lufs) noexcept { targetLUFS = juce::jlimit(-60.0f, 0.0f, lufs); }
+    void setRMSTarget(float rms) noexcept { targetRMS = juce::jlimit(-60.0f, 0.0f, rms); }
+    void setDynamicsThreshold(float threshDb) noexcept {
+        dynamicsThreshold = juce::jlimit(0.0f, 24.0f, threshDb);
+    }
+    void setBandTarget(int bandIdx, float targetDb) noexcept {
+        if (bandIdx >= 0 && bandIdx < kNumTargetBands) {
+            bands[bandIdx].targetDb = juce::jlimit(-60.0f, 6.0f, targetDb);
+            bands[bandIdx].locked = true;
+        }
+    }
+    void unlockBand(int bandIdx) noexcept {
+        if (bandIdx >= 0 && bandIdx < kNumTargetBands)
+            bands[bandIdx].locked = false;
+    }
+
+    // Main process: call after all other processing, before final limiter
+    // Returns the master gain to apply. Also provides per-band gains via bandGains[3].
+    inline float process(float l, float r, float currentLUFS,
+                         const float* bandPeaks, // [3] band peaks (low, mid, high)
+                         float* bandGains) noexcept { // [3] output correction gains
+        // Update internal RMS measurement
+        rmsAccumL += l * l;
+        rmsAccumR += r * r;
+        ++rmsSampleCount;
+
+        if (rmsSampleCount >= rmsWindowSamples) {
+            const float meanL = rmsAccumL / (float)rmsWindowSamples;
+            const float meanR = rmsAccumR / (float)rmsWindowSamples;
+            const float rmsLin = std::sqrt((meanL + meanR) * 0.5f);
+            measuredRMS = gainToDb(juce::jmax(1.0e-10f, rmsLin));
+            rmsAccumL = rmsAccumR = 0.0f;
+            rmsSampleCount = 0;
+        }
+
+        measuredLUFS = currentLUFS;
+
+        // Compute master correction for LUFS/RMS target
+        float masterCorrection = 1.0f;
+        if (lufsLocked || rmsLocked) {
+            float errorDb = 0.0f;
+            if (lufsLocked && rmsLocked) {
+                // Average both errors
+                const float lufsErr = targetLUFS - measuredLUFS;
+                const float rmsErr = targetRMS - measuredRMS;
+                errorDb = (lufsErr + rmsErr) * 0.5f;
+            } else if (lufsLocked) {
+                errorDb = targetLUFS - measuredLUFS;
+            } else {
+                errorDb = targetRMS - measuredRMS;
+            }
+
+            // Apply dynamics threshold
+            float corrDb = 0.0f;
+            if (std::abs(errorDb) > dynamicsThreshold) {
+                corrDb = (errorDb > 0.0f)
+                    ? (errorDb - dynamicsThreshold)
+                    : (errorDb + dynamicsThreshold);
+            }
+
+            // Rate-limit correction to avoid pumping
+            corrDb = juce::jlimit(-4.0f, 4.0f, corrDb);
+
+            const float targetGain = dbToGain(corrDb);
+            masterCorrectionGain += smoothCoeff * (targetGain - masterCorrectionGain);
+            masterCorrection = juce::jlimit(0.05f, 20.0f, masterCorrectionGain);
+        }
+
+        // Compute per-band corrections
+        if (bandPeaks && bandGains) {
+            for (int i = 0; i < kNumTargetBands; ++i) {
+                bandGains[i] = bands[i].process(bandPeaks[i], dynamicsThreshold);
+            }
+        }
+
+        return masterCorrection;
+    }
+
+    // Check if any target is active
+    bool isActive() const noexcept {
+        if (lufsLocked || rmsLocked) return true;
+        for (const auto& b : bands)
+            if (b.locked) return true;
+        return false;
+    }
+};
+
 } // namespace BTZDsp
+

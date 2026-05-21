@@ -96,6 +96,25 @@ BTZAudioProcessor::createParameterLayout() {
     // ── v10: LFO ──
     params.push_back(std::make_unique<juce::AudioParameterInt>("lfoCount", "LFO Count", 0, 4, 0));
 
+    // ── v1.0.1: Target Lock ──
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("targetLUFS", "Target LUFS",
+        juce::NormalisableRange<float>(-60.0f, 0.0f, 0.1f), -14.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("targetRMS", "Target RMS",
+        juce::NormalisableRange<float>(-60.0f, 0.0f, 0.1f), -14.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("targetDynThresh", "Dynamics Threshold",
+        juce::NormalisableRange<float>(0.0f, 24.0f, 0.1f), 3.0f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("targetLUFSLock", "LUFS Lock", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("targetRMSLock", "RMS Lock", false));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("targetLowDb", "Target Low dB",
+        juce::NormalisableRange<float>(-60.0f, 6.0f, 0.1f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("targetMidDb", "Target Mid dB",
+        juce::NormalisableRange<float>(-60.0f, 6.0f, 0.1f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterFloat>("targetHighDb", "Target High dB",
+        juce::NormalisableRange<float>(-60.0f, 6.0f, 0.1f), 0.0f));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("targetLowLock", "Low Band Lock", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("targetMidLock", "Mid Band Lock", false));
+    params.push_back(std::make_unique<juce::AudioParameterBool>("targetHighLock", "High Band Lock", false));
+
     return { params.begin(), params.end() };
 }
 
@@ -177,6 +196,11 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     // LFOs — default 1 Hz
     for (auto& lfo : lfoModSources)
         lfo.prepare(sampleRate, 1.0f);
+
+    // v1.0.1: Target Lock
+    targetLockEngine.prepare(sampleRate);
+    targetLockXO1.prepare(sampleRate, 200.0f);   // Low/Mid split at 200Hz
+    targetLockXO2.prepare(sampleRate, 4000.0f);  // Mid/High split at 4kHz
 
     // v10 modules
     resonanceTamer.prepare(sampleRate);
@@ -655,6 +679,51 @@ void BTZAudioProcessor::processLinearPost(float* dataL, float* dataR, int numSam
         for (int i = 0; i < numSamples; ++i) {
             dataL[i] *= compGain;
             dataR[i] *= compGain;
+        }
+    }
+
+    // ── v1.0.1: Target Lock processing ──
+    // Read target lock parameters
+    targetLockEngine.lufsLocked = (bool)*apvts.getRawParameterValue("targetLUFSLock");
+    targetLockEngine.rmsLocked = (bool)*apvts.getRawParameterValue("targetRMSLock");
+    targetLockEngine.setLUFSTarget(*apvts.getRawParameterValue("targetLUFS"));
+    targetLockEngine.setRMSTarget(*apvts.getRawParameterValue("targetRMS"));
+    targetLockEngine.setDynamicsThreshold(*apvts.getRawParameterValue("targetDynThresh"));
+
+    // Per-band locks
+    targetLockEngine.bands[0].locked = (bool)*apvts.getRawParameterValue("targetLowLock");
+    targetLockEngine.bands[1].locked = (bool)*apvts.getRawParameterValue("targetMidLock");
+    targetLockEngine.bands[2].locked = (bool)*apvts.getRawParameterValue("targetHighLock");
+    targetLockEngine.bands[0].targetDb = *apvts.getRawParameterValue("targetLowDb");
+    targetLockEngine.bands[1].targetDb = *apvts.getRawParameterValue("targetMidDb");
+    targetLockEngine.bands[2].targetDb = *apvts.getRawParameterValue("targetHighDb");
+
+    if (targetLockEngine.isActive()) {
+        for (int i = 0; i < numSamples; ++i) {
+            // Measure per-band peaks via 3-band crossover
+            float lowL, lowR, midL, midR, highL, highR;
+            float tempHighL, tempHighR;
+            targetLockXO1.processStereo(dataL[i], dataR[i], lowL, lowR, tempHighL, tempHighR);
+            targetLockXO2.processStereo(tempHighL, tempHighR, midL, midR, highL, highR);
+
+            const float bandPeaks[3] = {
+                juce::jmax(std::abs(lowL), std::abs(lowR)),
+                juce::jmax(std::abs(midL), std::abs(midR)),
+                juce::jmax(std::abs(highL), std::abs(highR))
+            };
+
+            float bandGains[3] = { 1.0f, 1.0f, 1.0f };
+            const float masterGain = targetLockEngine.process(
+                dataL[i], dataR[i], loudnessMeter.momentary, bandPeaks, bandGains);
+
+            // Apply per-band spectral correction via crossover split
+            lowL *= bandGains[0]; lowR *= bandGains[0];
+            midL *= bandGains[1]; midR *= bandGains[1];
+            highL *= bandGains[2]; highR *= bandGains[2];
+
+            // Recombine bands and apply master correction
+            dataL[i] = (lowL + midL + highL) * masterGain;
+            dataR[i] = (lowR + midR + highR) * masterGain;
         }
     }
 

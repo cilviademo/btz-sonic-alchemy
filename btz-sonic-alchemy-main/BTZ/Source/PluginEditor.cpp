@@ -327,6 +327,9 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
     };
     populatePresetBrowser();
 
+    // ── v1.0.1: Target Lock UI setup ──
+    setupTargetLockUI();
+
     setSize(layout::defaultW, layout::defaultH);
     setViewMode(ViewMode::Standard);
     startTimerHz(anim::fps);
@@ -804,6 +807,69 @@ void BTZAudioProcessorEditor::layoutAdvanced(juce::Rectangle<int> area) {
     placeCenter(kCeiling, lCeiling, ctrRow2);
     placeCenter(kShine, lShine, ctrRow2);
 
+    // CENTER continued: Target Lock section
+    centerCol.removeFromTop(space::md);
+    lblTargetSection.setBounds(centerCol.removeFromTop(16));
+    centerCol.removeFromTop(space::xs);
+
+    // Target Lock row: LUFS | RMS | DYN RANGE knob
+    auto tlRow1 = centerCol.removeFromTop(36);
+    const int tlFieldW = 60;
+    const int tlLockW = 40;
+    {
+        auto lufsArea = tlRow1.removeFromLeft(tlFieldW + tlLockW + space::xs);
+        lblTargetLUFS.setBounds(lufsArea.removeFromTop(12));
+        auto lufsRow = lufsArea.removeFromTop(24);
+        txtTargetLUFS.setBounds(lufsRow.removeFromLeft(tlFieldW));
+        lufsRow.removeFromLeft(space::xs);
+        btnLUFSLock.setBounds(lufsRow.removeFromLeft(tlLockW));
+    }
+    tlRow1.removeFromLeft(space::sm);
+    {
+        auto rmsArea = tlRow1.removeFromLeft(tlFieldW + tlLockW + space::xs);
+        lblTargetRMS.setBounds(rmsArea.removeFromTop(12));
+        auto rmsRow = rmsArea.removeFromTop(24);
+        txtTargetRMS.setBounds(rmsRow.removeFromLeft(tlFieldW));
+        rmsRow.removeFromLeft(space::xs);
+        btnRMSLock.setBounds(rmsRow.removeFromLeft(tlLockW));
+    }
+    tlRow1.removeFromLeft(space::sm);
+    {
+        auto dynArea = tlRow1.removeFromLeft(56);
+        kDynThreshold.setBounds(dynArea.removeFromTop(40));
+        lDynThreshold.setBounds(dynArea);
+    }
+
+    // Per-band targets row: LOW | MID | HIGH
+    centerCol.removeFromTop(space::xs);
+    auto tlRow2 = centerCol.removeFromTop(36);
+    {
+        auto lowArea = tlRow2.removeFromLeft(tlFieldW + tlLockW + space::xs);
+        lblTargetLow.setBounds(lowArea.removeFromTop(12));
+        auto lowRow = lowArea.removeFromTop(24);
+        txtTargetLow.setBounds(lowRow.removeFromLeft(tlFieldW));
+        lowRow.removeFromLeft(space::xs);
+        btnLowLock.setBounds(lowRow.removeFromLeft(tlLockW));
+    }
+    tlRow2.removeFromLeft(space::sm);
+    {
+        auto midArea = tlRow2.removeFromLeft(tlFieldW + tlLockW + space::xs);
+        lblTargetMid.setBounds(midArea.removeFromTop(12));
+        auto midRow = midArea.removeFromTop(24);
+        txtTargetMid.setBounds(midRow.removeFromLeft(tlFieldW));
+        midRow.removeFromLeft(space::xs);
+        btnMidLock.setBounds(midRow.removeFromLeft(tlLockW));
+    }
+    tlRow2.removeFromLeft(space::sm);
+    {
+        auto highArea = tlRow2.removeFromLeft(tlFieldW + tlLockW + space::xs);
+        lblTargetHigh.setBounds(highArea.removeFromTop(12));
+        auto highRow = highArea.removeFromTop(24);
+        txtTargetHigh.setBounds(highRow.removeFromLeft(tlFieldW));
+        highRow.removeFromLeft(space::xs);
+        btnHighLock.setBounds(highRow.removeFromLeft(tlLockW));
+    }
+
     // RIGHT: Neural model browser / preset browser
     auto rightCol = mainArea;
     rightCol = rightCol.reduced(space::sm, 0);
@@ -838,4 +904,99 @@ void BTZAudioProcessorEditor::populatePresetBrowser() {
 
     presetBrowser.setPresets(entries);
     presetBrowser.setSelected(proc.getCurrentPresetIndex());
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// v1.0.1: Target Lock UI Setup
+// ═══════════════════════════════════════════════════════════════════════════
+
+void BTZAudioProcessorEditor::setupTargetLockUI() {
+    auto& apvts = proc.getAPVTS();
+
+    // Section label
+    lblTargetSection.setText("TARGET LOCK", juce::dontSendNotification);
+    lblTargetSection.setFont(juce::Font(type::sans(), 11.0f, juce::Font::bold));
+    lblTargetSection.setColour(juce::Label::textColourId, juce::Colour(palette::charcoal));
+    addAndMakeVisible(lblTargetSection);
+
+    // Helper: setup a text editor for numeric input
+    auto setupTextInput = [this](juce::TextEditor& txt, juce::Label& lbl,
+                                 const juce::String& labelText, const juce::String& paramID) {
+        lbl.setText(labelText, juce::dontSendNotification);
+        lbl.setFont(juce::Font(type::sans(), 10.0f, juce::Font::plain));
+        lbl.setColour(juce::Label::textColourId, juce::Colour(palette::warmGray));
+        addAndMakeVisible(lbl);
+
+        txt.setFont(juce::Font(type::mono(), 12.0f, juce::Font::plain));
+        txt.setJustification(juce::Justification::centred);
+        txt.setColour(juce::TextEditor::backgroundColourId, juce::Colour(palette::porcelain));
+        txt.setColour(juce::TextEditor::outlineColourId, juce::Colour(palette::panelBorder));
+        txt.setColour(juce::TextEditor::textColourId, juce::Colour(palette::charcoal));
+        txt.setInputRestrictions(6, "-0123456789.");
+        addAndMakeVisible(txt);
+
+        // Push value to APVTS on return key or focus lost
+        txt.onReturnKey = [this, paramID, &txt] {
+            const float val = txt.getText().getFloatValue();
+            if (auto* p = proc.getAPVTS().getParameter(paramID))
+                p->setValueNotifyingHost(p->getNormalisableRange().convertTo0to1(val));
+        };
+        txt.onFocusLost = txt.onReturnKey;
+    };
+
+    // LUFS target
+    setupTextInput(txtTargetLUFS, lblTargetLUFS, "LUFS", "targetLUFS");
+    addAndMakeVisible(btnLUFSLock);
+    aLUFSLock = std::make_unique<ButtonAttachment>(apvts, "targetLUFSLock", btnLUFSLock);
+
+    // RMS target
+    setupTextInput(txtTargetRMS, lblTargetRMS, "RMS", "targetRMS");
+    addAndMakeVisible(btnRMSLock);
+    aRMSLock = std::make_unique<ButtonAttachment>(apvts, "targetRMSLock", btnRMSLock);
+
+    // Per-band targets
+    setupTextInput(txtTargetLow, lblTargetLow, "LOW", "targetLowDb");
+    addAndMakeVisible(btnLowLock);
+    aLowLock = std::make_unique<ButtonAttachment>(apvts, "targetLowLock", btnLowLock);
+
+    setupTextInput(txtTargetMid, lblTargetMid, "MID", "targetMidDb");
+    addAndMakeVisible(btnMidLock);
+    aMidLock = std::make_unique<ButtonAttachment>(apvts, "targetMidLock", btnMidLock);
+
+    setupTextInput(txtTargetHigh, lblTargetHigh, "HIGH", "targetHighDb");
+    addAndMakeVisible(btnHighLock);
+    aHighLock = std::make_unique<ButtonAttachment>(apvts, "targetHighLock", btnHighLock);
+
+    // Dynamics threshold knob
+    kDynThreshold.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+    kDynThreshold.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 50, 14);
+    kDynThreshold.setComponentID(juce::String(id::density));
+    kDynThreshold.setPopupDisplayEnabled(true, true, this);
+    kDynThreshold.setTooltip("Dynamics Threshold: how much dynamic range to preserve around the target. "
+                             "0 = hard lock (brick-wall). 24 = loose (gentle correction only).");
+    addAndMakeVisible(kDynThreshold);
+    lDynThreshold.setText("DYN RANGE", juce::dontSendNotification);
+    lDynThreshold.setFont(juce::Font(type::sans(), 9.0f, juce::Font::plain));
+    lDynThreshold.setJustificationType(juce::Justification::centred);
+    lDynThreshold.setColour(juce::Label::textColourId, juce::Colour(palette::warmGray));
+    addAndMakeVisible(lDynThreshold);
+    aDynThreshold = std::make_unique<SliderAttachment>(apvts, "targetDynThresh", kDynThreshold);
+
+    // Sync initial values from APVTS into text editors
+    syncTargetLockFromAPVTS();
+}
+
+void BTZAudioProcessorEditor::syncTargetLockFromAPVTS() {
+    auto& apvts = proc.getAPVTS();
+
+    auto syncText = [&](juce::TextEditor& txt, const juce::String& paramID) {
+        const float val = *apvts.getRawParameterValue(paramID);
+        txt.setText(juce::String(val, 1), juce::dontSendNotification);
+    };
+
+    syncText(txtTargetLUFS, "targetLUFS");
+    syncText(txtTargetRMS, "targetRMS");
+    syncText(txtTargetLow, "targetLowDb");
+    syncText(txtTargetMid, "targetMidDb");
+    syncText(txtTargetHigh, "targetHighDb");
 }

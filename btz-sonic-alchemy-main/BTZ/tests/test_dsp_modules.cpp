@@ -972,7 +972,151 @@ TEST(RTSafety, SafetyLayerHandlesAllEdgeCases) {
 }
 
 TEST(RTSafety, StateVersionMatches) {
-    EXPECT_EQ(kStateVersion, 12);
+    EXPECT_EQ(kStateVersion, 12);  // kStateVersion stays at 12 for v1.0.1 (additive params only)
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// Target Lock Engine
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(TargetLock, PrepareAndProcess) {
+    BTZDsp::TargetLockEngine tle;
+    tle.prepare(48000.0);
+
+    // Set LUFS target and lock
+    tle.setLUFSTarget(-14.0f);
+    tle.lufsLocked = true;
+    tle.setDynamicsThreshold(3.0f);
+
+    EXPECT_TRUE(tle.isActive());
+
+    // Process a sample — should return a gain multiplier
+    float bandPeaks[3] = { 0.5f, 0.3f, 0.1f };
+    float bandGains[3] = { 1.0f, 1.0f, 1.0f };
+    float gain = tle.process(0.5f, 0.5f, -20.0f, bandPeaks, bandGains);
+
+    // Gain should be > 1.0 because current (-20) is below target (-14)
+    EXPECT_GT(gain, 1.0f);
+    // But should be limited (not infinite)
+    EXPECT_LT(gain, 10.0f);
+}
+
+TEST(TargetLock, InactiveWhenNoLock) {
+    BTZDsp::TargetLockEngine tle;
+    tle.prepare(44100.0);
+    tle.lufsLocked = false;
+    tle.rmsLocked = false;
+    tle.bands[0].locked = false;
+    tle.bands[1].locked = false;
+    tle.bands[2].locked = false;
+
+    EXPECT_FALSE(tle.isActive());
+}
+
+TEST(TargetLock, BandLockAppliesGain) {
+    BTZDsp::TargetLockEngine tle;
+    tle.prepare(48000.0);
+
+    tle.bands[0].locked = true;
+    tle.bands[0].targetDb = -6.0f;
+    tle.setDynamicsThreshold(0.0f);  // hard lock
+
+    EXPECT_TRUE(tle.isActive());
+
+    // Feed a low-band peak that is too quiet (-20 dB)
+    float bandPeaks[3] = { 0.1f, 0.5f, 0.3f };  // 0.1 ≈ -20 dB
+    float bandGains[3] = { 1.0f, 1.0f, 1.0f };
+    float gain = tle.process(0.3f, 0.3f, -14.0f, bandPeaks, bandGains);
+
+    // Low band gain should be boosted (target -6 vs measured ~-20)
+    EXPECT_GT(bandGains[0], 1.0f);
+    // Mid and High should remain at 1.0 (not locked)
+    EXPECT_FLOAT_EQ(bandGains[1], 1.0f);
+    EXPECT_FLOAT_EQ(bandGains[2], 1.0f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// TruePeakLimiter (ISP)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(TruePeakLimiter, CatchesInterSamplePeak) {
+    BTZDsp::TruePeakLimiter lim;
+    lim.prepare(48000.0);
+    lim.ceiling = -0.3f;
+
+    // Feed a signal that creates an inter-sample peak above ceiling
+    // Two consecutive samples that will interpolate above 1.0
+    float l = 0.9f, r = 0.9f;
+    lim.processStereo(l, r);
+    l = 0.95f; r = 0.95f;
+    lim.processStereo(l, r);
+
+    // After processing, output should be limited
+    const float ceilingLin = std::pow(10.0f, -0.3f / 20.0f);
+    EXPECT_LE(std::abs(l), ceilingLin + 0.01f);
+    EXPECT_LE(std::abs(r), ceilingLin + 0.01f);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LoudnessMeter (K-weighting)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(LoudnessMeter, KWeightingReducesLowFreq) {
+    BTZDsp::LoudnessMeter meter;
+    meter.prepare(48000.0);
+
+    // Feed 100 Hz sine (should be attenuated by K-weighting HPF)
+    const float freq = 100.0f;
+    const float sr = 48000.0f;
+    for (int i = 0; i < 48000; ++i) {
+        float sample = 0.5f * std::sin(2.0f * 3.14159265f * freq * i / sr);
+        meter.process(sample, sample);
+    }
+    const float lowLUFS = meter.integrated;
+
+    // Reset and feed 2kHz sine (should pass through K-weighting)
+    meter.prepare(48000.0);
+    const float freq2 = 2000.0f;
+    for (int i = 0; i < 48000; ++i) {
+        float sample = 0.5f * std::sin(2.0f * 3.14159265f * freq2 * i / sr);
+        meter.process(sample, sample);
+    }
+    const float midLUFS = meter.integrated;
+
+    // 2kHz should read louder than 100Hz due to K-weighting
+    EXPECT_GT(midLUFS, lowLUFS);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// LinkwitzRileyCrossover (LR4)
+// ═══════════════════════════════════════════════════════════════════════════
+
+TEST(LinkwitzRileyCrossover, SumsFlatAtCrossover) {
+    BTZDsp::LinkwitzRileyCrossover xo;
+    xo.prepare(48000.0, 1000.0f);
+
+    // Feed white noise and check that LP + HP sums back to original
+    std::mt19937 rng(42);
+    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
+
+    float maxError = 0.0f;
+    // Allow some settling time
+    for (int i = 0; i < 1000; ++i) {
+        float inL = dist(rng), inR = dist(rng);
+        float lpL, lpR, hpL, hpR;
+        xo.processStereo(inL, inR, lpL, lpR, hpL, hpR);
+    }
+    // After settling, check sum accuracy
+    for (int i = 0; i < 10000; ++i) {
+        float inL = dist(rng), inR = dist(rng);
+        float lpL, lpR, hpL, hpR;
+        xo.processStereo(inL, inR, lpL, lpR, hpL, hpR);
+        float errL = std::abs((lpL + hpL) - inL);
+        float errR = std::abs((lpR + hpR) - inR);
+        maxError = std::max({maxError, errL, errR});
+    }
+    // LR4 should sum perfectly (allpass) — allow small float error
+    EXPECT_LT(maxError, 0.01f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

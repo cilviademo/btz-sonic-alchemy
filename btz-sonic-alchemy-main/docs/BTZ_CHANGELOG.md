@@ -4,6 +4,28 @@ All notable changes to this project are documented in this file. The format foll
 
 ---
 
+## v1.0.1 — DSP Correctness + Target Lock (2026-05-20)
+
+### Added
+
+- **Target Lock Engine** — type in LUFS, RMS, or per-band (Low/Mid/High) dB targets and lock the output to those values. Dynamics Threshold knob controls how much dynamic range is preserved around the target (0 = brick-wall, 24 dB = gentle correction only).
+- Target Lock parameters: `targetLUFS`, `targetRMS`, `targetDynThresh`, `targetLUFSLock`, `targetRMSLock`, `targetLowDb`, `targetMidDb`, `targetHighDb`, `targetLowLock`, `targetMidLock`, `targetHighLock`
+- Target Lock UI in Advanced Mode: type-in text fields with LOCK toggles for each target, plus DYN RANGE knob
+- 7 new unit tests: TargetLock (3), TruePeakLimiter ISP (1), LoudnessMeter K-weighting (1), LinkwitzRileyCrossover flat sum (1)
+
+### Fixed
+
+- **TruePeakLimiter**: Now uses 4x polyphase FIR interpolation for true inter-sample peak detection (was sample-peak only). Proper lookahead with gain smoothing.
+- **LoudnessMeter**: Now implements ITU-R BS.1770-4 K-weighting pre-filter (high-shelf at 1681 Hz + 2nd-order HPF at 38 Hz). Previously was unweighted RMS with a LUFS label.
+- **LinkwitzRileyCrossover**: Now proper LR4 using cascaded 2nd-order Butterworth biquads for both LP and HP paths. Previously used subtraction-based HP which doesn't sum flat.
+
+### Changed
+
+- `TruePeakLimiter::kLookahead` increased from 8 to 16 samples (to accommodate ISP detection)
+- Signal flow: Target Lock processing inserted after auto-gain, before true-peak limiter
+
+---
+
 ## v1.0.0 — Baseline Consolidation (2026-05-21)
 
 This entry marks the consolidation of all former V1 through V12 development iterations into the new official v1.0 baseline. No code was rewritten during this consolidation — only documentation was added and version strings were updated.

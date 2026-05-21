@@ -135,6 +135,10 @@ private:
     BTZDsp::LFO                      lfoModSources[BTZDsp::kMaxLFOs];
     BTZDsp::MacroInterpreter         macroInterpreter;
 
+    // v1.0.1: Target Lock
+    BTZDsp::TargetLockEngine         targetLockEngine;
+    BTZDsp::LinkwitzRileyCrossover   targetLockXO1, targetLockXO2; // 3-band split for target lock
+
     // v10 modules
     BTZDsp::ResonanceTamer           resonanceTamer;
     BTZDsp::TransientSplitter        transientSplitter;

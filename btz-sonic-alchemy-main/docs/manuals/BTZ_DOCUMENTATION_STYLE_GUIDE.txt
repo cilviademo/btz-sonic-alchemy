@@ -1,0 +1,32 @@
+BTZ Sonic Alchemy — Documentation Style Guide
+
+This guide ensures all future BTZ documentation maintains the premium "Ivory System" aesthetic.
+
+1. TYPOGRAPHY
+- Headings (H1, H2): Inter SemiBold. Clean, modern, architectural.
+- Body Text: Inter Regular. Highly readable.
+- Values/Code/Parameters: JetBrains Mono. Used whenever referencing a specific parameter value (e.g., `-14 LUFS`) or code.
+
+2. COLOR PALETTE
+- Background: Ivory (#F5F0E8)
+- Surface/Panels: Parchment (#EDE7DB)
+- Primary Accent: Sage Green (#7A9E7E) — used for dynamics, EQ, and positive indicators.
+- Secondary Accent: Terracotta (#C17B4A) — used for saturation, drive, and warnings.
+- Text: Charcoal (#2D2A26) — never pure black (#000000).
+
+3. PAGE LAYOUT
+- Margins: Generous. At least 1.5 inches on all sides. Let the text breathe.
+- Alignment: Left-aligned body text. Never justified (creates ugly rivers of whitespace).
+- Paragraph Spacing: 1.5 line height, with 12pt space after paragraphs. No first-line indents.
+
+4. DIAGRAM STYLE
+- Diagrams should look like architectural blueprints or boutique synth manuals.
+- Use thin, crisp lines (1pt or 2pt).
+- Use the Sage and Terracotta colors sparingly to highlight signal flow.
+- Avoid 3D effects, drop shadows, or gradients in diagrams. Keep them flat and technical.
+
+5. TONE OF VOICE
+- Confident but not arrogant.
+- Educational but not academic.
+- Musical. Talk about "weight," "glue," and "air," not just "Hz" and "dB."
+- Avoid generic marketing fluff ("game-changing," "ultimate"). Let the features speak for themselves.
