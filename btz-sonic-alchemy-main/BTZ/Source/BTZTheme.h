@@ -98,6 +98,19 @@ namespace palette {
     inline constexpr uint32_t analyzerAfter  = 0xFF7E9475;  // Sage fill (after)
     inline constexpr uint32_t analyzerHarm   = 0xFFD8662A;  // Orange (added harmonics)
     inline constexpr uint32_t analyzerReduce = 0xFFC05A48;  // Clay (reduction)
+
+    // ── Ivory System literal-name aliases ────────────────────────────────
+    // The editor (Ivory System) refers to colours by their descriptive
+    // material names; map them onto the semantic tokens above. These are the
+    // single source of truth — changing a base token recolours its alias.
+    inline constexpr uint32_t ivory       = canvas;       // Ivory Cream canvas
+    inline constexpr uint32_t porcelain   = surface;      // Warm Porcelain surface
+    inline constexpr uint32_t linen       = surfaceAlt;   // Soft Linen
+    inline constexpr uint32_t sand        = well;         // Warm Sand well
+    inline constexpr uint32_t panelBorder = border;       // Panel Border
+    inline constexpr uint32_t charcoal    = ink;          // Charcoal text
+    inline constexpr uint32_t softBlack   = inkStrong;    // Soft Black (logo)
+    inline constexpr uint32_t warmGray    = inkMuted;     // Warm Gray
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -120,6 +133,19 @@ namespace type {
     inline constexpr float small  = 8.5f;    // Footer/status text
     inline constexpr float micro  = 7.5f;    // Tiny annotations
     inline constexpr float value  = 10.0f;   // Monospace numeric values
+
+    // ── Ivory System "*Size" aliases ──────────────────────────────────────
+    // The editor refers to point sizes with a "Size" suffix; alias them onto
+    // the scale constants above so the hierarchy stays single-sourced.
+    inline constexpr float brandSize = brand;
+    inline constexpr float titleSize = title;
+    inline constexpr float h1Size    = h1;
+    inline constexpr float h2Size    = h2;
+    inline constexpr float bodySize  = body;
+    inline constexpr float labelSize = label;
+    inline constexpr float smallSize = small;
+    inline constexpr float microSize = micro;
+    inline constexpr float valueSize = value;
 
     // Tracking (letter-spacing multiplier)
     inline constexpr float trackBrand = 0.18f;  // Wide brand spacing

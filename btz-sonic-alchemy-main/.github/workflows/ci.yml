@@ -10,7 +10,7 @@ name: BTZ CI/CD
 
 on:
   push:
-    branches: [main, 'overhaul/**', 'feature/**', 'claude/**']
+    branches: [main, 'baseline/**', 'overhaul/**', 'feature/**', 'claude/**']
   pull_request:
     branches: [main]
 
@@ -163,7 +163,10 @@ jobs:
         run: |
           ./pluginval.app/Contents/MacOS/pluginval \
             --validate "artifacts/VST3/Box Tone Zone (BTZ).vst3" \
-            --strictness-level 5 \
+            --strictness-level 10 \
             --timeout-ms 120000 \
-            --validate-in-process || true
-        # Note: strictness 5 for CI (10 for release validation)
+            --repeat-count 2 \
+            --randomise \
+            --validate-in-process
+        # Gating: pluginval failures now FAIL the job (no '|| true' bypass).
+        # Strictness 10 + repeat/randomise to catch state-restore & automation races.

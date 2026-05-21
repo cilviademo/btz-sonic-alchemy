@@ -78,7 +78,7 @@ void BTZLookAndFeel::drawButtonBackground(juce::Graphics& g, juce::Button& b,
 }
 
 void BTZLookAndFeel::drawButtonText(juce::Graphics& g, juce::TextButton& b, bool, bool down) {
-    g.setFont(juce::Font(type::label(), type::labelSize, juce::Font::bold));
+    g.setFont(juce::Font(type::sans(), type::labelSize, juce::Font::bold));
     g.setColour((down || b.getToggleState()) ? juce::Colour(palette::ivory)
                                               : juce::Colour(palette::charcoal));
     g.drawText(b.getButtonText(), b.getLocalBounds(), juce::Justification::centred);
@@ -98,7 +98,7 @@ void BTZLookAndFeel::drawToggleButton(juce::Graphics& g, juce::ToggleButton& b,
         g.drawRoundedRectangle(bounds, radius::sm, 0.5f);
         g.setColour(highlighted ? juce::Colour(palette::charcoal) : juce::Colour(palette::warmGray));
     }
-    g.setFont(juce::Font(type::label(), type::labelSize, juce::Font::bold));
+    g.setFont(juce::Font(type::sans(), type::labelSize, juce::Font::bold));
     g.drawText(b.getButtonText(), b.getLocalBounds(), juce::Justification::centred);
 }
 
@@ -139,7 +139,7 @@ void BTZLookAndFeel::drawPopupMenuItem(juce::Graphics& g, const juce::Rectangle<
         g.fillRect(area);
     }
     g.setColour(isTicked ? juce::Colour(palette::orange) : juce::Colour(palette::charcoal));
-    g.setFont(juce::Font(type::label(), type::bodySize, juce::Font::plain));
+    g.setFont(juce::Font(type::sans(), type::bodySize, juce::Font::plain));
     g.drawText(text, area.reduced(space::md, 0), juce::Justification::centredLeft);
 }
 
@@ -190,7 +190,7 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
     addAndMakeVisible(btnAutoGain);
     addAndMakeVisible(lblPresetName);
     lblPresetName.setJustificationType(juce::Justification::centred);
-    lblPresetName.setFont(juce::Font(type::label(), type::bodySize, juce::Font::plain));
+    lblPresetName.setFont(juce::Font(type::sans(), type::bodySize, juce::Font::plain));
 
     // Toolbar callbacks
     btnUndo.onClick = [this] { proc.undo(); };
@@ -356,7 +356,7 @@ void BTZAudioProcessorEditor::setupKnob(juce::Slider& s, juce::Label& l,
 
     l.setText(text, juce::dontSendNotification);
     l.setJustificationType(juce::Justification::centred);
-    l.setFont(juce::Font(type::label(), type::labelSize, juce::Font::bold));
+    l.setFont(juce::Font(type::sans(), type::labelSize, juce::Font::bold));
     l.setColour(juce::Label::textColourId, juce::Colour(palette::warmGray));
     addAndMakeVisible(l);
 }
@@ -530,7 +530,7 @@ void BTZAudioProcessorEditor::paint(juce::Graphics& g) {
 
     // Brand wordmark — wide, spaced, confident
     g.setColour(juce::Colour(palette::softBlack));
-    g.setFont(juce::Font(type::brand(), type::brandSize, juce::Font::bold));
+    g.setFont(juce::Font(type::display(), type::brandSize, juce::Font::bold));
     auto brandArea = getLocalBounds().toFloat().removeFromTop((float)layout::headerH);
     g.drawText("B O X   T O N E   Z O N E", brandArea.reduced((float)space::md, 0),
                juce::Justification::centredLeft);

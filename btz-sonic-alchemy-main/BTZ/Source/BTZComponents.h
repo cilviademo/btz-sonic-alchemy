@@ -594,9 +594,15 @@ class SafetyIndicator : public juce::Component {
 public:
     enum class State { Safe, Caution, Warning };
 
+    // Ivory System editor refers to this as "Level"; keep both names in sync.
+    using Level = State;
+
     void setState(State s, const juce::String& msg = {}) {
         state = s; message = msg; repaint();
     }
+
+    // Compatibility wrapper for the editor's setLevel() call.
+    void setLevel(Level s, const juce::String& msg = {}) { setState(s, msg); }
 
     void paint(juce::Graphics& g) override {
         if (state == State::Safe) return;
