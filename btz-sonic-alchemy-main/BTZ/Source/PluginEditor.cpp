@@ -398,10 +398,59 @@ void BTZAudioProcessorEditor::timerCallback() {
         simpleKnobOutput.setValue(kMaster.getValue() / kMaster.getMaximum(), "");
     }
 
+    // Spectrum + harmonic visualizers (FFT on the UI thread)
+    updateVisualizers();
+
     // Safety indicators
     updateSafetyIndicators();
 
     repaint();
+}
+
+void BTZAudioProcessorEditor::updateVisualizers() {
+    constexpr int N = BTZDsp::kSpectrumFFTSize;
+    if (!proc.spectrumBuffer.ready) return;   // no full frame captured yet
+
+    // Build a Hann window once.
+    if (!fftWindowReady) {
+        for (int i = 0; i < N; ++i)
+            fftWindow[(size_t) i] = 0.5f * (1.0f - std::cos(2.0f * juce::MathConstants<float>::pi * (float) i / (float) (N - 1)));
+        fftWindowReady = true;
+    }
+
+    // Snapshot the processor's circular buffer (single-writer/single-reader),
+    // unwrapped from writePos, windowed. A torn read is cosmetically harmless.
+    const int wp = proc.spectrumBuffer.writePos;
+    for (int i = 0; i < N; ++i) {
+        const int idx = (wp + i) % N;
+        fftData[(size_t) i] = proc.spectrumBuffer.buffer[(size_t) idx] * fftWindow[(size_t) i];
+    }
+    std::fill(fftData.begin() + N, fftData.end(), 0.0f);
+
+    fft.performFrequencyOnlyForwardTransform(fftData.data(), true);
+
+    // Normalise magnitudes (≈ full-scale sine → ~1.0) into specMags.
+    const float norm = 2.0f / (float) N;
+    for (int i = 0; i < N / 2; ++i)
+        specMags[(size_t) i] = fftData[(size_t) i] * norm;
+
+    const float sr = (float) juce::jmax(1.0, proc.getSampleRate());
+    spectrumDisplay.setSpectrum(specMags.data(), N / 2, sr);
+    spectrumAdvanced.setSpectrum(specMags.data(), N / 2, sr);
+
+    // 16 log-spaced bands (20 Hz – 20 kHz) → harmonic visualizer, mapped −60..0 dB → 0..1.
+    const float binHz = sr / (float) N;
+    for (int b = 0; b < 16; ++b) {
+        const float f0 = 20.0f * std::pow(1000.0f, (float) b / 16.0f);
+        const float f1 = 20.0f * std::pow(1000.0f, (float) (b + 1) / 16.0f);
+        int lo = juce::jlimit(0, N / 2 - 1, (int) (f0 / binHz));
+        int hi = juce::jlimit(lo + 1, N / 2, (int) (f1 / binHz) + 1);
+        float peak = 0.0f;
+        for (int k = lo; k < hi; ++k) peak = juce::jmax(peak, specMags[(size_t) k]);
+        const float db = juce::Decibels::gainToDecibels(peak, -60.0f);
+        harmonicMags[(size_t) b] = juce::jlimit(0.0f, 1.0f, (db + 60.0f) / 60.0f);
+    }
+    harmonicViz.setMagnitudes(harmonicMags.data(), 16);
 }
 
 void BTZAudioProcessorEditor::updateSafetyIndicators() {

@@ -84,10 +84,19 @@ private:
     void hideAllControls();
     void populatePresetBrowser();
     void updateSafetyIndicators();
+    void updateVisualizers();   // FFT the processor's spectrum buffer → displays
 
     BTZAudioProcessor& proc;
     BTZLookAndFeel lookAndFeel;
     ViewMode viewMode = ViewMode::Standard;
+
+    // ── Spectrum analysis (UI thread): FFT of the processor's spectrum buffer ──
+    juce::dsp::FFT fft { BTZDsp::kSpectrumFFTOrder };
+    std::array<float, (size_t) BTZDsp::kSpectrumFFTSize * 2> fftData {};
+    std::array<float, (size_t) BTZDsp::kSpectrumFFTSize>     fftWindow {};
+    std::array<float, (size_t) BTZDsp::kSpectrumFFTSize / 2> specMags {};
+    std::array<float, 16> harmonicMags {};
+    bool fftWindowReady = false;
 
     // ── Resizable ──
     juce::ComponentBoundsConstrainer constrainer;
