@@ -527,14 +527,22 @@ TEST(ShineProcessor, CutsAtFrequency) {
     EXPECT_LT(rms(output), rms(sine5k) * 0.8f);
 }
 
+// LR4 sums to an ALLPASS (flat magnitude, phase-shifted) — NOT to the input
+// sample-by-sample. So the correct property is energy/magnitude preservation:
+// for a sine at any frequency, RMS(low+high) ≈ RMS(input) after settling.
 TEST(LinkwitzRileyCrossover, SplitsIntoLowAndHigh) {
-    LinkwitzRileyCrossover xo;
-    xo.prepare(kSR, 1000.0f);
-    float lowL, lowR, highL, highR;
-    // Feed a sample
-    xo.processStereo(1.0f, 1.0f, lowL, lowR, highL, highR);
-    // Low + High should approximately equal input (energy conservation)
-    EXPECT_NEAR(lowL + highL, 1.0f, 0.1f);
+    for (float freq : { 100.0f, 1000.0f, 8000.0f }) {
+        LinkwitzRileyCrossover xo;
+        xo.prepare(kSR, 1000.0f);
+        auto sine = generateSine(freq, kSR, 24000, 0.5f);
+        std::vector<float> in, summed;
+        for (int i = 0; i < 24000; ++i) {
+            float lo, loR, hi, hiR;
+            xo.processStereo(sine[i], sine[i], lo, loR, hi, hiR);
+            if (i > 8000) { in.push_back(sine[i]); summed.push_back(lo + hi); }  // skip settling
+        }
+        EXPECT_NEAR(rms(summed) / rms(in), 1.0f, 0.05f) << "at " << freq << " Hz";
+    }
 }
 
 TEST(LinkwitzRileyCrossover, LowPassesLowFreq) {
@@ -1121,32 +1129,25 @@ TEST(LoudnessMeter, KWeightingReducesLowFreq) {
 // LinkwitzRileyCrossover (LR4)
 // ═══════════════════════════════════════════════════════════════════════════
 
+// LR4 LP+HP form an ALLPASS: flat *magnitude* across frequency (with a phase
+// shift), NOT a time-domain identity. Verify magnitude flatness by sweeping
+// sines and checking RMS(low+high) ≈ RMS(input) at every frequency, including
+// right at the crossover where a wrong topology would dip or bump.
 TEST(LinkwitzRileyCrossover, SumsFlatAtCrossover) {
-    BTZDsp::LinkwitzRileyCrossover xo;
-    xo.prepare(48000.0, 1000.0f);
-
-    // Feed white noise and check that LP + HP sums back to original
-    std::mt19937 rng(42);
-    std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
-
-    float maxError = 0.0f;
-    // Allow some settling time
-    for (int i = 0; i < 1000; ++i) {
-        float inL = dist(rng), inR = dist(rng);
-        float lpL, lpR, hpL, hpR;
-        xo.processStereo(inL, inR, lpL, lpR, hpL, hpR);
+    const float sr = 48000.0f;
+    for (float freq : { 50.0f, 250.0f, 1000.0f, 4000.0f, 16000.0f }) {
+        BTZDsp::LinkwitzRileyCrossover xo;
+        xo.prepare((double)sr, 1000.0f);
+        auto sine = generateSine(freq, sr, 24000, 0.5f);
+        std::vector<float> in, summed;
+        for (int i = 0; i < 24000; ++i) {
+            float lp, lpR, hp, hpR;
+            xo.processStereo(sine[i], sine[i], lp, lpR, hp, hpR);
+            if (i > 8000) { in.push_back(sine[i]); summed.push_back(lp + hp); }
+        }
+        // Allpass magnitude is flat within a few percent across the band.
+        EXPECT_NEAR(rms(summed) / rms(in), 1.0f, 0.06f) << "at " << freq << " Hz";
     }
-    // After settling, check sum accuracy
-    for (int i = 0; i < 10000; ++i) {
-        float inL = dist(rng), inR = dist(rng);
-        float lpL, lpR, hpL, hpR;
-        xo.processStereo(inL, inR, lpL, lpR, hpL, hpR);
-        float errL = std::abs((lpL + hpL) - inL);
-        float errR = std::abs((lpR + hpR) - inR);
-        maxError = std::max({maxError, errL, errR});
-    }
-    // LR4 should sum perfectly (allpass) — allow small float error
-    EXPECT_LT(maxError, 0.01f);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

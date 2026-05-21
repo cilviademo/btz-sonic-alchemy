@@ -199,8 +199,12 @@ struct EnvFollower {
     }
 };
 
-// ── SafetyLayer: DC block (1 Hz) + NaN/Inf guard ────────────────────────
+// ── SafetyLayer: DC block (1 Hz) + NaN/Inf guard + runaway clamp ─────────
 struct SafetyLayer {
+    // Absolute magnitude ceiling (~+12 dBFS). Normal audio never approaches this;
+    // it is a last-resort guard so a runaway/feedback value can't propagate huge
+    // samples through the chain. Not a musical limiter (the TruePeakLimiter is).
+    static constexpr float kSafeCeiling = 4.0f;
     float dcL = 0.0f, dcPrevL = 0.0f;
     float dcR = 0.0f, dcPrevR = 0.0f;
     float dcCoeff = 0.9999f;
@@ -222,10 +226,11 @@ private:
     inline float processSample(float x, float& dc, float& dcPrev) noexcept {
         if (!std::isfinite(x)) x = 0.0f;
         if (std::abs(x) < kDenormalGuard) x = 0.0f;
+        x = juce::jlimit(-kSafeCeiling, kSafeCeiling, x);   // clamp runaway input
         const float y = x - dcPrev + dcCoeff * dc;
         dcPrev = x;
         dc = y;
-        return y;
+        return juce::jlimit(-kSafeCeiling, kSafeCeiling, y); // and the DC-blocked output
     }
 };
 
