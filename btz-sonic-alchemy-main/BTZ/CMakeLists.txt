@@ -172,6 +172,21 @@ if(BTZ_BUILD_BENCH)
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags)
+
+    # Processor-level integration check (end-to-end processBlock assertions).
+    juce_add_console_app(BTZProcessorCheck PRODUCT_NAME "BTZ Processor Check")
+    target_sources(BTZProcessorCheck PRIVATE
+        bench/processor_check.cpp
+        Source/PluginProcessor.cpp
+        Source/PluginEditor.cpp)
+    juce_generate_juce_header(BTZProcessorCheck)
+    target_include_directories(BTZProcessorCheck PRIVATE Source)
+    target_compile_definitions(BTZProcessorCheck PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1)
+    target_link_libraries(BTZProcessorCheck PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags)
 endif()
 
 # ═══════════════════════════════════════════════════════════════════════════

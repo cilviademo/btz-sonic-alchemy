@@ -1,0 +1,117 @@
+/*
+  BTZ — processor-level integration check.
+  Exercises the REAL BTZAudioProcessor::processBlock end-to-end (the layer the
+  unit tests don't cover). Guards the class of bug found in the deep debug pass
+  (smoothers frozen -> dry output). Returns non-zero on failure (CI-usable).
+  Build: -DBTZ_BUILD_BENCH=ON ; run: BTZProcessorCheck
+*/
+#include "PluginProcessor.h"
+#include <JuceHeader.h>
+#include <cstdio>
+#include <cmath>
+
+namespace {
+int failures = 0;
+void check(bool cond, const char* what) {
+    std::printf("  [%s] %s\n", cond ? "PASS" : "FAIL", what);
+    if (!cond) ++failures;
+}
+void setVal(BTZAudioProcessor& p, const char* id, float v) {
+    if (auto* prm = p.getAPVTS().getParameter(id))
+        prm->setValueNotifyingHost(prm->getNormalisableRange().convertTo0to1(v));
+}
+float rms(const juce::AudioBuffer<float>& b) {
+    double s = 0; int n = 0;
+    for (int ch = 0; ch < b.getNumChannels(); ++ch)
+        for (int i = 0; i < b.getNumSamples(); ++i) { const float x = b.getSample(ch, i); s += x * x; ++n; }
+    return (float)std::sqrt(s / juce::jmax(1, n));
+}
+bool allFinite(const juce::AudioBuffer<float>& b) {
+    for (int ch = 0; ch < b.getNumChannels(); ++ch)
+        for (int i = 0; i < b.getNumSamples(); ++i)
+            if (!std::isfinite(b.getSample(ch, i))) return false;
+    return true;
+}
+void fillSine(juce::AudioBuffer<float>& b, float freq, float sr) {
+    for (int ch = 0; ch < b.getNumChannels(); ++ch)
+        for (int i = 0; i < b.getNumSamples(); ++i)
+            b.setSample(ch, i, 0.4f * std::sin(2.0f * 3.14159265f * freq * i / sr));
+}
+}
+
+int main() {
+    juce::ScopedJuceInitialiser_GUI juceInit;
+    juce::MidiBuffer midi;
+
+    // ── 1. The wet path actually processes (regression guard for the dry bug) ──
+    {
+        std::printf("Wet path active:\n");
+        BTZAudioProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        setVal(p, "mix", 1.0f); setVal(p, "drive", 0.7f); setVal(p, "glue", 0.6f);
+        setVal(p, "shine", 0.5f); setVal(p, "width", 0.8f);
+        juce::AudioBuffer<float> buf(2, 512), dry(2, 512);
+        for (int blk = 0; blk < 64; ++blk) { fillSine(buf, 220.0f, 48000.0f); if (blk == 63) dry.makeCopyOf(buf); p.processBlock(buf, midi); }
+        check(allFinite(buf), "output is finite");
+        check(rms(buf) > 1.0e-4f, "output is non-silent");
+        // wet must differ from dry by a meaningful margin
+        float diff = 0; for (int i = 0; i < 512; ++i) diff += std::abs(buf.getSample(0, i) - dry.getSample(0, i));
+        check(diff / 512.0f > 1.0e-3f, "output differs from input (processing happened)");
+    }
+
+    // ── 2. Bypass returns the input ──
+    {
+        std::printf("Bypass passthrough:\n");
+        BTZAudioProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        setVal(p, "bypass", 1.0f);
+        juce::AudioBuffer<float> buf(2, 512), dry(2, 512);
+        for (int blk = 0; blk < 32; ++blk) { fillSine(buf, 440.0f, 48000.0f); dry.makeCopyOf(buf); p.processBlock(buf, midi); }
+        float diff = 0; for (int i = 0; i < 512; ++i) diff += std::abs(buf.getSample(0, i) - dry.getSample(0, i));
+        check(diff / 512.0f < 1.0e-3f, "bypassed output ≈ input");
+    }
+
+    // ── 3. State save/restore round-trip ──
+    {
+        std::printf("State round-trip:\n");
+        BTZAudioProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        setVal(p, "drive", 0.83f); setVal(p, "warmth", 0.21f);
+        juce::MemoryBlock state; p.getStateInformation(state);
+        setVal(p, "drive", 0.1f);  // change away
+        p.setStateInformation(state.getData(), (int)state.getSize());
+        const float d = *p.getAPVTS().getRawParameterValue("drive");
+        const float w = *p.getAPVTS().getRawParameterValue("warmth");
+        check(std::abs(d - 0.83f) < 0.01f && std::abs(w - 0.21f) < 0.01f, "params restored from state");
+    }
+
+    // ── 4. Sample-rate / block-size matrix (no crash, finite) ──
+    {
+        std::printf("SR/blocksize matrix:\n");
+        bool ok = true;
+        for (double sr : { 44100.0, 48000.0, 96000.0 })
+            for (int bs : { 32, 128, 512, 1024 }) {
+                BTZAudioProcessor p; p.prepareToPlay(sr, bs);
+                setVal(p, "mix", 1.0f); setVal(p, "drive", 0.6f); setVal(p, "quality", 2.0f);
+                juce::AudioBuffer<float> buf(2, bs);
+                for (int blk = 0; blk < 8; ++blk) { fillSine(buf, 1000.0f, (float)sr); p.processBlock(buf, midi); }
+                ok = ok && allFinite(buf);
+            }
+        check(ok, "all SR/blocksize combos produce finite output");
+    }
+
+    // ── 5. Oversized-block robustness (host violates declared max) ──
+    {
+        std::printf("Oversized-block guard:\n");
+        BTZAudioProcessor p;
+        p.prepareToPlay(48000.0, 512);
+        setVal(p, "mix", 1.0f); setVal(p, "drive", 0.5f);
+        juce::AudioBuffer<float> big(2, 2048);   // 4x the declared max
+        fillSine(big, 500.0f, 48000.0f);
+        p.processBlock(big, midi);               // must not crash / OOB
+        check(allFinite(big), "oversized block handled without NaN/crash");
+    }
+
+    std::printf("\n%s — %d failure(s)\n", failures == 0 ? "ALL PROCESSOR CHECKS PASSED" : "PROCESSOR CHECKS FAILED", failures);
+    return failures == 0 ? 0 : 1;
+}
