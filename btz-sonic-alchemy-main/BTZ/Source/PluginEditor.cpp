@@ -262,8 +262,19 @@ BTZAudioProcessorEditor::BTZAudioProcessorEditor(BTZAudioProcessor& p)
     cSatModel.addItemList({ "Tanh", "Tube", "Tape", "Transistor", "Transformer",
                             "Neural Neve", "Neural API", "Neural SSL", "Neural Custom",
                             "WDF Tube", "WDF Transformer" }, 1);
+    // Honesty pass: the four Neural slots have no trained weights yet and fall
+    // back to fastTanh internally — they currently sound identical to "Tanh".
+    // Greyed-out until real weights ship, so users aren't misled. Index→value
+    // mapping is preserved (preset compatibility kept).
+    for (int neuralId : { 6, 7, 8, 9 }) cSatModel.setItemEnabled(neuralId, false);
+
     cGlueScHpf.addItemList({ "Off", "60 Hz", "120 Hz", "250 Hz" }, 1);
     cMultiband.addItemList({ "Full Range", "2 Bands", "3 Bands", "4 Bands", "5 Bands", "6 Bands" }, 1);
+    // Honesty pass: MultibandEngine is prepared but its split/recombine are not
+    // yet routed in processNonlinear — only "Full Range" produces audible change.
+    // Greyed-out until the audio path is wired (planned v1.1).
+    for (int mbId : { 2, 3, 4, 5, 6 }) cMultiband.setItemEnabled(mbId, false);
+
     cQuality.addItemList({ "Eco (1x)", "Standard (2x)", "High (4x)", "Ultra (8x)" }, 1);
 
     // ── APVTS Attachments ──
