@@ -25,7 +25,7 @@ static constexpr int kBlock = 512;
 static std::vector<float> generateSine(float freqHz, double sr, int numSamples, float amp = 0.5f) {
     std::vector<float> buf(numSamples);
     for (int i = 0; i < numSamples; ++i)
-        buf[i] = amp * std::sin(2.0f * (float)M_PI * freqHz * (float)i / (float)sr);
+        buf[i] = amp * std::sin(2.0f * BTZDsp::kPi * freqHz * (float)i / (float)sr);
     return buf;
 }
 
