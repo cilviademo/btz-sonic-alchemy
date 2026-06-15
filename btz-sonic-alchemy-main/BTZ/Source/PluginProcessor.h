@@ -165,7 +165,7 @@ private:
     BTZDsp::WDFTransformerStage      wdfTransformer;
 
     // ── Oversampling (JUCE built-in, lazy-initialized) ───────────────────
-    std::unique_ptr<juce::dsp::Oversampling<float>> os2x, os4x, os8x, os16x;
+    std::unique_ptr<juce::dsp::Oversampling<float>> os2x, os4x, os8x;
 
     // ── Per-channel filter state (audio thread only) ─────────────────────
     float hpStateL = 0.0f, hpStateR = 0.0f;

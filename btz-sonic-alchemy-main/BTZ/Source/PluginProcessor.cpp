@@ -181,15 +181,17 @@ void BTZAudioProcessor::prepareToPlay(double sampleRate, int samplesPerBlock) {
     const bool needsOSRebuild = (sampleRate != lastPreparedSR ||
                                   samplesPerBlock != lastPreparedBlockSize);
     if (needsOSRebuild) {
-        os2x  = std::make_unique<juce::dsp::Oversampling<float>>(2, 1, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
-        os4x  = std::make_unique<juce::dsp::Oversampling<float>>(2, 2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
-        os8x  = std::make_unique<juce::dsp::Oversampling<float>>(2, 3, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
-        os16x = std::make_unique<juce::dsp::Oversampling<float>>(2, 4, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
+        // Only build the three quality tiers the user can actually select
+        // (Eco=1× passthrough + Standard 2× / High 4× / Ultra 8×). The 16×
+        // oversampler that used to live here was created + reset but never
+        // wired into the quality switch — removed in v1.0.5.
+        os2x = std::make_unique<juce::dsp::Oversampling<float>>(2, 1, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
+        os4x = std::make_unique<juce::dsp::Oversampling<float>>(2, 2, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
+        os8x = std::make_unique<juce::dsp::Oversampling<float>>(2, 3, juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true);
 
         os2x->initProcessing((size_t)samplesPerBlock);
         os4x->initProcessing((size_t)samplesPerBlock);
         os8x->initProcessing((size_t)samplesPerBlock);
-        os16x->initProcessing((size_t)samplesPerBlock);
 
         lastPreparedSR = sampleRate;
         lastPreparedBlockSize = samplesPerBlock;
@@ -370,10 +372,9 @@ void BTZAudioProcessor::resetAll() {
     inputMeterBallistics.reset(); outputMeterBallistics.reset();
     glueScHpf.reset();
     targetLockEngine.reset(); targetLockXO1.reset(); targetLockXO2.reset();
-    if (os2x)  os2x->reset();
-    if (os4x)  os4x->reset();
-    if (os8x)  os8x->reset();
-    if (os16x) os16x->reset();
+    if (os2x) os2x->reset();
+    if (os4x) os4x->reset();
+    if (os8x) os8x->reset();
     hpStateL = hpStateR = sideLowState = tapeStateL = tapeStateR = 0.0f;
     motionPhase = 0.0f;
 }

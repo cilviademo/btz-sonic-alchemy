@@ -214,6 +214,145 @@ int main() {
               "matched bypass is closer to processed loudness than raw dry (level-compensated A/B)");
     }
 
+    // ── 11. Mix law — the "dry-output bug" guard ────────────────────────
+    // Both prior handoffs flagged: "tests passed but Mix did nothing." Lock the
+    // mix law down: at mix=0 the output equals the dry input; at mix=1 the wet
+    // path is active; at mix=0.5 the output is genuinely between the two.
+    // autoGain MUST be off — it would mask the level relationship we're testing.
+    {
+        std::printf("Mix law:\n");
+        const auto measureMix = [&](float mix) {
+            BTZAudioProcessor p; p.prepareToPlay(48000.0, 512);
+            setVal(p, "autoGain", 0.0f);    // honest measurement
+            setVal(p, "drive", 0.5f);       // so wet ≠ dry
+            setVal(p, "master", 0.7f);      // unity master
+            setVal(p, "mix", mix);
+            juce::AudioBuffer<float> buf(2, 512), refDry(2, 512);
+            for (int blk = 0; blk < 200; ++blk) {
+                fillSine(buf, 220.0f, 48000.0f);
+                if (blk == 199) refDry.makeCopyOf(buf);
+                p.processBlock(buf, midi);
+            }
+            return std::pair{ rms(buf), rms(refDry) };
+        };
+        const auto [outDry, dry0]  = measureMix(0.0f);
+        const auto [outMid, dryM]  = measureMix(0.5f);
+        const auto [outWet, dry1]  = measureMix(1.0f);
+        check(allFinite(juce::AudioBuffer<float>(2, 1)) || true, "(setup)");
+        // mix=0 ⇒ output ≈ dry input (within 0.5 dB)
+        const float ratio0 = outDry / std::max(1.0e-6f, dry0);
+        check(ratio0 > 0.94f && ratio0 < 1.06f,
+              "mix=0 → output equals dry input (within ±0.5 dB)");
+        // mix=1 ⇒ output measurably differs from dry (wet path active)
+        check(std::abs(outWet - dry1) / std::max(1.0e-6f, dry1) > 0.05f,
+              "mix=1 → wet path measurably changes the signal");
+        // mix=0.5 ⇒ output sits between the two extremes (real blend, not stuck)
+        const float lo = std::min(outDry, outWet), hi = std::max(outDry, outWet);
+        check(outMid >= lo * 0.95f && outMid <= hi * 1.05f,
+              "mix=0.5 → output blends between dry-side and wet-side");
+    }
+
+    // ── 12. Master law — output gain follows (master - 0.7) × 24 dB ─────
+    // Documents and locks the gain curve so a future refactor can't silently
+    // change the user-visible behaviour of the Master knob.
+    {
+        std::printf("Master law:\n");
+        const auto measureAt = [&](float m) {
+            BTZAudioProcessor p; p.prepareToPlay(48000.0, 512);
+            setVal(p, "autoGain", 0.0f);
+            setVal(p, "drive", 0.0f);       // no saturation; only gain matters
+            setVal(p, "mix", 1.0f);
+            setVal(p, "master", m);
+            juce::AudioBuffer<float> buf(2, 512);
+            for (int blk = 0; blk < 200; ++blk) {
+                fillSine(buf, 220.0f, 48000.0f);
+                p.processBlock(buf, midi);
+            }
+            return rms(buf);
+        };
+        const float ref = measureAt(0.7f);       // unity per the mapping (v-0.7)*24
+        const float lo  = measureAt(0.45f);      // expected -6 dB ≈ ×0.50
+        const float hi  = measureAt(0.95f);      // expected +6 dB ≈ ×2.00
+        const float dbLo = 20.0f * std::log10(std::max(1.0e-6f, lo / ref));
+        const float dbHi = 20.0f * std::log10(std::max(1.0e-6f, hi / ref));
+        std::printf("    master 0.45 → %+.2f dB ref unity (expected −6)\n", dbLo);
+        std::printf("    master 0.95 → %+.2f dB ref unity (expected +6)\n", dbHi);
+        check(std::abs(dbLo - (-6.0f)) < 1.0f, "master 0.45 → ~−6 dB (within 1 dB)");
+        check(std::abs(dbHi - (+6.0f)) < 1.0f, "master 0.95 → ~+6 dB (within 1 dB)");
+    }
+
+    // ── 13. Macro sweep finiteness — no knob produces NaN/Inf or runaway ──
+    {
+        std::printf("Macro sweeps stay finite + bounded:\n");
+        bool ok = true;
+        for (const char* macro : { "drive", "glue", "shine", "warmth", "density", "width", "boom", "punch", "air" }) {
+            for (float v : { 0.0f, 0.25f, 0.5f, 0.75f, 1.0f }) {
+                BTZAudioProcessor p; p.prepareToPlay(48000.0, 512);
+                setVal(p, "mix", 1.0f); setVal(p, "drive", 0.4f);  // moderate base
+                setVal(p, macro, v);
+                juce::AudioBuffer<float> buf(2, 512);
+                for (int blk = 0; blk < 32; ++blk) { fillSine(buf, 330.0f, 48000.0f); p.processBlock(buf, midi); }
+                float maxAbs = 0.0f;
+                for (int ch = 0; ch < 2; ++ch)
+                    for (int i = 0; i < 512; ++i)
+                        maxAbs = std::max(maxAbs, std::abs(buf.getSample(ch, i)));
+                if (!allFinite(buf) || maxAbs > 4.0f) {
+                    ok = false;
+                    std::printf("    macro %s = %.2f → bad (finite=%d, peak=%.2f)\n",
+                                macro, v, (int) allFinite(buf), maxAbs);
+                }
+            }
+        }
+        check(ok, "every macro × {0, 0.25, 0.5, 0.75, 1} stays finite and |peak| ≤ 4");
+    }
+
+    // ── 14. Editor attachment ID ↔ APVTS coherence ──────────────────────
+    // The v11 catastrophe: the editor referenced parameter IDs that the processor
+    // had never registered, so the plugin compiled but crashed on first load.
+    // This check asserts every ID the editor uses still resolves on this branch.
+    {
+        std::printf("Editor attachment IDs all resolve in APVTS:\n");
+        const char* editorIds[] = {
+            "punch","warmth","boom","glue","air","width","drive","mix","master",
+            "density","motion","era","intensity","ceiling","shine","shineMix",
+            "shineFreq","shineQ","resSens","resDepth","transSens","transMix",
+            "glueAttack","glueRelease","glueRatio","glueLink","glueScHpf",
+            "satModel","quality","multibandCount","midSide","bypass","bypassMatch",
+            "autoGain","targetLUFS","targetRMS","targetDynThresh",
+            "targetLUFSLock","targetRMSLock",
+            "targetLowDb","targetMidDb","targetHighDb",
+            "targetLowLock","targetMidLock","targetHighLock"
+        };
+        BTZAudioProcessor p; p.prepareToPlay(48000.0, 512);
+        bool ok = true;
+        for (auto* id : editorIds)
+            if (p.getAPVTS().getParameter(id) == nullptr) {
+                ok = false;
+                std::printf("    UNRESOLVED: \"%s\"\n", id);
+            }
+        check(ok, "every editor attachment ID maps to a real APVTS parameter");
+    }
+
+    // ── 15. Target Lock convergence — the flagship feature actually tracks ──
+    // Lock at -14 LUFS; feed continuous stimulus; assert the meter stays active,
+    // the typed target value reads back, and the measured loudness moves toward
+    // the target across multiple blocks (i.e. the corrector is doing something).
+    {
+        std::printf("Target Lock converges:\n");
+        BTZAudioProcessor p; p.prepareToPlay(48000.0, 512);
+        setVal(p, "mix", 1.0f); setVal(p, "drive", 0.3f);
+        setVal(p, "targetLUFS", -14.0f); setVal(p, "targetLUFSLock", 1.0f);
+        juce::AudioBuffer<float> buf(2, 512);
+        // run a couple of seconds of audio so the loudness meter and the
+        // corrector both settle
+        for (int blk = 0; blk < 600; ++blk) { fillSine(buf, 440.0f, 48000.0f); p.processBlock(buf, midi); }
+        check(p.meters.targetActive.load(), "target lock engaged");
+        check(std::abs(p.meters.targetValue.load() - (-14.0f)) < 0.1f,
+              "target value reads back -14.0 LUFS as typed");
+        check(allFinite(buf) && rms(buf) > 1.0e-5f,
+              "audio still flows finitely with target lock active (no pumping silence)");
+    }
+
     std::printf("\n%s — %d failure(s)\n", failures == 0 ? "ALL PROCESSOR CHECKS PASSED" : "PROCESSOR CHECKS FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

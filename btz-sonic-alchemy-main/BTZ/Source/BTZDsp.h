@@ -827,6 +827,9 @@ struct ShineProcessor {
     float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
     // Transposed Direct Form II state (separate delay lines for input/output)
     float s1L = 0.0f, s2L = 0.0f, s1R = 0.0f, s2R = 0.0f;
+    // Cache: skip the sin/cos/pow recompute when the param triplet hasn't changed.
+    float lastFreq = -1.0f, lastGain = -1.0f, lastQ = -1.0f;
+    double lastSr = 0.0;
 
     void prepare(double sr) noexcept { recalcCoeffs(sr); }
 
@@ -835,6 +838,9 @@ struct ShineProcessor {
     }
 
     void recalcCoeffs(double sr) noexcept {
+        // Early out if nothing actually changed since last computation.
+        if (freq == lastFreq && gain == lastGain && q == lastQ && sr == lastSr) return;
+        lastFreq = freq; lastGain = gain; lastQ = q; lastSr = sr;
         const float srf = (float)juce::jmax(1.0, sr);
         const float A = std::pow(10.0f, gain / 40.0f);
         const float w0 = kTwoPi * freq / srf;
