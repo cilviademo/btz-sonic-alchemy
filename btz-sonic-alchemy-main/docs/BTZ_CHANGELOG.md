@@ -4,6 +4,72 @@ All notable changes to this project are documented in this file. The format foll
 
 ---
 
+## v1.0.4 — Unified state of truth + portability fix (2026-06-15)
+
+### Docs
+- `docs/BTZ_UNIFIED_STATE_OF_TRUTH.md` — reconciles the Master Handoff and the
+  Session Handoff (and prior per-session docs) into one rolling source of truth.
+  Resolves the "two-product / three-implementation" contradiction (it's three
+  codebases under one name; this branch is the v12 / Ivory rewrite — codebase
+  #3). Lists which prior docs remain authoritative and which are superseded.
+  Surfaces the open product-behaviour test gap (Mix/Master/macro laws not yet
+  asserted) and the six gating decisions still owed (product name, JUCE
+  license, codebase to ship, multiband+neural fate, mastering positioning,
+  distribution path).
+
+### Fixed
+- Tests: replaced `M_PI` (undefined on MSVC) with `BTZDsp::kPi` in
+  `tests/test_dsp_modules.cpp` (the one outstanding portability issue both
+  handoffs called out). 86/86 tests still pass on Linux; tests now also build
+  on MSVC.
+
+### Acknowledged (not yet acted on)
+- `os16x` is created but never selected by `qualityMode`. Either expose as a
+  16× quality option or remove. Tracked in §6 of the unified doc.
+
+---
+
+## v1.0.3 — Honesty pass + product identity docs (2026-05-22)
+
+### UI
+- Saturation model menu: the four **Neural** entries (Neve / API / SSL /
+  Custom) are greyed out — they had no trained weights and silently fell back
+  to `fastTanh`. The enum values and parameter mapping are preserved (preset
+  compatibility); the entries return when weights ship.
+- Multiband selector: only **"Full Range"** is selectable. The MultibandEngine
+  is prepared but `split/recombine` are not yet routed in `processNonlinear`,
+  so 2–6 band options previously controlled nothing. Greyed out until the
+  audio path lands (v1.1).
+
+### Added (DSP + UI, from prior session work also rolled into this entry)
+- Target Lock **live readout** in the footer: when engaged, shows the typed
+  target + "LOCKED" / "approaching" status — flagship feature now legible.
+- **Loudness-Matched Bypass** (`bypassMatch`, default off): tracks a smoothed
+  processed/dry RMS ratio during normal processing and level-compensates the
+  bypassed signal so an A/B reveals tone, not level.
+- "Instant good" default patch (subtle warm glue: Tube + light glue + sheen)
+  so the plugin sounds musical on insert. "Init / Neutral" preset remains for
+  a flat start.
+- Footer "TRUE PEAK" reading wired to the limiter's real 4× polyphase ISP
+  detector (was sample-peak from the loudness meter).
+- 16 factory presets across 7 categories, with mastering-bank presets
+  showcasing Target Lock (`Master Streaming -14`, `Master Loud -9`).
+- Real units on every visible knob (dB / Hz / ms / % / ratio / LUFS) at the
+  parameter layer — units now appear in the host's automation lanes and
+  generic editor as well as our popups.
+
+### Docs (added in this v1.0.3 cluster)
+- `docs/BTZ_CURRENT_BASELINE_LOCK.md` — "must not regress" contract.
+- `docs/product/BTZ_PRODUCT_IDENTITY.md` — Target Lock is the flagship; v1.0 /
+  v1.1 / v1.2 / deferred feature hierarchy.
+- `docs/release/BTZ_FORMAT_ROADMAP.md` — VST3 first; CLAP next; AAX deferred.
+- `docs/release/BTZ_RELEASE_READINESS_SCORECARD.md` — measured 1–10 scores
+  per category with explicit blockers + owners.
+- `docs/dev/PARAMETER_MANIFEST.md` — every parameter's ABI contract.
+- `docs/dev/BTZ_RELEASE_BLUEPRINT_AUDIT.md` — full 14-phase compliance audit.
+
+---
+
 ## v1.0.3 — Correctness, Efficiency & QA Pass (2026-05-21)
 
 Deep debugging + performance/security audit against a real JUCE 8.0.6 build
