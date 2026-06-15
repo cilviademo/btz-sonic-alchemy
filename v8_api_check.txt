@@ -1,0 +1,30 @@
+BTZ v8 API Consistency Check
+=============================
+
+BTZDsp.h APIs used in PluginProcessor.cpp:
+- BTZDsp::enableFlushToZero() ✅ (line 60)
+- BTZDsp::fastTanh(float) ✅ (line 71) — used in processNonlinear
+- BTZDsp::kTanhBias025 ✅ (line 79) — used in Punch section
+- BTZDsp::kStateVersion ✅ (line 55) = 8
+- BTZDsp::BypassCrossfader ✅ — prepare(), reset(), setBypassState(), processStereo(), isBypassed()
+- BTZDsp::SmoothParam ✅ — setTime(), setTarget(), next(), snapTo(), current
+- BTZDsp::EnvFollower ✅ — setTimes(), reset(), process()
+- BTZDsp::SafetyLayer ✅ — setSampleRate(), reset(), processSample(x, dc, dcPrev)
+- BTZDsp::LinkwitzRileyCrossover ✅ — setCutoff() WAIT — .cpp uses setCutoff() but header defines prepare()!
+  ISSUE: PluginProcessor.cpp line calls crossover.setCutoff(250.0f, (float)sampleRate)
+         BTZDsp.h defines: void prepare(double sr, float freqHz)
+  → MISMATCH: setCutoff() does not exist. Should be prepare().
+
+- BTZDsp::TruePeakLimiter ✅ — prepare(sr, blockSize), reset(), processBlock(buffer, ceilingLin), getGainReductionDb(), getLatencySamples()
+- BTZDsp::ShineProcessor ✅ — prepare(sr), reset(), setParameters(freq, gain, q), processStereo(L, R)
+- BTZDsp::GlueCompressor ✅ — prepare(sr), reset(), processStereo(L, R, glueAmount, envVal)
+- BTZDsp::SidechainHPF ✅ — prepare(sr, cutoffHz), reset(), process(inL, inR)
+- BTZDsp::AutoGainSmoother ✅ — prepare(sr), reset(), processBlock(dataL, dataR, n, dryL, dryR)
+- BTZDsp::MacroInterpreter ✅ — setupDefaults(), getModulation(targetIndex, macroValues)
+- BTZDsp::MeterBallistics ✅ — prepare(sr, blockSize), reset(), all member fields accessed correctly
+
+ISSUE FOUND:
+  crossover.setCutoff(250.0f, (float)sampleRate) — setCutoff() does not exist
+  Should be: crossover.prepare(sampleRate, 250.0f) — note arg order is (sr, freqHz)
+
+All other APIs match correctly.
