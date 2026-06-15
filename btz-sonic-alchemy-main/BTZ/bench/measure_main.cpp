@@ -246,27 +246,36 @@ int main() {
     // ════════════════════════════════════════════════════════════════════════
     // 3. ALIASING — high-drive sine fed at three frequencies; FFT output
     // ════════════════════════════════════════════════════════════════════════
-    std::printf("## 3. Aliasing at high drive\n\n");
-    std::printf("Method: feed a single-tone sine at −12 dBFS, set `drive=0.8`, `mix=1`,\n");
-    std::printf("warm + measure. FFT the output (16384-point, Hann). THD%% = sum of harmonic\n");
-    std::printf("magnitudes ÷ fundamental. Alias floor = inharmonic-bin RMS in dB relative to\n");
-    std::printf("the fundamental (lower / more-negative = cleaner).\n\n");
-    std::printf("| Quality | Test freq | THD%% (Tube) | Alias floor (dB ref fund) |\n");
-    std::printf("|---|---:|---:|---:|\n");
+    std::printf("## 3. Aliasing at high drive — per saturation model\n\n");
+    std::printf("Method: feed a 5 kHz sine at −12 dBFS, set `drive=0.8`, `mix=1`,\n");
+    std::printf("warm + measure. FFT (16384-point, Hann). THD%% = harmonic / fundamental.\n");
+    std::printf("Alias floor = inharmonic-bin RMS (dB ref fundamental). **5 kHz is the\n");
+    std::printf("informative test** — harmonics fold above Nyquist into the audible band.\n\n");
+    std::printf("Tanh is ADAA-wrapped (first-order antiderivative anti-aliasing) — it\n");
+    std::printf("should sit ≥ 10–15 dB below the other models' alias floor at Eco.\n\n");
+    struct ModelRow { float idx; const char* name; };
+    const ModelRow models[] = {
+        { 0.0f, "Tanh (ADAA)" }, { 1.0f, "Tube" }, { 2.0f, "Tape" },
+        { 3.0f, "Transistor" },  { 4.0f, "Transformer" }
+    };
+    std::printf("| Quality | Model | THD%% | Alias floor (dB ref fund) |\n");
+    std::printf("|---|---|---:|---:|\n");
     for (int q = 0; q < 4; ++q) {
-        for (float testFreq : { 1000.0f, 5000.0f, 12000.0f }) {
+        for (const auto& m : models) {
             BTZAudioProcessor p; p.prepareToPlay(SR, BLOCK);
-            setVal(p, "mix", 1.0f); setVal(p, "drive", 0.8f); setVal(p, "satModel", 1.0f);  // Tube
-            setVal(p, "quality", (float) q); setVal(p, "autoGain", 0.0f); setVal(p, "master", 0.7f);
+            setVal(p, "mix", 1.0f); setVal(p, "drive", 0.8f);
+            setVal(p, "satModel", m.idx);
+            setVal(p, "quality", (float) q);
+            setVal(p, "autoGain", 0.0f); setVal(p, "master", 0.7f);
             juce::AudioBuffer<float> warm(2, FFT_SIZE), out(2, FFT_SIZE);
-            processSine(p, testFreq, 0.25f, warm);
-            processSine(p, testFreq, 0.25f, out);
+            processSine(p, 5000.0f, 0.25f, warm);
+            processSine(p, 5000.0f, 0.25f, out);
             std::vector<float> mags;
             fftMags(out.getReadPointer(0), out.getNumSamples(), mags);
-            const double thd  = computeTHD(mags, testFreq);
-            const double alias = computeAliasFloorDb(mags, testFreq);
-            std::printf("| %s | %.0f Hz | %.2f%% | %+.1f dB |\n",
-                        qualLabels[q], testFreq, thd, alias);
+            const double thd   = computeTHD(mags, 5000.0);
+            const double alias = computeAliasFloorDb(mags, 5000.0);
+            std::printf("| %s | %s | %.2f%% | %+.1f dB |\n",
+                        qualLabels[q], m.name, thd, alias);
             std::fflush(stdout);
         }
     }

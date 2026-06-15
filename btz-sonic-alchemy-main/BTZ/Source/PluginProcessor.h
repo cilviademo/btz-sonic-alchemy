@@ -163,6 +163,8 @@ private:
     BTZDsp::NeuralSaturationModel    neuralNeve, neuralAPI, neuralSSL, neuralCustom;
     BTZDsp::WDFTubeStage             wdfTube;
     BTZDsp::WDFTransformerStage      wdfTransformer;
+    // First-order ADAA state for the Tanh model (per-channel memory).
+    BTZDsp::ADAATanh                 adaaTanhL, adaaTanhR;
 
     // ── Oversampling (JUCE built-in, lazy-initialized) ───────────────────
     std::unique_ptr<juce::dsp::Oversampling<float>> os2x, os4x, os8x;

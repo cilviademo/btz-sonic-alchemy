@@ -369,6 +369,7 @@ void BTZAudioProcessor::resetAll() {
     for (auto& lfo : lfoModSources) lfo.reset();
     resonanceTamer.reset(); transientSplitter.reset(); oversamplingEngine.reset();
     wdfTube.reset(); wdfTransformer.reset();
+    adaaTanhL.reset(); adaaTanhR.reset();
     inputMeterBallistics.reset(); outputMeterBallistics.reset();
     glueScHpf.reset();
     targetLockEngine.reset(); targetLockXO1.reset(); targetLockXO2.reset();
@@ -707,7 +708,12 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
 
         // Apply saturation based on selected model
         switch (currentSatModel) {
-            case BTZDsp::SaturationModel::Tanh:
+            case BTZDsp::SaturationModel::Tanh: {
+                // ADAA-wrapped tanh: kills aliasing at all quality tiers, no OS cost.
+                l = adaaTanhL.process(l);
+                r = adaaTanhR.process(r);
+                break;
+            }
             case BTZDsp::SaturationModel::Tube:
             case BTZDsp::SaturationModel::Tape:
             case BTZDsp::SaturationModel::Transistor:

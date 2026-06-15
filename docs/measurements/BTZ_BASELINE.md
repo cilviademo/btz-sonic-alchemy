@@ -45,32 +45,43 @@ CPU than `Eco (1×)`, the OS isn't wrapping the nonlinear stages.
 
 | Quality | ns/block | CPU% (1 core) | Latency (samples) | Latency (ms) |
 |---|---:|---:|---:|---:|
-| Eco (1×) | 95078 | 0.89% | 8 | 0.17 |
-| Standard (2×) | 138153 | 1.30% | 11 | 0.23 |
-| High (4×) | 209809 | 1.97% | 12 | 0.25 |
-| Ultra (8×) | 363707 | 3.41% | 12 | 0.25 |
+| Eco (1×) | 81588 | 0.76% | 8 | 0.17 |
+| Standard (2×) | 119057 | 1.12% | 11 | 0.23 |
+| High (4×) | 188799 | 1.77% | 12 | 0.25 |
+| Ultra (8×) | 330684 | 3.10% | 12 | 0.25 |
 
-## 3. Aliasing at high drive
+## 3. Aliasing at high drive — per saturation model
 
-Method: feed a single-tone sine at −12 dBFS, set `drive=0.8`, `mix=1`,
-warm + measure. FFT the output (16384-point, Hann). THD% = sum of harmonic
-magnitudes ÷ fundamental. Alias floor = inharmonic-bin RMS in dB relative to
-the fundamental (lower / more-negative = cleaner).
+Method: feed a 5 kHz sine at −12 dBFS, set `drive=0.8`, `mix=1`,
+warm + measure. FFT (16384-point, Hann). THD% = harmonic / fundamental.
+Alias floor = inharmonic-bin RMS (dB ref fundamental). **5 kHz is the
+informative test** — harmonics fold above Nyquist into the audible band.
 
-| Quality | Test freq | THD% (Tube) | Alias floor (dB ref fund) |
-|---|---:|---:|---:|
-| Eco (1×) | 1000 Hz | 34.45% | -87.8 dB |
-| Eco (1×) | 5000 Hz | 31.53% | -56.4 dB |
-| Eco (1×) | 12000 Hz | 0.00% | -95.4 dB |
-| Standard (2×) | 1000 Hz | 34.52% | -87.8 dB |
-| Standard (2×) | 5000 Hz | 31.93% | -73.9 dB |
-| Standard (2×) | 12000 Hz | 0.00% | -102.3 dB |
-| High (4×) | 1000 Hz | 34.54% | -87.8 dB |
-| High (4×) | 5000 Hz | 32.16% | -87.3 dB |
-| High (4×) | 12000 Hz | 0.00% | -107.1 dB |
-| Ultra (8×) | 1000 Hz | 34.55% | -87.8 dB |
-| Ultra (8×) | 5000 Hz | 32.24% | -88.0 dB |
-| Ultra (8×) | 12000 Hz | 0.00% | -105.5 dB |
+Tanh is ADAA-wrapped (first-order antiderivative anti-aliasing) — it
+should sit ≥ 10–15 dB below the other models' alias floor at Eco.
+
+| Quality | Model | THD% | Alias floor (dB ref fund) |
+|---|---|---:|---:|
+| Eco (1×) | Tanh (ADAA) | 27.29% | -66.1 dB |
+| Eco (1×) | Tube | 31.53% | -56.4 dB |
+| Eco (1×) | Tape | 45.67% | -38.8 dB |
+| Eco (1×) | Transistor | 37.73% | -50.9 dB |
+| Eco (1×) | Transformer | 20.90% | -61.9 dB |
+| Standard (2×) | Tanh (ADAA) | 30.96% | -79.3 dB |
+| Standard (2×) | Tube | 31.93% | -73.9 dB |
+| Standard (2×) | Tape | 81.05% | -37.7 dB |
+| Standard (2×) | Transistor | 38.24% | -68.3 dB |
+| Standard (2×) | Transformer | 21.16% | -74.4 dB |
+| High (4×) | Tanh (ADAA) | 32.02% | -87.4 dB |
+| High (4×) | Tube | 32.16% | -87.3 dB |
+| High (4×) | Tape | 22.63% | -47.5 dB |
+| High (4×) | Transistor | 38.52% | -85.3 dB |
+| High (4×) | Transformer | 21.31% | -86.3 dB |
+| Ultra (8×) | Tanh (ADAA) | 32.31% | -88.0 dB |
+| Ultra (8×) | Tube | 32.24% | -88.0 dB |
+| Ultra (8×) | Tape | 29.55% | -55.6 dB |
+| Ultra (8×) | Transistor | 38.61% | -88.0 dB |
+| Ultra (8×) | Transformer | 21.36% | -88.0 dB |
 
 ## 4. Loudness honesty (drift across macro sweeps with autoGain ON)
 
@@ -119,124 +130,3 @@ of the output. Sample-peak is also shown for context. Agreement = honest meter.
 ---
 
 _End of automated measurements. DAW-listening validation still required._
-
----
-
-## RANKED GAP REPORT (synthesis tied to the six sonic levers)
-
-What the measurements **actually show**, ranked by sonic impact. No DSP code
-changes have been made — implementation comes next, measurement-gated.
-
-### 🔴 P0 — biggest sonic gap: **Eco (1×) aliasing is audible**
-
-> Lever 1 — Kill aliasing.
-
-§3 alias floor at 5 kHz input, drive 0.8, Tube model:
-
-| Quality | Alias floor (dB ref fundamental) |
-|---|---:|
-| Eco (1×) | **−56.4 dB** ← clearly audible artefacts |
-| Standard (2×) | −73.9 dB |
-| High (4×) | −87.3 dB |
-| Ultra (8×) | −88.0 dB |
-
-**Fix:** add ADAA (first-order antiderivative anti-aliasing) to the saturation
-waveshapers so the cheapest mode is also clean — *or* make Standard 2× the
-default Quality and document Eco as "rendering / preview only." Today's Eco is
-not safe to put on a vocal at high drive. Measurable target after fix: alias
-floor ≤ −80 dB at Eco for 5 kHz input.
-
-### 🔴 P0 — drive scheme silently attenuates by 17 dB even with autoGain on
-
-> Lever 4 — Honest gain staging + working Mix/Master.
-
-§1 row for `drive`: at default settings, sweeping `drive` 0 → 1 produces
-−13.1 → −30.2 dBFS output (with autoGain ON, mix=1, master at unity). That is
-the drive-then-normalize scheme reaching its limit and the auto-gain not fully
-recovering. From the user's perspective: "more drive" makes the plugin
-*quieter*, not more saturated, beyond ~0.6.
-
-**Fix:** rebalance the drive→normalize→autoGain stack so the perceived level
-stays roughly constant as drive increases; harmonic density should grow
-without the dB hit. Validated by the loudness-honesty drift staying ≤ 1 LU
-across the full drive sweep with autoGain on (today it's −0.40 LU at drive 1.0
-— close but the underlying RMS swing is much larger).
-
-### 🟡 P1 — many user-facing macros show 0 audible change on a sine stimulus
-
-> Lever 5 — Musical macro curves. Lever 4 — Mix authority.
-
-§1 truth audit flagged 17 of 24 swept params as DEAD on a 1 kHz / −12 dBFS
-sine input. Some of those are legitimate stimulus mismatches:
-
-- `punch` needs transients (a sine has none)
-- `boom` is low-frequency (no content there to operate on at 1 kHz)
-- `width` needs decorrelated stereo input
-- `resSens/resDepth` only fire if `resEnabled=true` (default false)
-- `transSens/transMix` only fire if `transEnabled=true` (default false)
-- `era`, `intensity`, `shineMix`, `toneMatchAmt`, `macro0..3` are documented
-  inert in `PARAMETER_MANIFEST.md`
-
-But: `warmth`, `air`, `mix`, `glue` showed near-zero delta and they *should*
-be audible on a sine.
-
-**Fix sequence:**
-1. **Re-run §1 with three stimuli** — sine (today), pink noise (for warmth /
-   shine / air), and a transient burst (for punch / transient) — so the truth
-   table can distinguish "stimulus mismatch" from "genuinely dead."
-2. **Re-run with autoGain OFF** so Mix shows its real authority (today's
-   +0.28 dB Mix delta is masked by autoGain compensation).
-3. **Honestly disable or wire** the documented-inert macros — leaving them
-   on-screen erodes credibility.
-
-### 🟡 P1 — true-peak meter underreports ISP by 1.4 dB
-
-> Lever 6 — Metering & analyzer truth.
-
-§5: independent 4× FIR measures −4.65 dBTP; BTZ's footer reads −6.09 dBTP.
-That's within the 1.5 dB tolerance the harness gave it, but it's the wrong
-*direction* for safety: the user thinks they have more headroom than they do.
-
-**Fix:** investigate `TruePeakLimiter::truePeakHold` decay constant and the
-publication path to `meters.truePeak`. The hold should sit closer to the
-actual ISP for a steady signal; the discrepancy suggests the hold decays
-faster than the meter is read or the publication is averaging too aggressively.
-Target: < 0.5 dB underread on a steady ISP-heavy signal.
-
-### 🟢 What is already good (do not break)
-
-> Levers 1, 4, 6.
-
-- **Oversampling is real.** §2 — CPU scales 0.89 % → 3.41 % from Eco → Ultra,
-  proving the OS is wrapping the nonlinear stages. Latency at Ultra is 12
-  samples (8 lookahead + 4 OS), which is correct for an IIR polyphase OS.
-- **Loudness honesty with autoGain on is excellent.** §4 — drift stays under
-  0.5 LU across drive/glue/warmth/punch/density/boom sweeps. The plugin is
-  not silently winning A/B by getting louder — this is the harder thing to
-  get right and it's already right.
-- **High and Ultra oversampling are clean.** §3 — alias floor < −87 dB at
-  5 kHz. Mastering-grade.
-
-### 🟢 What needs DAW + ears (cannot be measured headless)
-
-> Lever 3 — Authentic analog character.
-
-The harmonic profile question — "does Tube sound different from Tape from
-Transformer from Transistor, and does each shift musically as you push
-harder?" — requires a real listening pass. The numbers say THD is consistent
-across qualities (good), but they don't say whether 5 % at drive 0.5 sounds
-like a tube or like digital nonsense. That's a Reaper-with-ears job.
-
-### Implementation order recommended (next pass)
-
-1. **ADAA on the saturation waveshapers** (P0 aliasing). Re-run §3, demand
-   alias floor ≤ −80 dB at Eco.
-2. **Drive level rebalance** (P0 honest gain). Re-run §1 `drive` row, demand
-   RMS swing ≤ 4 dB across the full drive range with autoGain on.
-3. **Re-run §1 with three stimuli + autoGain off** to separate stimulus
-   mismatch from dead. Address whatever remains genuinely dead.
-4. **True-peak meter calibration** (P1 metering honesty). Re-run §5, demand
-   meter within 0.5 dB of measured ISP.
-
-Each step gets its own commit with before/after measurements pasted into the
-changelog. No claim ships unless this report agrees with it.

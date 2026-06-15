@@ -112,6 +112,37 @@ inline float fastTanh(float x) noexcept {
     return (y < -1.0f) ? -1.0f : (y > 1.0f ? 1.0f : y);
 }
 
+// First-order Antiderivative Anti-Aliasing (ADAA) wrapper for tanh.
+//   y[n] = (F(x[n]) - F(x[n-1])) / (x[n] - x[n-1])     with F(x) = log(cosh(x))
+// reduces aliasing by ~6 dB per octave below Nyquist relative to the naïve
+// waveshaper, with no oversampling cost. When |Δx| ≈ 0 the closed form is 0/0
+// — fall back to the midpoint waveshaper to keep it well-conditioned.
+// References: Parker, Esqueda, Bilbao 2016. Per-channel state required.
+struct ADAATanh {
+    float xPrev = 0.0f;
+    float Fprev = 0.0f;            // F(0) = log(cosh(0)) = 0
+
+    void reset() noexcept { xPrev = 0.0f; Fprev = 0.0f; }
+
+    inline float process(float x) noexcept {
+        // Clamp to fastTanh's valid region. log(cosh(4)) ≈ 3.31 — no overflow.
+        const float cx = (x < -4.0f) ? -4.0f : (x > 4.0f ? 4.0f : x);
+        const float dx = cx - xPrev;
+        const float Fcur = std::log(std::cosh(cx));
+        float y;
+        constexpr float kEps = 1.0e-5f;
+        if (std::abs(dx) < kEps) {
+            // Ill-conditioned region: 0/0 limit is f((x+x_prev)/2).
+            y = fastTanh(0.5f * (cx + xPrev));
+        } else {
+            y = (Fcur - Fprev) / dx;
+        }
+        xPrev = cx;
+        Fprev = Fcur;
+        return (y < -1.0f) ? -1.0f : (y > 1.0f ? 1.0f : y);
+    }
+};
+
 inline float softClip(float x) noexcept {
     return x / (1.0f + std::abs(x));
 }
