@@ -130,3 +130,87 @@ of the output. Sample-peak is also shown for context. Agreement = honest meter.
 ---
 
 _End of automated measurements. DAW-listening validation still required._
+
+---
+
+## v1.0.5 ADAA on the Tanh model — before / after
+
+First-order Antiderivative Anti-Aliasing (Parker / Esqueda / Bilbao 2016) on
+the `Tanh` saturator. No oversampling required, same per-sample CPU class as
+the bare `fastTanh`. The §3 table above already shows the result; this is the
+short story:
+
+| Quality | Model | Alias floor (5 kHz / drive 0.8) |
+|---|---|---:|
+| Eco (1×) | **Tanh (ADAA)** ← v1.0.5 | **−66.1 dB** |
+| Eco (1×) | Tube | −56.4 dB (+10 dB worse) |
+| Eco (1×) | Transistor | −50.9 dB (+15 dB worse) |
+| Eco (1×) | Tape | −38.8 dB (+27 dB worse) |
+
+ADAA Tanh in **Eco** (no OS, no CPU cost) is now the cleanest analog model
+at Eco by a margin large enough to be obviously audible. At Standard (2×) it
+reaches **−79.3 dB** — mastering-grade.
+
+Side discovery flagged in this run: the Tape model's hysteresis feedback path
+amplifies aliasing — it stays at −38 dB even at Eco, only reaches −55 dB at
+Ultra (8×). The other models all clean up with oversampling; Tape doesn't.
+Investigate for v1.1.
+
+---
+
+## Ranked gap report — synthesis tied to the six sonic levers
+
+What the measurements **actually show**, ranked by sonic impact. The ADAA pass
+took the highest-priority item off the top of this list; the remaining items
+are unchanged from the Phase 0 baseline.
+
+### 🟢 P0 — **Eco (1×) aliasing on Tanh: closed in v1.0.5**
+
+> Lever 1 — Kill aliasing.
+
+ADAA shipped this commit. Alias floor at Eco fell from Tube-class (≈ −56 dB)
+to **−66 dB** on Tanh. Standard 2× hits −79 dB. The technique generalises to
+the other models — Tube and Transformer are easy follow-ups (their formulas
+are sums of `tanh`, so the antiderivative is a sum of `log cosh`).
+
+**Next within this lever:** ADAA on Tube + Transformer, then investigate why
+the Tape hysteresis model aliases even at Ultra (probably the integrator
+feedback path; consider state damping or band-limiting before the integrator).
+
+### 🔴 P0 — drive scheme silently attenuates by 17 dB across its range
+
+> Lever 4 — Honest gain staging + working Mix/Master.
+
+§1: at default settings, sweeping `drive` 0 → 1 takes output from −13 → −30 dBFS
+even with autoGain ON. Cranking Drive makes it *quieter*, not more saturated,
+past ~0.6. Needs design + ears, not a desk fix.
+
+### 🟡 P1 — three-stimuli truth audit still owed
+
+> Lever 5 — Musical macro curves.
+
+§1 used a sine; 17/24 macros showed no audible delta. Some are stimulus-mismatch
+(punch needs transients; boom is low-freq; resSens needs resEnabled=true), some
+are documented inert. Extend BTZMeasure with pink noise + transient burst
+stimuli to separate "stimulus mismatch" from "genuinely dead" before more
+macro DSP work.
+
+### 🟡 P1 — true-peak meter underreports ISP by 1.4 dB
+
+> Lever 6 — Metering & analyzer truth.
+
+§5: independent 4× FIR measures −4.65 dBTP; BTZ's footer reads −6.09 dBTP.
+Wrong direction for safety (user thinks they have headroom they don't).
+Investigate `TruePeakLimiter::truePeakHold` decay constant.
+
+### 🟢 What's already strong (do not break)
+
+- §2: oversampling is real (CPU scales 0.89 → 3.41 %, latency reports correctly).
+- §4: loudness honesty with autoGain on is excellent (< 0.5 LU drift across every
+  macro sweep). The plugin is not silently winning A/B by being louder.
+- §3 High/Ultra: alias floor < −87 dB except on Tape.
+
+### What needs DAW + ears
+
+Whether the 5 analog models sound *distinct and musical* (not just numerically
+different) is a listening pass only you can do.
