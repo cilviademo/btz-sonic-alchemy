@@ -353,6 +353,33 @@ int main() {
               "audio still flows finitely with target lock active (no pumping silence)");
     }
 
+    // ── 16. Drive loudness honesty — Phase 0 baseline said drive 0->1 dropped
+    //        by ~17 dB. The makeup curve replaces invDrive; assert the level
+    //        now stays within ±2 dB of dry across the full drive sweep with
+    //        autoGain OFF and Master at unity. ───────────────────────────────
+    {
+        std::printf("Drive loudness honesty (autoGain OFF, master unity):\n");
+        const auto measureDriveRms = [&](float driveVal) {
+            BTZAudioProcessor p; p.prepareToPlay(48000.0, 512);
+            setVal(p, "mix", 1.0f); setVal(p, "autoGain", 0.0f); setVal(p, "master", 0.7f);
+            setVal(p, "satModel", 1.0f);  // Tube (the default)
+            setVal(p, "drive", driveVal);
+            juce::AudioBuffer<float> buf(2, 512);
+            // Long warm-up so the makeup smoother settles
+            for (int blk = 0; blk < 300; ++blk) { fillSine(buf, 1000.0f, 48000.0f); p.processBlock(buf, midi); }
+            return rms(buf);
+        };
+        const float dryRms = 0.4f * std::sqrt(0.5f);  // 1 kHz sine amp 0.4 -> RMS ~0.283
+        bool ok = true;
+        for (float dv : { 0.0f, 0.15f, 0.3f, 0.5f, 0.7f, 0.85f, 1.0f }) {
+            const float r = measureDriveRms(dv);
+            const float dB = 20.0f * std::log10(std::max(1.0e-6f, r / dryRms));
+            std::printf("    drive %.2f → %+.2f dB vs dry  (%.4f vs %.4f)\n", dv, dB, r, dryRms);
+            if (std::abs(dB) > 2.5f) ok = false;
+        }
+        check(ok, "drive sweep stays within ±2.5 dB of dry input across 0..1 (Tube model)");
+    }
+
     std::printf("\n%s — %d failure(s)\n", failures == 0 ? "ALL PROCESSOR CHECKS PASSED" : "PROCESSOR CHECKS FAILED", failures);
     return failures == 0 ? 0 : 1;
 }

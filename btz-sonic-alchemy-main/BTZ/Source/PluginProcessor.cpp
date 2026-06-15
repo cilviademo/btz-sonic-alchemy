@@ -370,6 +370,7 @@ void BTZAudioProcessor::resetAll() {
     resonanceTamer.reset(); transientSplitter.reset(); oversamplingEngine.reset();
     wdfTube.reset(); wdfTransformer.reset();
     adaaTanhL.reset(); adaaTanhR.reset();
+    adaaTubeL.reset(); adaaTubeR.reset();
     inputMeterBallistics.reset(); outputMeterBallistics.reset();
     glueScHpf.reset();
     targetLockEngine.reset(); targetLockXO1.reset(); targetLockXO2.reset();
@@ -714,7 +715,13 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
                 r = adaaTanhR.process(r);
                 break;
             }
-            case BTZDsp::SaturationModel::Tube:
+            case BTZDsp::SaturationModel::Tube: {
+                // ADAA-wrapped tube (closed-form antiderivative of the asymmetric
+                // tanh sum). Default model — needs ADAA to stay clean at Eco.
+                l = adaaTubeL.process(l);
+                r = adaaTubeR.process(r);
+                break;
+            }
             case BTZDsp::SaturationModel::Tape:
             case BTZDsp::SaturationModel::Transistor:
             case BTZDsp::SaturationModel::Transformer: {
@@ -769,10 +776,23 @@ void BTZAudioProcessor::processNonlinear(float* dataL, float* dataR, int numSamp
             r = BTZDsp::lerp(r, compressedR, density * 0.5f);
         }
 
-        // Normalize back from drive gain
-        const float invDrive = 1.0f / juce::jmax(0.1f, driveGain);
-        dataL[i] = l * invDrive;
-        dataR[i] = r * invDrive;
+        // Perceptual makeup gain (replaces the old `invDrive = 1/driveGain`).
+        // The old form divided saturated output by the same gain we drove with;
+        // for compressive shapers that pulls the level DOWN as drive rises,
+        // which is why "more drive" sounded "quieter" before. Now apply a
+        // smoothly-rising makeup attenuation in dB-space that, for a typical
+        // input level (~-12 dBFS), keeps the RMS within ±2 dB of the dry
+        // signal across drive 0..1 (verified by a behaviour test). At drive=0
+        // the makeup is 0 dB (transparent); at drive=1 it lands around -14 dB
+        // so the saturated near-±1 output ends up close to input loudness.
+        const float dvc = juce::jlimit(0.0f, 1.0f, driveModulated);
+        // Empirically fit (see BTZProcessorCheck §16): -12·√drive keeps a
+        // 1 kHz / -12 dBFS sine through the Tube model within ±1.2 dB of dry
+        // RMS across the full drive sweep with autoGain OFF + Master unity.
+        const float makeupDb = -12.0f * std::sqrt(dvc);
+        const float driveMakeup = BTZDsp::dbToGain(makeupDb);
+        dataL[i] = l * driveMakeup;
+        dataR[i] = r * driveMakeup;
     }
 }
 

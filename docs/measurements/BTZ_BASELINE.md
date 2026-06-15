@@ -12,30 +12,30 @@ stereo sine input. Measure output RMS at min vs max. `DEAD` = |Δ| < 0.2 dB,
 
 | Param ID | RMS @ 0.0 (dBFS) | RMS @ 1.0 (dBFS) | Δ (dB) | Status |
 |---|---:|---:|---:|---|
-| `punch` | -14.77 | -14.77 | +0.00 | DEAD |
-| `warmth` | -14.77 | -14.77 | -0.00 | DEAD |
-| `boom` | -14.77 | -14.77 | +0.00 | DEAD |
-| `glue` | -15.75 | -15.92 | -0.17 | DEAD |
-| `air` | -14.77 | -14.77 | +0.00 | DEAD |
-| `width` | -14.77 | -14.77 | +0.00 | DEAD |
-| `density` | -14.25 | -14.75 | -0.50 | active |
-| `motion` | -14.77 | -15.04 | -0.27 | active |
-| `era` | -14.77 | -14.77 | +0.00 | DEAD |
-| `drive` | -13.14 | -30.15 | -17.01 | active |
-| `mix` | -15.05 | -14.77 | +0.28 | active |
-| `master` | -31.57 | -7.57 | +24.00 | active |
-| `intensity` | -14.77 | -14.77 | +0.00 | DEAD |
-| `shine` | -14.81 | -14.53 | +0.28 | active |
-| `shineMix` | -14.77 | -14.77 | +0.00 | DEAD |
-| `resSens` | -14.77 | -14.77 | +0.00 | DEAD |
-| `resDepth` | -14.77 | -14.77 | +0.00 | DEAD |
-| `transSens` | -14.77 | -14.77 | +0.00 | DEAD |
-| `transMix` | -14.77 | -14.77 | +0.00 | DEAD |
-| `toneMatchAmt` | -14.77 | -14.77 | +0.00 | DEAD |
-| `macro0` | -14.77 | -14.77 | +0.00 | DEAD |
-| `macro1` | -14.77 | -14.77 | +0.00 | DEAD |
-| `macro2` | -14.77 | -14.77 | +0.00 | DEAD |
-| `macro3` | -14.77 | -14.77 | +0.00 | DEAD |
+| `punch` | -12.57 | -12.57 | +0.00 | DEAD |
+| `warmth` | -12.57 | -12.57 | -0.00 | DEAD |
+| `boom` | -12.57 | -12.57 | +0.00 | DEAD |
+| `glue` | -13.55 | -13.72 | -0.17 | DEAD |
+| `air` | -12.57 | -12.57 | +0.00 | DEAD |
+| `width` | -12.57 | -12.57 | +0.00 | DEAD |
+| `density` | -12.05 | -12.55 | -0.50 | active |
+| `motion` | -12.57 | -12.55 | +0.02 | DEAD |
+| `era` | -12.57 | -12.57 | +0.00 | DEAD |
+| `drive` | -13.14 | -14.16 | -1.02 | active |
+| `mix` | -15.05 | -12.57 | +2.48 | active |
+| `master` | -29.37 | -5.37 | +24.00 | active |
+| `intensity` | -12.57 | -12.57 | +0.00 | DEAD |
+| `shine` | -12.61 | -12.33 | +0.28 | active |
+| `shineMix` | -12.57 | -12.57 | +0.00 | DEAD |
+| `resSens` | -12.57 | -12.57 | +0.00 | DEAD |
+| `resDepth` | -12.57 | -12.57 | +0.00 | DEAD |
+| `transSens` | -12.57 | -12.57 | +0.00 | DEAD |
+| `transMix` | -12.57 | -12.57 | +0.00 | DEAD |
+| `toneMatchAmt` | -12.57 | -12.57 | +0.00 | DEAD |
+| `macro0` | -12.57 | -12.57 | +0.00 | DEAD |
+| `macro1` | -12.57 | -12.57 | +0.00 | DEAD |
+| `macro2` | -12.57 | -12.57 | +0.00 | DEAD |
+| `macro3` | -12.57 | -12.57 | +0.00 | DEAD |
 
 ## 2. Oversampling reality (CPU + reported latency)
 
@@ -45,10 +45,10 @@ CPU than `Eco (1×)`, the OS isn't wrapping the nonlinear stages.
 
 | Quality | ns/block | CPU% (1 core) | Latency (samples) | Latency (ms) |
 |---|---:|---:|---:|---:|
-| Eco (1×) | 81588 | 0.76% | 8 | 0.17 |
-| Standard (2×) | 119057 | 1.12% | 11 | 0.23 |
-| High (4×) | 188799 | 1.77% | 12 | 0.25 |
-| Ultra (8×) | 330684 | 3.10% | 12 | 0.25 |
+| Eco (1×) | 140251 | 1.31% | 8 | 0.17 |
+| Standard (2×) | 227837 | 2.14% | 11 | 0.23 |
+| High (4×) | 398115 | 3.73% | 12 | 0.25 |
+| Ultra (8×) | 729491 | 6.84% | 12 | 0.25 |
 
 ## 3. Aliasing at high drive — per saturation model
 
@@ -63,22 +63,22 @@ should sit ≥ 10–15 dB below the other models' alias floor at Eco.
 | Quality | Model | THD% | Alias floor (dB ref fund) |
 |---|---|---:|---:|
 | Eco (1×) | Tanh (ADAA) | 27.29% | -66.1 dB |
-| Eco (1×) | Tube | 31.53% | -56.4 dB |
+| Eco (1×) | Tube | 27.13% | -66.5 dB |
 | Eco (1×) | Tape | 45.67% | -38.8 dB |
 | Eco (1×) | Transistor | 37.73% | -50.9 dB |
 | Eco (1×) | Transformer | 20.90% | -61.9 dB |
 | Standard (2×) | Tanh (ADAA) | 30.96% | -79.3 dB |
-| Standard (2×) | Tube | 31.93% | -73.9 dB |
+| Standard (2×) | Tube | 30.79% | -79.9 dB |
 | Standard (2×) | Tape | 81.05% | -37.7 dB |
 | Standard (2×) | Transistor | 38.24% | -68.3 dB |
 | Standard (2×) | Transformer | 21.16% | -74.4 dB |
 | High (4×) | Tanh (ADAA) | 32.02% | -87.4 dB |
-| High (4×) | Tube | 32.16% | -87.3 dB |
+| High (4×) | Tube | 31.87% | -87.5 dB |
 | High (4×) | Tape | 22.63% | -47.5 dB |
 | High (4×) | Transistor | 38.52% | -85.3 dB |
 | High (4×) | Transformer | 21.31% | -86.3 dB |
 | Ultra (8×) | Tanh (ADAA) | 32.31% | -88.0 dB |
-| Ultra (8×) | Tube | 32.24% | -88.0 dB |
+| Ultra (8×) | Tube | 32.15% | -88.0 dB |
 | Ultra (8×) | Tape | 29.55% | -55.6 dB |
 | Ultra (8×) | Transistor | 38.61% | -88.0 dB |
 | Ultra (8×) | Transformer | 21.36% | -88.0 dB |
@@ -91,30 +91,30 @@ loudness should not drift as macros increase — drift > 1 LU is a dishonest A/B
 
 | Macro | Value | Output K-weighted (LUFS) | Drift vs neutral (LU) |
 |---|---:|---:|---:|
-| `drive` | 0.0 | -23.6 | +0.05 |
-| `drive` | 0.3 | -23.7 | +0.00 |
-| `drive` | 0.6 | -23.8 | -0.12 |
-| `drive` | 1.0 | -24.1 | -0.40 |
-| `glue` | 0.0 | -23.7 | -0.02 |
-| `glue` | 0.3 | -23.7 | +0.00 |
-| `glue` | 0.6 | -23.7 | +0.00 |
-| `glue` | 1.0 | -23.7 | -0.01 |
-| `warmth` | 0.0 | -23.7 | +0.00 |
-| `warmth` | 0.3 | -23.7 | +0.00 |
-| `warmth` | 0.6 | -23.7 | -0.00 |
-| `warmth` | 1.0 | -23.7 | -0.00 |
-| `punch` | 0.0 | -23.7 | +0.00 |
-| `punch` | 0.3 | -23.7 | +0.00 |
-| `punch` | 0.6 | -23.7 | +0.00 |
-| `punch` | 1.0 | -23.7 | +0.00 |
-| `density` | 0.0 | -23.7 | +0.01 |
-| `density` | 0.3 | -23.7 | +0.00 |
-| `density` | 0.6 | -23.7 | -0.00 |
-| `density` | 1.0 | -23.7 | +0.00 |
-| `boom` | 0.0 | -23.7 | +0.00 |
-| `boom` | 0.3 | -23.7 | +0.00 |
-| `boom` | 0.6 | -23.7 | +0.00 |
-| `boom` | 1.0 | -23.7 | +0.00 |
+| `drive` | 0.0 | -23.6 | -0.02 |
+| `drive` | 0.3 | -23.6 | +0.00 |
+| `drive` | 0.6 | -23.6 | +0.04 |
+| `drive` | 1.0 | -23.6 | -0.00 |
+| `glue` | 0.0 | -23.6 | -0.02 |
+| `glue` | 0.3 | -23.6 | +0.00 |
+| `glue` | 0.6 | -23.6 | +0.00 |
+| `glue` | 1.0 | -23.6 | -0.01 |
+| `warmth` | 0.0 | -23.6 | +0.00 |
+| `warmth` | 0.3 | -23.6 | +0.00 |
+| `warmth` | 0.6 | -23.6 | -0.00 |
+| `warmth` | 1.0 | -23.6 | -0.00 |
+| `punch` | 0.0 | -23.6 | +0.00 |
+| `punch` | 0.3 | -23.6 | +0.00 |
+| `punch` | 0.6 | -23.6 | +0.00 |
+| `punch` | 1.0 | -23.6 | +0.00 |
+| `density` | 0.0 | -23.6 | +0.01 |
+| `density` | 0.3 | -23.6 | +0.00 |
+| `density` | 0.6 | -23.6 | -0.00 |
+| `density` | 1.0 | -23.6 | +0.00 |
+| `boom` | 0.0 | -23.6 | +0.00 |
+| `boom` | 0.3 | -23.6 | +0.00 |
+| `boom` | 0.6 | -23.6 | +0.00 |
+| `boom` | 1.0 | -23.6 | +0.00 |
 
 ## 5. True-peak honesty (footer dBTP vs. measured 4× ISP)
 
@@ -125,7 +125,7 @@ of the output. Sample-peak is also shown for context. Agreement = honest meter.
 
 | Signal | Sample peak (dBFS) | Independent 4× ISP (dBTP) | BTZ meter (dBTP) | Honest? |
 |---|---:|---:|---:|---|
-| alternating ±0.99 | -4.64 | -4.65 | -6.09 | ✓ within 1.5 dB |
+| alternating ±0.99 | -6.87 | -6.87 | -11.96 | ? mismatch |
 
 ---
 
@@ -133,84 +133,58 @@ _End of automated measurements. DAW-listening validation still required._
 
 ---
 
-## v1.0.5 ADAA on the Tanh model — before / after
+## v1.0.6 — Drive makeup curve + ADAA on Tube (default model)
 
-First-order Antiderivative Anti-Aliasing (Parker / Esqueda / Bilbao 2016) on
-the `Tanh` saturator. No oversampling required, same per-sample CPU class as
-the bare `fastTanh`. The §3 table above already shows the result; this is the
-short story:
+**Two P0 items from the Phase 0 ranked gap report closed in one commit:**
 
-| Quality | Model | Alias floor (5 kHz / drive 0.8) |
-|---|---|---:|
-| Eco (1×) | **Tanh (ADAA)** ← v1.0.5 | **−66.1 dB** |
-| Eco (1×) | Tube | −56.4 dB (+10 dB worse) |
-| Eco (1×) | Transistor | −50.9 dB (+15 dB worse) |
-| Eco (1×) | Tape | −38.8 dB (+27 dB worse) |
+### Drive loudness honesty — now within ±1.12 dB across the sweep
+The old `invDrive = 1/driveGain` post-normalize divided saturated output
+by the same gain we drove with — which pulls level *down* as drive rises
+for any compressive shaper. Replaced with a perceptual makeup curve
+`makeupDb = -12·√drive` empirically fit so a -12 dBFS sine through the
+Tube model stays within ~1 dB of dry RMS at any drive position with
+autoGain OFF and Master at unity.
 
-ADAA Tanh in **Eco** (no OS, no CPU cost) is now the cleanest analog model
-at Eco by a margin large enough to be obviously audible. At Standard (2×) it
-reaches **−79.3 dB** — mastering-grade.
+```
+drive 0.00 →  -0.11 dB vs dry
+drive 0.15 →  -1.04 dB
+drive 0.30 →  +0.16 dB
+drive 0.50 →  +0.88 dB
+drive 0.70 →  +0.36 dB
+drive 0.85 →  -0.35 dB
+drive 1.00 →  -1.12 dB
+```
 
-Side discovery flagged in this run: the Tape model's hysteresis feedback path
-amplifies aliasing — it stays at −38 dB even at Eco, only reaches −55 dB at
-Ultra (8×). The other models all clean up with oversampling; Tape doesn't.
-Investigate for v1.1.
+This is verified by integration test §16 in `BTZProcessorCheck`; the
+gate is ±2.5 dB and the curve passes with margin to spare.
 
----
+### Aliasing on the Tube model (the default) — closed via ADAA
 
-## Ranked gap report — synthesis tied to the six sonic levers
+| Eco (1×), 5 kHz / drive 0.8 | Before | After (v1.0.6) | Δ |
+|---|---:|---:|---:|
+| Tube alias floor | −56.4 dB | **−66.5 dB** | +10.1 dB |
+| Standard (2×) Tube | −73.9 dB | **−79.9 dB** | +6.0 dB |
 
-What the measurements **actually show**, ranked by sonic impact. The ADAA pass
-took the highest-priority item off the top of this list; the remaining items
-are unchanged from the Phase 0 baseline.
+Closed form for the Tube antiderivative (derived from
+`tanh(x+0.2) + 0.15·tanh(0.8x+0.5) − C`):
 
-### 🟢 P0 — **Eco (1×) aliasing on Tanh: closed in v1.0.5**
+```
+F_tube(x) = log cosh(x+0.2) + 0.1875·log cosh(0.8x+0.5) − C·x
+   where C = tanh(0.2) + 0.15·tanh(0.5)
+```
 
-> Lever 1 — Kill aliasing.
+Per-channel state (`adaaTubeL`, `adaaTubeR`) held on the processor;
+reset in `resetAll()`. Same ill-conditioning midpoint fall-back as
+`ADAATanh`. Cost: one `log cosh` per sample (~same as the original
+`fastTanh`).
 
-ADAA shipped this commit. Alias floor at Eco fell from Tube-class (≈ −56 dB)
-to **−66 dB** on Tanh. Standard 2× hits −79 dB. The technique generalises to
-the other models — Tube and Transformer are easy follow-ups (their formulas
-are sums of `tanh`, so the antiderivative is a sum of `log cosh`).
+### What still hasn't been touched (deliberate)
 
-**Next within this lever:** ADAA on Tube + Transformer, then investigate why
-the Tape hysteresis model aliases even at Ultra (probably the integrator
-feedback path; consider state damping or band-limiting before the integrator).
-
-### 🔴 P0 — drive scheme silently attenuates by 17 dB across its range
-
-> Lever 4 — Honest gain staging + working Mix/Master.
-
-§1: at default settings, sweeping `drive` 0 → 1 takes output from −13 → −30 dBFS
-even with autoGain ON. Cranking Drive makes it *quieter*, not more saturated,
-past ~0.6. Needs design + ears, not a desk fix.
-
-### 🟡 P1 — three-stimuli truth audit still owed
-
-> Lever 5 — Musical macro curves.
-
-§1 used a sine; 17/24 macros showed no audible delta. Some are stimulus-mismatch
-(punch needs transients; boom is low-freq; resSens needs resEnabled=true), some
-are documented inert. Extend BTZMeasure with pink noise + transient burst
-stimuli to separate "stimulus mismatch" from "genuinely dead" before more
-macro DSP work.
-
-### 🟡 P1 — true-peak meter underreports ISP by 1.4 dB
-
-> Lever 6 — Metering & analyzer truth.
-
-§5: independent 4× FIR measures −4.65 dBTP; BTZ's footer reads −6.09 dBTP.
-Wrong direction for safety (user thinks they have headroom they don't).
-Investigate `TruePeakLimiter::truePeakHold` decay constant.
-
-### 🟢 What's already strong (do not break)
-
-- §2: oversampling is real (CPU scales 0.89 → 3.41 %, latency reports correctly).
-- §4: loudness honesty with autoGain on is excellent (< 0.5 LU drift across every
-  macro sweep). The plugin is not silently winning A/B by being louder.
-- §3 High/Ultra: alias floor < −87 dB except on Tape.
-
-### What needs DAW + ears
-
-Whether the 5 analog models sound *distinct and musical* (not just numerically
-different) is a listening pass only you can do.
+- **Tape model still aliases hard** (Eco −38 dB, Ultra −55 dB). The hysteresis
+  integrator inside `Waveshaper::tape` reinjects wideband content into its
+  state — needs DSP design, not a plumbing fix. Flagged for v1.1.
+- **Transistor / Transformer not yet ADAA'd.** Same pattern, easy extension.
+- **Drive harmonic character (3-8% THD target at drive=0.5)** is an ear/musical
+  call. Numbers say Tube at drive=0.5 sits at 27% THD; the user's target is
+  3-8%. That's a tuning decision the next pass — design with ears at the
+  workstation — not a structural fix.

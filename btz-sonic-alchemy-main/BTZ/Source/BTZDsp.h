@@ -147,6 +147,48 @@ inline float softClip(float x) noexcept {
     return x / (1.0f + std::abs(x));
 }
 
+// First-order ADAA wrapper for the Tube model:
+//   tube(x) = tanh(x+0.2) + 0.15·tanh(0.8x+0.5) − (tanh(0.2) + 0.15·tanh(0.5))
+// Antiderivative (closed form, since ∫tanh(ax+b) dx = (1/a)·log(cosh(ax+b))):
+//   F_tube(x) = log(cosh(x+0.2)) + (0.15/0.8)·log(cosh(0.8x+0.5)) − C·x
+// where C = tanh(0.2) + 0.15·tanh(0.5).
+// Same ill-conditioning fallback as ADAATanh — fall back to f((x+x_prev)/2)
+// when |Δx| is small.
+struct ADAATube {
+    float xPrev = 0.0f;
+    float Fprev = 0.0f;
+    static constexpr float kK     = 0.1875f;                   // 0.15 / 0.8
+    static constexpr float kBias  = 0.197375f + 0.15f * 0.462117f;  // tanh(0.2) + 0.15·tanh(0.5)
+    static constexpr float kClamp = 5.0f;
+
+    void reset() noexcept { xPrev = 0.0f; Fprev = 0.0f; }
+
+    static inline float F(float x) noexcept {
+        // log cosh is bounded for x in [-kClamp + 0.5, kClamp + 0.5] — no overflow.
+        return std::log(std::cosh(x + 0.2f))
+             + kK * std::log(std::cosh(0.8f * x + 0.5f))
+             - kBias * x;
+    }
+    static inline float f(float x) noexcept {
+        // Bare tube shaper — used in the ill-conditioning midpoint fall-back.
+        return fastTanh(x + 0.2f) + 0.15f * fastTanh(0.8f * x + 0.5f)
+             - (0.197375f + 0.15f * 0.462117f);
+    }
+
+    inline float process(float x) noexcept {
+        const float cx = (x < -kClamp) ? -kClamp : (x > kClamp ? kClamp : x);
+        const float dx = cx - xPrev;
+        const float Fcur = F(cx);
+        float y;
+        constexpr float kEps = 1.0e-5f;
+        if (std::abs(dx) < kEps) y = f(0.5f * (cx + xPrev));
+        else                     y = (Fcur - Fprev) / dx;
+        xPrev = cx;
+        Fprev = Fcur;
+        return y;
+    }
+};
+
 inline float lerp(float a, float b, float t) noexcept {
     return a + t * (b - a);
 }
