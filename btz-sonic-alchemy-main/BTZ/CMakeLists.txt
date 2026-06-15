@@ -187,6 +187,21 @@ if(BTZ_BUILD_BENCH)
         juce::juce_audio_utils
         juce::juce_dsp
         juce::juce_recommended_config_flags)
+
+    # Phase 0 measurement harness (THD/aliasing/loudness honesty/ISP audit).
+    juce_add_console_app(BTZMeasure PRODUCT_NAME "BTZ Measure")
+    target_sources(BTZMeasure PRIVATE
+        bench/measure_main.cpp
+        Source/PluginProcessor.cpp
+        Source/PluginEditor.cpp)
+    juce_generate_juce_header(BTZMeasure)
+    target_include_directories(BTZMeasure PRIVATE Source)
+    target_compile_definitions(BTZMeasure PRIVATE
+        JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0 JUCE_STANDALONE_APPLICATION=1)
+    target_link_libraries(BTZMeasure PRIVATE
+        juce::juce_audio_utils
+        juce::juce_dsp
+        juce::juce_recommended_config_flags)
 endif()
 
 # ═══════════════════════════════════════════════════════════════════════════

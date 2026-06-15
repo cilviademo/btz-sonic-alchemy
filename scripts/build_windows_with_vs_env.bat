@@ -2,13 +2,20 @@
 REM Build BTZ VST3 with a known-good x64 MSVC environment.
 setlocal
 
-REM 1) Load VS 2022 x64 toolchain (avoids VS 2026 x86/x64 library mismatch)
-if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" (
+REM 1) Load an x64 MSVC toolchain. Prefer VS 2026 (18) where present (Marc's
+REM    workstation), fall back to VS 2022 Community / BuildTools.
+if exist "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat" (
+    call "C:\Program Files\Microsoft Visual Studio\18\Community\VC\Auxiliary\Build\vcvars64.bat"
+) else if exist "C:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat" (
+    call "C:\Program Files\Microsoft Visual Studio\18\Professional\VC\Auxiliary\Build\vcvars64.bat"
+) else if exist "C:\Program Files\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
+    call "C:\Program Files\Microsoft Visual Studio\18\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
+) else if exist "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" (
     call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
 ) else if exist "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" (
     call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat"
 ) else (
-    echo Error: VS 2022 vcvars64.bat not found. Install VS 2022/Build Tools with Desktop C++ workload.
+    echo Error: vcvars64.bat not found for VS 18 or VS 2022. Install VS Community / Build Tools with Desktop C++ workload.
     exit /b 1
 )
 

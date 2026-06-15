@@ -33,14 +33,21 @@ if not exist "%VST3_DEST%" (
 )
 
 REM VST3 on Windows is usually a directory bundle; copy it recursively.
-if not exist "%VST3_SRC%\." (
+REM Use the trailing-backslash form below — cmd interprets the "(" in
+REM "...(BTZ).vst3\." as a parenthesised block, which previously broke this
+REM check and caused "(BTZ).vst3 was unexpected at this time." Field-validated
+REM on Marc's workstation 2026-06-15 (see BTZ_WINDOWS_BUILD_INSTALL_RUNBOOK.md).
+if not exist "%VST3_SRC%\" (
     echo Error: Source path is not a directory bundle: %VST3_SRC%
     exit /b 1
 )
 
-robocopy "%VST3_SRC%" "%VST3_DEST%\Box Tone Zone (BTZ).vst3" /E /IS /IT
+REM Belt-and-suspenders: cap robocopy retries so a locked file (Reaper running
+REM with the old plugin loaded -> ERROR 32) fails fast instead of hanging.
+robocopy "%VST3_SRC%" "%VST3_DEST%\Box Tone Zone (BTZ).vst3" /E /IS /IT /R:2 /W:2
 if errorlevel 8 (
-    echo Copy failed. Robocopy error %errorlevel%. Run as administrator.
+    echo Copy failed. Robocopy error %errorlevel%.
+    echo Close Reaper / any DAW with the plugin loaded, then run again as admin.
     exit /b 1
 )
 
